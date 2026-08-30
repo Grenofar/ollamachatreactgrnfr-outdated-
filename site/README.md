@@ -1,18 +1,20 @@
 # Site (landing page)
 
-Page statique (HTML/CSS/JS pur, sans dépendance, sans étape de build)
-présentant le projet et permettant d'installer l'application — pas une
-version web de l'app elle-même, juste la présentation + le lien
-d'installation.
+Page statique (HTML/CSS/JS pur, sans dépendance, sans étape de build),
+volontairement minimale : un court texte de présentation (à quoi sert l'app)
+et un bouton de téléchargement en dessous, rien d'autre. Décision explicite
+de l'utilisateur (2026-08-30) : pas de démo/interaction IA sur le site, pas de
+section fonctionnalités ni de guide d'installation détaillé — juste
+présenter le projet et proposer le téléchargement.
 
-Le bouton "Installer" est piloté par Supabase (lecture seule, clé anon en
-clair dans `index.html` — voir CLAUDE.md à la racine, section Décisions
-techniques, sur pourquoi c'est correct pour une clé anon). Tant que la table
-`app_releases` est vide ou n'existe pas encore (voir `../supabase/schema.sql`),
-le bouton affiche "Bientôt disponible" ; dès qu'une ligne existe, il devient
-un vrai lien de téléchargement vers `download_url`. Aucune action manuelle
-n'est nécessaire ici quand une nouvelle version est publiée : ajouter la
-ligne dans Supabase suffit, le site (et l'app) se mettent à jour tout seuls.
+Le bouton est piloté par Supabase (lecture seule, clé anon en clair dans
+`index.html` — voir CLAUDE.md à la racine, section Décisions techniques, sur
+pourquoi c'est correct pour une clé anon). Tant que la table `app_releases`
+est vide ou n'existe pas encore (voir `../supabase/schema.sql`), le bouton
+affiche "Téléchargement bientôt disponible" ; dès qu'une ligne existe, il
+devient un vrai lien vers `download_url`. Aucune action manuelle n'est
+nécessaire ici quand une nouvelle version est publiée : ajouter la ligne
+dans Supabase suffit, le site (et l'app) se mettent à jour tout seuls.
 
 ## Déployer sur Vercel
 
