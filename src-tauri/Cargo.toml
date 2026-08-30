@@ -1,6 +1,6 @@
 [package]
 name = "ollama-chat-react"
-version = "0.2.2"
+version = "0.2.3"
 description = "Client de chat pour Ollama avec éditeur de code agentique (Codex)"
 authors = ["Grenofar"]
 edition = "2021"
