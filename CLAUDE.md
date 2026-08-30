@@ -131,6 +131,12 @@ le seul filet de sécurité de l'application — voir Limites connues ci-dessous
   téléchargement réel si une release existe, sinon message statique
   inchangé). Table `app_releases` pas encore créée côté Supabase — SQL prêt
   dans `supabase/schema.sql`, à exécuter une fois par l'utilisateur.
+- **2026-08-30** — Refonte complète de `site/` : le site présente le projet
+  et sert à **installer** l'app (bouton "Installer", section 3 étapes), avec
+  un message explicite partout ("application de bureau Windows — pas de
+  version web") pour éviter toute confusion avec une démo web hébergée. Le
+  bouton reste piloté par le même fetch Supabase (une seule fonction, deux
+  boutons via la classe `.js-cta`).
 
 ## Prochaines étapes (dans l'ordre du fichier de passation d'origine)
 
