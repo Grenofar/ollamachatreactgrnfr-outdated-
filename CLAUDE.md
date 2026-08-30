@@ -895,7 +895,11 @@ l'utilisateur confirme qu'elle est bien dans `.env` local.
   le détail complet, notamment la vérification que `gemini-3.6-flash`
   n'est pas documenté par Google comme compatible avec `computer_use` —
   laissé sélectionnable quand même (demandé explicitement), signalé dans
-  le menu pour que ça ne soit pas une surprise en cas d'échec.
+  le menu pour que ça ne soit pas une surprise en cas d'échec. Build signé,
+  uploadé dans le bucket Storage `releases`, ligne insérée dans
+  `app_releases`, et vérifié via la clé **anon** (fichier : 200 OK,
+  6 704 875 octets ; `latest_release_manifest` : renvoie bien la v0.4.2
+  avec signature et URL) avant d'annoncer la release terminée.
 
 ## Prochaines étapes (dans l'ordre du fichier de passation d'origine)
 
