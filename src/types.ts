@@ -31,6 +31,7 @@ export interface Settings {
   codex_mode: "auto" | "approve";
   codex_last_folder?: string | null;
   gemini_api_key?: string | null;
+  gemini_model: string;
 }
 
 export interface DirEntry {

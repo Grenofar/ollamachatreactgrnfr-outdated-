@@ -19,13 +19,37 @@ interface TranscriptEntry {
   content: string;
 }
 
-export default function ControlMeView({ settings, onBack }: { settings: Settings; onBack: () => void }) {
+// gemini-3.6-flash isn't in Google's documented list of computer_use-compatible
+// models (verified 2026-08-30) — kept selectable since it was explicitly
+// requested, but flagged so a failed run isn't a mystery.
+const GEMINI_MODELS = [
+  { id: "gemini-3.7-flash", label: "Gemini 3.7 Flash (recommandé)" },
+  { id: "gemini-3.6-flash", label: "Gemini 3.6 Flash (compatibilité non confirmée)" },
+  { id: "gemini-3.5-flash", label: "Gemini 3.5 Flash" },
+  { id: "gemini-3.5-flash-lite", label: "Gemini 3.5 Flash-Lite (rapide, économique)" },
+];
+
+export default function ControlMeView({
+  settings,
+  onBack,
+  onPersistModel,
+}: {
+  settings: Settings;
+  onBack: () => void;
+  onPersistModel: (model: string) => void;
+}) {
   const [instruction, setInstruction] = useState("");
   const [entries, setEntries] = useState<TranscriptEntry[]>([]);
   const [running, setRunning] = useState(false);
+  const [model, setModel] = useState(settings.gemini_model || "gemini-3.7-flash");
   const scrollRef = useRef<HTMLDivElement>(null);
 
   const apiKey = settings.gemini_api_key?.trim() ?? "";
+
+  function handleModelChange(next: string) {
+    setModel(next);
+    onPersistModel(next);
+  }
 
   useEffect(() => {
     scrollRef.current?.scrollTo({ top: scrollRef.current.scrollHeight });
@@ -81,7 +105,7 @@ export default function ControlMeView({ settings, onBack }: { settings: Settings
     setEntries((prev) => [...prev, { role: "user", content: text }]);
     setInstruction("");
     setRunning(true);
-    runControlMe(apiKey, text).catch((e) => {
+    runControlMe(apiKey, model, text).catch((e) => {
       setEntries((prev) => [...prev, { role: "system", content: `Erreur : ${String(e)}` }]);
       setRunning(false);
     });
@@ -103,6 +127,19 @@ export default function ControlMeView({ settings, onBack }: { settings: Settings
       <div className="controlme-header">
         <button onClick={onBack}>← Chat</button>
         <span className="controlme-header-title">Control Me</span>
+        <div className="controlme-header-spacer" />
+        <select
+          className="controlme-model-select"
+          value={model}
+          onChange={(e) => handleModelChange(e.target.value)}
+          disabled={running}
+        >
+          {GEMINI_MODELS.map((m) => (
+            <option key={m.id} value={m.id}>
+              {m.label}
+            </option>
+          ))}
+        </select>
       </div>
 
       {!apiKey && (

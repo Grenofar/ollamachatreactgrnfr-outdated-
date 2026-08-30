@@ -14,10 +14,16 @@ pub struct Settings {
     pub codex_last_folder: Option<String>,
     #[serde(default)]
     pub gemini_api_key: Option<String>,
+    #[serde(default = "default_gemini_model")]
+    pub gemini_model: String,
 }
 
 fn default_codex_mode() -> String {
     "approve".to_string()
+}
+
+fn default_gemini_model() -> String {
+    "gemini-3.7-flash".to_string()
 }
 
 fn default_settings() -> Settings {
@@ -32,6 +38,7 @@ fn default_settings() -> Settings {
         codex_mode: default_codex_mode(),
         codex_last_folder: None,
         gemini_api_key: None,
+        gemini_model: default_gemini_model(),
     }
 }
 

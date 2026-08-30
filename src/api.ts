@@ -141,8 +141,8 @@ export const onFreezeResolved = (cb: () => void) => listen("freeze-resolved", ()
 
 // ------------------------------------------------------------ Control Me
 
-export const runControlMe = (apiKey: string, instruction: string) =>
-  invoke<void>("run_control_me", { apiKey, instruction });
+export const runControlMe = (apiKey: string, model: string, instruction: string) =>
+  invoke<void>("run_control_me", { apiKey, model, instruction });
 
 export const cancelControlMe = () => invoke<void>("cancel_control_me");
 

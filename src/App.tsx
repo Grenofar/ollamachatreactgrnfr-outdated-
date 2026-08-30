@@ -423,6 +423,15 @@ export default function App() {
     });
   }
 
+  function handlePersistControlMeModel(model: string) {
+    setSettings((prev) => {
+      if (!prev) return prev;
+      const next = { ...prev, gemini_model: model };
+      saveSettings(next);
+      return next;
+    });
+  }
+
   const messages = currentConv?.messages ?? [];
   const conversationTokens = messages.reduce((sum, m) => sum + (m.tokens ?? estimateTokens(m.content)), 0);
   const contextTokens = settings
@@ -459,7 +468,11 @@ export default function App() {
         </Suspense>
       ) : view === "controlme" && settings ? (
         <Suspense fallback={<div className="codex-editor-empty">Chargement…</div>}>
-          <ControlMeView settings={settings} onBack={() => setView("chat")} />
+          <ControlMeView
+            settings={settings}
+            onBack={() => setView("chat")}
+            onPersistModel={handlePersistControlMeModel}
+          />
         </Suspense>
       ) : (
       <div className="main">

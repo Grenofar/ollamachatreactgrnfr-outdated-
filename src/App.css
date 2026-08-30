@@ -949,6 +949,19 @@ body {
   font-weight: 600;
 }
 
+.controlme-header-spacer {
+  flex: 1;
+}
+
+.controlme-model-select {
+  background: #242424;
+  color: #eaeaea;
+  border: 1px solid #3a3a3a;
+  border-radius: 8px;
+  padding: 5px 8px;
+  font-size: 12px;
+}
+
 .controlme-scroll {
   flex: 1;
   overflow-y: auto;

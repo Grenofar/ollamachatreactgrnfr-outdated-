@@ -2114,6 +2114,8 @@ dependencies = [
  "num-traits",
  "png 0.18.1",
  "tiff",
+ "zune-core",
+ "zune-jpeg",
 ]
 
 [[package]]
@@ -3103,10 +3105,11 @@ dependencies = [
 
 [[package]]
 name = "ollama-chat-react"
-version = "0.4.0"
+version = "0.4.1"
 dependencies = [
  "base64 0.23.1",
  "enigo",
+ "image",
  "reqwest 0.12.28",
  "serde",
  "serde_json",

@@ -26,6 +26,13 @@ const MAX_CONTROL_ME_ITERATIONS: u32 = 40;
 const GEMINI_MODEL: &str = "gemini-3.7-flash";
 const GEMINI_ENDPOINT: &str = "https://generativelanguage.googleapis.com/v1beta/interactions";
 const CANCELLED_MESSAGE: &str = "Annulé par l'utilisateur.";
+// Normalized 0-999 coordinates map to a fraction of the screenshot
+// regardless of its pixel resolution, so downscaling before encoding
+// doesn't hurt click accuracy but meaningfully cuts encoding time, upload
+// size, and Gemini's per-step vision latency — this was the main source of
+// the per-step slowness reported after the first version.
+const SCREENSHOT_MAX_WIDTH: u32 = 1280;
+const SCREENSHOT_JPEG_QUALITY: u8 = 80;
 
 // Same polling pattern as agent.rs's wait_for_cancel: the only await points
 // here (the Gemini HTTP call) are short-lived enough that ~60ms of added
@@ -46,6 +53,9 @@ struct StepPayload {
     label: String,
 }
 
+// Returns (base64 JPEG, real screen width, real screen height). The real
+// dimensions (not the downscaled ones) are what denormalize() uses, since a
+// 0-999 coordinate is the same fraction of the screen either way.
 fn capture_screenshot_base64() -> Result<(String, u32, u32), String> {
     let monitors = Monitor::all().map_err(|e| e.to_string())?;
     let monitor = monitors
@@ -55,11 +65,22 @@ fn capture_screenshot_base64() -> Result<(String, u32, u32), String> {
         .ok_or_else(|| "Aucun écran détecté".to_string())?;
     let image = monitor.capture_image().map_err(|e| e.to_string())?;
     let (width, height) = (image.width(), image.height());
-    let mut png_bytes: Vec<u8> = Vec::new();
-    image
-        .write_to(&mut std::io::Cursor::new(&mut png_bytes), xcap::image::ImageFormat::Png)
+
+    let resized = if width > SCREENSHOT_MAX_WIDTH {
+        let scaled_height = ((height as f64) * (SCREENSHOT_MAX_WIDTH as f64) / (width as f64)).round() as u32;
+        xcap::image::imageops::resize(&image, SCREENSHOT_MAX_WIDTH, scaled_height, xcap::image::imageops::FilterType::Triangle)
+    } else {
+        image
+    };
+    // JPEG has no alpha channel; screenshots are always opaque anyway.
+    let rgb = xcap::image::DynamicImage::ImageRgba8(resized).to_rgb8();
+
+    let mut jpeg_bytes: Vec<u8> = Vec::new();
+    xcap::image::codecs::jpeg::JpegEncoder::new_with_quality(&mut jpeg_bytes, SCREENSHOT_JPEG_QUALITY)
+        .encode(rgb.as_raw(), rgb.width(), rgb.height(), xcap::image::ExtendedColorType::Rgb8)
         .map_err(|e| e.to_string())?;
-    Ok((STANDARD.encode(&png_bytes), width, height))
+
+    Ok((STANDARD.encode(&jpeg_bytes), width, height))
 }
 
 fn denormalize(coord: f64, dimension: u32) -> i32 {
@@ -214,11 +235,13 @@ pub async fn run_control_me(
     cancel: State<'_, ControlMeCancelFlag>,
     app: AppHandle,
     api_key: String,
+    model: String,
     instruction: String,
 ) -> Result<(), String> {
     if api_key.trim().is_empty() {
         return Err("Aucune clé API Gemini configurée. Ajoute-la dans Réglages.".to_string());
     }
+    let model = if model.trim().is_empty() { GEMINI_MODEL.to_string() } else { model };
 
     cancel.0.store(false, Ordering::SeqCst);
     let flag = cancel.0.clone();
@@ -231,13 +254,19 @@ pub async fn run_control_me(
         "enable_prompt_injection_detection": true,
     }]);
 
+    // thinking_level "low" trades some reasoning depth for much faster
+    // per-step responses — appropriate for a tight screenshot/act loop
+    // rather than a one-shot hard problem.
+    let generation_config = json!({ "thinking_level": "low" });
+
     let mut body = json!({
-        "model": GEMINI_MODEL,
+        "model": model,
         "input": [
             { "type": "text", "text": instruction },
-            { "type": "image", "data": initial_screenshot, "mime_type": "image/png" },
+            { "type": "image", "data": initial_screenshot, "mime_type": "image/jpeg" },
         ],
         "tools": tools,
+        "generation_config": generation_config,
     });
 
     let mut iterations: u32 = 0;
@@ -342,16 +371,17 @@ pub async fn run_control_me(
 
         // Brief settle delay so the next screenshot reflects the action's
         // visual effect (a click's UI update, a page finishing a scroll…).
-        tokio::time::sleep(Duration::from_millis(300)).await;
+        tokio::time::sleep(Duration::from_millis(120)).await;
         let (screenshot, _, _) = capture_screenshot_base64()?;
 
         let mut result_parts = vec![json!({ "type": "text", "text": error_text.unwrap_or(label) })];
-        result_parts.push(json!({ "type": "image", "data": screenshot, "mime_type": "image/png" }));
+        result_parts.push(json!({ "type": "image", "data": screenshot, "mime_type": "image/jpeg" }));
 
         body = json!({
-            "model": GEMINI_MODEL,
+            "model": model,
             "previous_interaction_id": interaction_id,
             "tools": tools,
+            "generation_config": generation_config,
             "input": [{
                 "type": "function_result",
                 "call_id": call_id,

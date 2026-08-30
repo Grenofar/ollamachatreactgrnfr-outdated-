@@ -43,7 +43,9 @@ pas devenir obsolète.
 - [FAIT] v0.3.2 : correctif du freeze de ~5s au démarrage (timeout manquant sur la vérif de mise à jour + `get_system_ram_gb` synchrone/bloquant, voir "Freeze au démarrage" plus bas) + refonte de l'affichage Codex façon Claude Code dans VS Code (texte en direct, statut d'outil visible, sortie de commande live, approbation inline au lieu d'une modale plein écran qui masquait le chat, fichier édité auto-ouvert) — voir "Streaming visuel dans Codex" dans Architecture
 - [FAIT] v0.3.3 : correctif "l'IA ne sait pas/ne peut pas lancer de commande" dans Codex — system prompt renforcé (accès réel explicite, interdiction de répondre "je ne peux pas" au lieu d'appeler l'outil) + race condition réelle corrigée dans `runCommandAndCollect` (listeners d'événements shell pas attendus avant le lancement de la commande, pouvait bloquer indéfiniment) — voir "L'IA ne sait pas/ne peut pas lancer de commande" dans Architecture
 - [FAIT] v0.3.4 : fallback markdown pour l'exécution de commande (le modèle écrit parfois la commande dans un bloc ```powershell au lieu d'un vrai tool_call — maintenant détecté et exécuté comme un vrai outil, boucle continue automatiquement) + system prompt généralisé à tous les outils (pas juste les commandes) + Ctrl+S corrigé (WebView2 interceptait le raccourci nativement avant que la page ne le reçoive, rien n'était jamais sauvegardé) — voir "Toujours un souci l'IA ne peut pas + Ctrl+S cassé" dans Architecture
-- [FAIT, première version] **Control Me** : nouvel espace dans l'app (bouton Sidebar, comme Codex) où une IA (Gemini 3.7 Flash, via l'Interactions API de Google + son outil intégré `computer_use`) contrôle **de façon autonome** la souris et le clavier de l'utilisateur à partir de captures d'écran, avec un bouton Stop comme seul garde-fou (+ le `safety_decision` de Gemini lui-même, respecté). Rompt délibérément "rien ne sort de l'app" (captures d'écran envoyées à Google) — voir "Control Me" dans Architecture et la section Confidentialité réseau mise à jour. Clé API Gemini propre à l'utilisateur (Réglages), jamais fournie par l'app. Pas encore testé en conditions réelles (nécessite la clé de l'utilisateur) ; l'overlay séparé + raccourci global F5 du plan initial n'est pas encore construit, cette version vit dans la fenêtre principale comme Codex.
+- [FAIT, première version] **Control Me** : nouvel espace dans l'app (bouton Sidebar, comme Codex) où une IA (Gemini, modèle choisi par l'utilisateur — 3.5 Flash-Lite/3.5 Flash/3.6 Flash/3.7 Flash, voir v0.4.2 — via l'Interactions API de Google + son outil intégré `computer_use`) contrôle **de façon autonome** la souris et le clavier de l'utilisateur à partir de captures d'écran, avec un bouton Stop comme seul garde-fou (+ le `safety_decision` de Gemini lui-même, respecté). Rompt délibérément "rien ne sort de l'app" (captures d'écran envoyées à Google) — voir "Control Me" dans Architecture et la section Confidentialité réseau mise à jour. Clé API Gemini propre à l'utilisateur (Réglages), jamais fournie par l'app. Pas encore testé en conditions réelles (nécessite la clé de l'utilisateur) ; l'overlay séparé + raccourci global F5 du plan initial n'est pas encore construit, cette version vit dans la fenêtre principale comme Codex.
+- [FAIT] v0.4.1 : Control Me signalé "trop long" par l'utilisateur après premier test (captures d'écran + réflexion Gemini) — captures redimensionnées et compressées en JPEG (au lieu de PNG pleine résolution), `thinking_level: "low"`, délai de stabilisation réduit — voir "Optimisation vitesse (v0.4.1)" dans Architecture > Control Me.
+- [FAIT] v0.4.2 : sélecteur de modèle Gemini dans Control Me (3.5 Flash-Lite/3.5 Flash/3.6 Flash/3.7 Flash), persisté dans les réglages — voir "Sélecteur de modèle (v0.4.2)" dans Architecture > Control Me. Note : 3.6 Flash n'est pas documenté par Google comme compatible avec `computer_use`, laissé sélectionnable quand même (demandé explicitement) mais signalé dans le menu.
 
 ## Architecture
 
@@ -260,6 +262,49 @@ extension possible plus tard, pas encore construite.
   tourne, une capture d'écran complète part vers Google à chaque étape —
   voir cette section pour le détail, mise à jour en même temps que ce
   paragraphe.
+
+**Optimisation vitesse (v0.4.1)** : retour utilisateur "il est trop long,
+il prend du temps à exécuter des choses et à analyser l'écran" après le
+premier test. Trois leviers, dans `capture_screenshot_base64` et le corps
+de requête de `controlme.rs` :
+1. **Captures d'écran redimensionnées et en JPEG plutôt qu'en PNG pleine
+   résolution.** Les coordonnées de `computer_use` sont normalisées 0-999
+   — une fraction de l'image, peu importe sa résolution réelle — donc
+   réduire l'image avant envoi (`SCREENSHOT_MAX_WIDTH = 1280`,
+   `xcap::image::imageops::resize` avec un filtre `Triangle`) ne dégrade
+   pas la précision des clics tout en réduisant nettement le temps
+   d'encodage, la taille uploadée et le temps d'analyse côté Gemini.
+   `denormalize()` continue d'utiliser les dimensions **réelles** de
+   l'écran (capturées avant redimensionnement), pas celles de l'image
+   réduite envoyée. Le JPEG n'a pas de canal alpha — conversion RGB8
+   obligatoire avant encodage (`DynamicImage::ImageRgba8(...).to_rgb8()`).
+   Nécessite la crate `image` en dépendance directe avec
+   `default-features = false, features = ["jpeg"]` (sans ça, `xcap::image`
+   n'active pas le codec JPEG — et **sans** `default-features = false`,
+   `image` embarque par défaut son support AVIF, qui tire `ravif`/`rav1e`/
+   `rayon`, un gonflement de temps de compilation totalement inutile ici,
+   repéré et retiré immédiatement après un premier `cargo add`).
+2. **`generation_config.thinking_level: "low"`** sur chaque appel à
+   l'Interactions API — moins de raisonnement approfondi par étape, adapté
+   à une boucle capture/action rapide plutôt qu'à un problème complexe
+   résolu en un coup.
+3. Délai de stabilisation après une action réduit de 300ms à 120ms (laisse
+   quand même le temps à l'UI ciblée de refléter visuellement l'action
+   avant la capture suivante, mais sans traîner).
+
+**Sélecteur de modèle (v0.4.2)** : demandé explicitement — choix entre
+Gemini 3.5 Flash-Lite, 3.5 Flash, 3.6 Flash et 3.7 Flash, `<select>` dans
+l'en-tête de `ControlMeView.tsx`, persisté dans `Settings.gemini_model`
+(même pattern que `codex_mode`/`codex_last_folder` : prop
+`onPersistModel` → `handlePersistControlMeModel` dans `App.tsx` →
+`saveSettings`). `run_control_me` accepte maintenant un paramètre `model`
+côté Rust (retombe sur `gemini-3.7-flash` si vide). **Point important
+vérifié par recherche web avant d'ajouter l'option** : `gemini-3.6-flash`
+n'apparaît PAS dans la liste des modèles compatibles avec l'outil
+`computer_use` documentée par Google (contrairement aux trois autres) —
+laissé sélectionnable quand même puisque demandé explicitement, mais avec
+un libellé "(compatibilité non confirmée)" dans le menu pour que ça ne
+soit pas un mystère si une session échoue avec ce modèle.
 
 ### Les 6 outils de l'agent
 1. `read_file` — lecture texte (limite 5 Mo), chemin absolu
@@ -826,6 +871,31 @@ l'utilisateur confirme qu'elle est bien dans `.env` local.
   dans `app_releases`, et vérifié via la clé **anon** (fichier : 200 OK,
   6 705 128 octets ; `latest_release_manifest` : renvoie bien la v0.4.0
   avec signature et URL) avant d'annoncer la release terminée.
+- **2026-08-30** — v0.4.1 : retour utilisateur immédiat après premier test
+  de Control Me ("il est trop long, il prend du temps à exécuter des
+  choses et à analyser l'écran"). Voir "Optimisation vitesse (v0.4.1)"
+  dans Architecture > Control Me pour le détail complet : captures d'écran
+  redimensionnées + JPEG (au lieu de PNG pleine résolution), 
+  `thinking_level: "low"` sur les appels Gemini, délai de stabilisation
+  réduit (300ms → 120ms). Détour immédiat corrigé au passage : un premier
+  `cargo add image --features jpeg` sans `default-features = false` a
+  ramené tout le support AVIF (`ravif`/`rav1e`/`rayon`) inutilement —
+  repéré via `Cargo.lock` juste après coup, corrigé avant de builder.
+  Build signé, uploadé dans le bucket Storage `releases`, ligne insérée
+  dans `app_releases`, et vérifié via la clé **anon** (fichier : 200 OK,
+  6 705 173 octets ; `latest_release_manifest` : renvoie bien la v0.4.1
+  avec signature et URL) avant d'annoncer la release terminée. Publication
+  retardée par rapport au reste de la session (le build tournait en fond
+  pendant plusieurs échanges de conversation sur d'autres sujets) — bien
+  vérifier `EXIT=0` et l'horodatage des fichiers `.sig`/`.exe` avant de
+  publier quand un build a pu tourner longtemps sans supervision directe.
+- **2026-08-30** — v0.4.2 : sélecteur de modèle Gemini dans Control Me
+  (3.5 Flash-Lite/3.5 Flash/3.6 Flash/3.7 Flash), demandé explicitement.
+  Voir "Sélecteur de modèle (v0.4.2)" dans Architecture > Control Me pour
+  le détail complet, notamment la vérification que `gemini-3.6-flash`
+  n'est pas documenté par Google comme compatible avec `computer_use` —
+  laissé sélectionnable quand même (demandé explicitement), signalé dans
+  le menu pour que ça ne soit pas une surprise en cas d'échec.
 
 ## Prochaines étapes (dans l'ordre du fichier de passation d'origine)
 
