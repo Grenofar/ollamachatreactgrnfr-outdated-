@@ -15,14 +15,11 @@
     --text-dim: #9aa0a6;
     --accent: #6ea8fe;
     --accent-strong: #4c86e0;
+    --warn: #e0b666;
   }
   * { box-sizing: border-box; }
   body {
     margin: 0;
-    min-height: 100vh;
-    display: flex;
-    align-items: center;
-    justify-content: center;
     background: var(--bg);
     color: var(--text);
     font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
@@ -30,9 +27,10 @@
   }
   .wrap {
     max-width: 560px;
-    padding: 48px 24px;
-    text-align: center;
+    margin: 0 auto;
+    padding: 56px 24px 64px;
   }
+  .center { text-align: center; }
   .brand {
     font-weight: 600;
     font-size: 0.9rem;
@@ -44,11 +42,47 @@
     margin: 0 0 20px;
     letter-spacing: -0.01em;
   }
-  p {
-    color: var(--text-dim);
+  h2 {
     font-size: 1.05rem;
-    margin: 0 0 36px;
+    margin: 0 0 12px;
   }
+  p { color: var(--text-dim); margin: 0 0 12px; }
+  .intro { font-size: 1.05rem; margin-bottom: 8px; }
+
+  section {
+    padding-top: 32px;
+    margin-top: 32px;
+    border-top: 1px solid var(--border);
+  }
+
+  .flow-item { margin-bottom: 14px; }
+  .flow-item:last-child { margin-bottom: 0; }
+  .flow-item strong { color: var(--text); }
+  .flow-item p { margin: 2px 0 0; font-size: 0.92rem; }
+
+  .model-list { margin: 0; padding: 0; list-style: none; }
+  .model-list li {
+    display: flex;
+    justify-content: space-between;
+    gap: 12px;
+    padding: 8px 0;
+    border-bottom: 1px solid var(--border);
+    font-size: 0.92rem;
+  }
+  .model-list li:last-child { border-bottom: none; }
+  .model-list .use { color: var(--text); }
+  .model-list .names { color: var(--text-dim); text-align: right; font-family: Consolas, Menlo, monospace; font-size: 0.85rem; }
+
+  .note {
+    background: var(--bg-raised);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    padding: 14px 16px;
+    font-size: 0.88rem;
+    color: var(--text-dim);
+  }
+  .note strong { color: var(--warn); }
+
   .btn {
     display: inline-flex;
     align-items: center;
@@ -80,6 +114,7 @@
       --text-dim: #5f6570;
       --accent: #2f6fed;
       --accent-strong: #2857c4;
+      --warn: #9a6b17;
     }
   }
   :root[data-theme="dark"] {
@@ -90,21 +125,58 @@
     --text-dim: #9aa0a6;
     --accent: #6ea8fe;
     --accent-strong: #4c86e0;
+    --warn: #e0b666;
   }
 </style>
 </head>
 <body>
 
   <div class="wrap">
-    <div class="brand">Ollama Chat React</div>
-    <h1>Bonjour. Avec cette app, discutez avec des LLM en local.</h1>
-    <p>
-      Une application de bureau qui vous connecte à Ollama pour discuter avec
-      des modèles de langage sur votre PC, et qui inclut Codex, un éditeur où
-      un modèle agit en agent sur vos fichiers. Tout tourne en local, rien
-      n'est envoyé sur le web.
-    </p>
-    <a class="btn js-cta">Vérification…</a>
+    <div class="center">
+      <div class="brand">Ollama Chat React</div>
+      <h1>Bonjour. Avec cette app, discutez avec des LLM en local.</h1>
+      <p class="intro">
+        Une application de bureau qui vous connecte à Ollama pour discuter avec
+        des modèles de langage sur votre PC, et qui inclut Codex, un éditeur où
+        un modèle agit en agent sur vos fichiers. Tout tourne en local, rien
+        n'est envoyé sur le web.
+      </p>
+    </div>
+
+    <section>
+      <h2>Comment ça marche</h2>
+      <div class="flow-item">
+        <strong>Chat</strong>
+        <p>Choisissez un modèle installé dans Ollama, discutez normalement — l'app garde vos conversations en local.</p>
+      </div>
+      <div class="flow-item">
+        <strong>Codex</strong>
+        <p>Ouvrez un dossier, décrivez ce que vous voulez : le modèle lit, écrit et modifie des fichiers, exécute des commandes, et vous demande votre avis avant chaque action si vous êtes en mode Approbation.</p>
+      </div>
+    </section>
+
+    <section>
+      <h2>Quel modèle choisir</h2>
+      <ul class="model-list">
+        <li><span class="use">PC modeste</span><span class="names">llama3.2:3b, qwen2.5:3b</span></li>
+        <li><span class="use">Usage courant</span><span class="names">llama3.1:8b, qwen2.5:7b</span></li>
+        <li><span class="use">Codex (agent, nécessite le function calling)</span><span class="names">qwen2.5, llama3.1, mistral-nemo</span></li>
+      </ul>
+    </section>
+
+    <section>
+      <div class="note">
+        <strong>Note Windows :</strong> l'installeur n'est pas encore signé
+        numériquement, donc Windows peut afficher un avertissement
+        SmartScreen ("Éditeur inconnu") au premier lancement. Cliquez sur
+        "Informations complémentaires" puis "Exécuter quand même" pour
+        continuer.
+      </div>
+    </section>
+
+    <section class="center">
+      <a class="btn js-cta">Vérification…</a>
+    </section>
   </div>
 
   <script>
