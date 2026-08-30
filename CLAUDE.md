@@ -43,6 +43,7 @@ pas devenir obsolète.
 - [FAIT] v0.3.2 : correctif du freeze de ~5s au démarrage (timeout manquant sur la vérif de mise à jour + `get_system_ram_gb` synchrone/bloquant, voir "Freeze au démarrage" plus bas) + refonte de l'affichage Codex façon Claude Code dans VS Code (texte en direct, statut d'outil visible, sortie de commande live, approbation inline au lieu d'une modale plein écran qui masquait le chat, fichier édité auto-ouvert) — voir "Streaming visuel dans Codex" dans Architecture
 - [FAIT] v0.3.3 : correctif "l'IA ne sait pas/ne peut pas lancer de commande" dans Codex — system prompt renforcé (accès réel explicite, interdiction de répondre "je ne peux pas" au lieu d'appeler l'outil) + race condition réelle corrigée dans `runCommandAndCollect` (listeners d'événements shell pas attendus avant le lancement de la commande, pouvait bloquer indéfiniment) — voir "L'IA ne sait pas/ne peut pas lancer de commande" dans Architecture
 - [FAIT] v0.3.4 : fallback markdown pour l'exécution de commande (le modèle écrit parfois la commande dans un bloc ```powershell au lieu d'un vrai tool_call — maintenant détecté et exécuté comme un vrai outil, boucle continue automatiquement) + system prompt généralisé à tous les outils (pas juste les commandes) + Ctrl+S corrigé (WebView2 interceptait le raccourci nativement avant que la page ne le reçoive, rien n'était jamais sauvegardé) — voir "Toujours un souci l'IA ne peut pas + Ctrl+S cassé" dans Architecture
+- [FAIT, première version] **Control Me** : nouvel espace dans l'app (bouton Sidebar, comme Codex) où une IA (Gemini 3.7 Flash, via l'Interactions API de Google + son outil intégré `computer_use`) contrôle **de façon autonome** la souris et le clavier de l'utilisateur à partir de captures d'écran, avec un bouton Stop comme seul garde-fou (+ le `safety_decision` de Gemini lui-même, respecté). Rompt délibérément "rien ne sort de l'app" (captures d'écran envoyées à Google) — voir "Control Me" dans Architecture et la section Confidentialité réseau mise à jour. Clé API Gemini propre à l'utilisateur (Réglages), jamais fournie par l'app. Pas encore testé en conditions réelles (nécessite la clé de l'utilisateur) ; l'overlay séparé + raccourci global F5 du plan initial n'est pas encore construit, cette version vit dans la fenêtre principale comme Codex.
 
 ## Architecture
 
@@ -188,6 +189,77 @@ Trois correctifs supplémentaires après retour utilisateur :
    rapport avec Ctrl+C/V/X/Z/A (copier/coller/annuler/tout sélectionner),
    qui restent gérés par le contrôle d'édition sous-jacent, pas par ce
    réglage WebView2.
+
+### Control Me (contrôle autonome clavier/souris via Gemini)
+
+Première version fonctionnelle (2026-08-30). Contrairement au plan initial
+(overlay séparé, toujours au-dessus, invoqué par un raccourci global F5,
+voir `C:\Users\userAsus\.claude\plans\memoized-jingling-platypus.md`), la
+demande explicite qui a déclenché l'implémentation était plus simple :
+**"qu'on peut la lancer dans l'app, un espace Control Me"** — donc cette
+première version est une **troisième vue dans la fenêtre principale**
+(`view: "chat" | "codex" | "controlme"` dans `App.tsx`), exactement le même
+pattern que Codex (bouton Sidebar → `setView("controlme")` → composant
+plein écran avec un bouton retour), pas une fenêtre séparée. Le
+raccourci global F5 + fenêtre overlay indépendante du plan reste une
+extension possible plus tard, pas encore construite.
+
+- **API utilisée : Interactions API de Google (`/v1beta/interactions`),
+  pas l'ancien `generateContent`.** Recherché en direct au moment de coder
+  (le modèle et cette API sont sortis le 2026-08-13, après la coupure de
+  connaissance de Claude) — la doc "What's new" de Gemini 3.7 Flash ne
+  montre QUE cette nouvelle API, donc traitée comme le chemin recommandé
+  plutôt que de deviner l'ancien format. Avantage direct pour ce cas
+  d'usage : état de conversation géré **côté serveur** via
+  `previous_interaction_id` — pas besoin de renvoyer tout l'historique ni
+  toutes les captures d'écran précédentes à chaque étape.
+- **Outil `computer_use` intégré par Google** (`environment: "desktop"`),
+  pas des function_declarations faites main : action set complet (click,
+  double_click, triple_click, middle_click, right_click, mouse_down,
+  mouse_up, move, type, drag_and_drop, wait, press_key, key_down, key_up,
+  hotkey, take_screenshot, scroll), coordonnées **normalisées 0-999**
+  (dénormalisées dans `controlme.rs` avec la taille réelle de l'écran
+  capturé par `xcap`), et **`enable_prompt_injection_detection: true`**
+  activé — protection native contre un texte adversarial caché dans une
+  page/capture d'écran qui tenterait de détourner l'agent. Toute cette
+  forme d'API (schéma exact des requêtes/réponses, noms de champs) a été
+  vérifiée par recherche web avant d'écrire le code Rust, pas supposée de
+  mémoire.
+- **`safety_decision: require_confirmation` respecté même en mode
+  autonome** : Gemini peut lui-même flaguer une action comme sensible
+  (catégories Google : transactions financières, création de compte,
+  modification de données, consentement utilisateur, conditions légales...).
+  Ce n'est PAS une porte d'approbation générale par action (l'utilisateur a
+  explicitement demandé l'autonomie totale, seulement un bouton Stop) —
+  c'est le jugement du modèle lui-même sur un sous-ensemble étroit
+  d'actions à risque, respecté comme garde-fou supplémentaire gratuit.
+  Implémentation actuelle (simple, à raffiner) : quand ce flag apparaît, la
+  boucle s'arrête proprement et prévient l'utilisateur (`control-me-confirmation-required`)
+  plutôt que de bloquer en plein milieu de la commande Rust en attendant une
+  réponse — un vrai flux de confirmation inline (façon l'approbation
+  inline de Codex) serait une amélioration future si demandée.
+- `src-tauri/src/commands/controlme.rs` : `run_control_me` (commande async,
+  boucle complète interne comme `agent_chat`/`run_powershell_command` —
+  capture d'écran via `xcap`, appel Gemini, exécution de l'action via
+  `enigo`, ré-capture, boucle) ; `cancel_control_me` (même pattern
+  `Arc<AtomicBool>` + `tokio::select!`/`wait_for_cancel` que
+  `AgentCancelFlag` dans `agent.rs`). Plafond `MAX_CONTROL_ME_ITERATIONS = 40`
+  (même idée que `MAX_AGENT_ITERATIONS` de Codex, mais sans confirmation
+  utilisateur pour continuer — s'arrête simplement, cohérent avec
+  "autonome + bouton Stop" plutôt que "autonome + confirmations").
+- `src/components/controlme/ControlMeView.tsx` : interface façon chat
+  (réutilise `MessageBubble`/`SendButton`), affiche chaque étape en direct
+  (intention + action, via l'événement `control-me-step`), bloque l'envoi
+  et affiche un message clair si `settings.gemini_api_key` est vide plutôt
+  que de tenter silencieusement un appel API sans clé.
+- **Clé API Gemini propre à l'utilisateur, jamais fournie par l'app**
+  (`Settings.gemini_api_key`, champ dans Réglages) — cohérent avec la
+  demande explicite de l'utilisateur.
+- **Rompt la garantie "rien ne sort de l'app" documentée dans
+  Confidentialité réseau ci-dessous** : dès qu'une instruction Control Me
+  tourne, une capture d'écran complète part vers Google à chaque étape —
+  voir cette section pour le détail, mise à jour en même temps que ce
+  paragraphe.
 
 ### Les 6 outils de l'agent
 1. `read_file` — lecture texte (limite 5 Mo), chemin absolu
@@ -347,13 +419,25 @@ réseau sortants dans `src-tauri/src/commands/` à cette date :
 3. **`check_for_update`** (update.rs), et le site (`site/index.html`) → API
    REST Supabase en lecture seule, aucune donnée envoyée à part la requête
    elle-même (clé anon en en-tête).
+4. **[2026-08-30, exception explicite] `run_control_me`** (controlme.rs) →
+   API Gemini de Google, **uniquement quand l'utilisateur lance une
+   instruction Control Me**. Contrairement aux trois cas ci-dessus, ceci
+   envoie une **capture d'écran complète** à chaque étape (pas juste du
+   texte) — tout ce qui est visible à l'écran pendant la session, pas
+   seulement l'appli visée par l'instruction. Voir la section "Control Me"
+   dans Architecture pour le détail complet (clé API propre à l'utilisateur,
+   jamais fournie par l'app ; `enable_prompt_injection_detection` activé).
+   C'est une rupture délibérée et documentée de la garantie ci-dessous, pas
+   un oubli — demandée explicitement par l'utilisateur en connaissance de
+   cause.
 
-Aucune autre destination réseau n'existe dans le code (pas de télémétrie, pas
-d'analytics, pas d'appel automatique à un service tiers). Si tu ajoutes un
-nouvel appel réseau, vérifie qu'il tombe dans un de ces trois cas — sinon,
-demande confirmation avant d'envoyer quoi que ce soit qui ressemble à des
-données utilisateur (conversations, contenu de fichiers, réglages) vers autre
-chose que `ollama_host`.
+En dehors de ces quatre cas, aucune autre destination réseau n'existe dans
+le code (pas de télémétrie, pas d'analytics, pas d'appel automatique à un
+service tiers non listé ici). Si tu ajoutes un nouvel appel réseau, vérifie
+qu'il tombe dans un de ces cas — sinon, demande confirmation avant d'envoyer
+quoi que ce soit qui ressemble à des données utilisateur (conversations,
+contenu de fichiers, réglages, captures d'écran) vers autre chose que
+`ollama_host`.
 
 ## Auto-update en continu
 
@@ -708,6 +792,40 @@ l'utilisateur confirme qu'elle est bien dans `.env` local.
   `app_releases`, et vérifié via la clé **anon** (fichier : 200 OK,
   6 636 755 octets ; `latest_release_manifest` : renvoie bien la v0.3.4
   avec signature et URL) avant d'annoncer la release terminée.
+- **2026-08-30** — Control Me, première version. Demande initiale ("on vas
+  ajouter control me... clé api gemini... controller purement et simplement
+  mon clavier et ma souris... overlay... F5... pas de croix... arrêter
+  Control Me depuis la barre des tâches") suffisamment large et sensible
+  (nouvelle capacité OS-level, rupture de la confidentialité réseau) pour
+  passer par plan mode avant de coder — plan validé, sauvegardé dans
+  `C:\Users\userAsus\.claude\plans\memoized-jingling-platypus.md`. Avant
+  de commencer, question annexe posée et mise en pause explicitement par
+  l'utilisateur ("pas tout de suite") : mémoire locale de ce que l'IA
+  apprend sur l'utilisateur au fil des sessions — notée pour plus tard, pas
+  construite. Demande explicite suivante, plus simple que le plan d'origine :
+  rendre Control Me lançable **dans l'app** (bouton Sidebar, comme Codex)
+  plutôt que seulement via l'overlay séparé + F5 global prévu initialement
+  — implémenté comme une troisième vue (`view: "controlme"`), l'overlay
+  séparé restant une extension possible non construite. Recherche web
+  nécessaire avant d'écrire le moindre code Rust : le modèle
+  (`gemini-3.7-flash`) et l'API utilisée (Interactions API,
+  `/v1beta/interactions`, avec l'outil intégré `computer_use`) sont sortis
+  le 2026-08-13, après la coupure de connaissance de Claude — vérifié en
+  plusieurs passes (existence du modèle, schéma exact de l'API, action set
+  du mode desktop, protocole `safety_decision`) plutôt que deviné de
+  mémoire sur l'ancien `generateContent`. Toutes les crates Rust ajoutées
+  (`enigo`, `xcap`, `base64`) via `cargo add` pour résoudre les vraies
+  versions actuelles ; API d'`enigo` (`Key`, `Button`, `Coordinate`,
+  `Mouse`/`Keyboard` traits) et d'`xcap`/`image` (capture, encodage PNG)
+  vérifiées dans le code source des crates avant d'écrire `controlme.rs`,
+  qui a compilé sans erreur au premier essai. Voir "Control Me" dans
+  Architecture pour le détail technique complet. Pas encore testé en
+  conditions réelles (nécessite la clé API Gemini de l'utilisateur). Version
+  bumpée à **0.4.0** (nouvelle capacité majeure, pas juste un correctif).
+  Build signé, uploadé dans le bucket Storage `releases`, ligne insérée
+  dans `app_releases`, et vérifié via la clé **anon** (fichier : 200 OK,
+  6 705 128 octets ; `latest_release_manifest` : renvoie bien la v0.4.0
+  avec signature et URL) avant d'annoncer la release terminée.
 
 ## Prochaines étapes (dans l'ordre du fichier de passation d'origine)
 
@@ -735,32 +853,20 @@ précédente sans accès `git push`) pour le détail d'origine.
    au premier lancement (voir Limites connues). Nécessite l'achat d'un
    certificat — décision à prendre par l'utilisateur, pas de blocage
    fonctionnel en attendant.
-7. **[À FAIRE] Control Me** : nouvelle fonctionnalité demandée le
-   2026-08-30, plan détaillé validé par l'utilisateur (via plan mode) mais
-   **implémentation pas encore commencée** — l'utilisateur a explicitement
-   dit d'attendre son feu vert avant de coder. Vue d'ensemble : overlay
-   chatbot toujours au-dessus, invoqué par un raccourci global F5 (fonctionne
-   même quand une autre appli a le focus), pas de croix pour fermer (F5
-   uniquement, ou "Arrêter Control Me" depuis le menu de l'icône dans la
-   zone de notification). Un modèle **Gemini 3.7 Flash** (`gemini-3.7-flash`
-   — sorti le 2026-08-13, confirmé par recherche web, n'existait pas encore
-   à la date de coupure de connaissance de Claude) contrôle **de façon
-   totalement autonome** (aucune approbation par action, contrairement à
-   Codex) la souris et le clavier de l'utilisateur via `enigo`, en se basant
-   sur des captures d'écran (`xcap`) envoyées à l'API Gemini à chaque étape
-   — seul garde-fou : un bouton Stop dans l'overlay et un plafond
-   d'itérations (même logique que `MAX_AGENT_ITERATIONS` de Codex). **Clé
-   API Gemini propre à l'utilisateur, jamais fournie/partagée par l'app**
-   (champ dans Réglages, comme `ollama_host`) — si elle manque au moment
-   d'ouvrir l'overlay (F5), l'overlay doit le dire clairement et rediriger
-   vers Réglages plutôt que d'essayer silencieusement d'appeler l'API sans
-   clé. Rompt
-   délibérément la garantie "rien ne sort de l'app" (voir Confidentialité
-   réseau) : les captures d'écran partent vers Google dès que Control Me est
-   actif — à documenter en toutes lettres dans cette même section une fois
-   construit. Plan complet (architecture précise, fichiers concernés,
-   dépendances Rust à ajouter, risques explicites) sauvegardé dans
-   `C:\Users\userAsus\.claude\plans\memoized-jingling-platypus.md`.
+7. **[FAIT, première version] Control Me** : demandé le 2026-08-30. Plan
+   initial (validé via plan mode) décrivait un overlay séparé toujours
+   au-dessus invoqué par un raccourci global F5 — voir
+   `C:\Users\userAsus\.claude\plans\memoized-jingling-platypus.md` pour ce
+   plan d'origine. Ce qui a réellement été construit, sur une demande
+   explicite ultérieure plus simple ("qu'on peut la lancer dans l'app, un
+   espace Control Me") : une troisième vue dans la fenêtre principale,
+   même pattern que Codex — voir la section "Control Me" dans Architecture
+   pour le détail technique complet (Interactions API de Google, outil
+   `computer_use` intégré, `enigo`/`xcap`, clé API utilisateur, rupture
+   documentée de la confidentialité réseau). L'overlay séparé + F5 global
+   du plan d'origine reste une extension possible, pas construite. Pas
+   encore testé en conditions réelles par l'utilisateur (nécessite sa
+   propre clé API Gemini).
    **Idée notée pour plus tard, explicitement mise en pause par
    l'utilisateur ("pas tout de suite")** : un système de mémoire locale
    (JSON, même convention que `settings.json`/les conversations) où l'IA de

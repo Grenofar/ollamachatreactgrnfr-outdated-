@@ -98,6 +98,17 @@ export default function SettingsModal({
           onChange={(e) => setForm({ ...form, system_prompt: e.target.value })}
         />
 
+        <label>Clé API Gemini (pour Control Me)</label>
+        <input
+          type="password"
+          value={form.gemini_api_key ?? ""}
+          onChange={(e) => setForm({ ...form, gemini_api_key: e.target.value })}
+          placeholder="Clé obtenue sur Google AI Studio"
+        />
+        <div className="modal-hint">
+          Ta propre clé, jamais fournie par l'app — nécessaire pour utiliser Control Me.
+        </div>
+
         <label>Modèles installés</label>
         {models.length === 0 ? (
           <div className="modal-hint">Aucun modèle installé.</div>

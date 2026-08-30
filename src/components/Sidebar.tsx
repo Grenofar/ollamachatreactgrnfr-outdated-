@@ -12,6 +12,7 @@ export default function Sidebar({
   onOpenSettings,
   onOpenInstall,
   onOpenCodex,
+  onOpenControlMe,
 }: {
   conversations: ConversationMeta[];
   currentId: string | null;
@@ -22,6 +23,7 @@ export default function Sidebar({
   onOpenSettings: () => void;
   onOpenInstall: () => void;
   onOpenCodex: () => void;
+  onOpenControlMe: () => void;
 }) {
   const [search, setSearch] = useState("");
   const [searchResults, setSearchResults] = useState<ConversationMeta[] | null>(null);
@@ -128,6 +130,9 @@ export default function Sidebar({
 
       <button className="sidebar-install-btn" onClick={onOpenCodex}>
         Codex
+      </button>
+      <button className="sidebar-install-btn" onClick={onOpenControlMe}>
+        Control Me
       </button>
       <button className="sidebar-install-btn" onClick={onOpenInstall}>
         Installer un modèle

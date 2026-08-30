@@ -5,6 +5,7 @@ import type {
   AgentChatResponse,
   AgentMessage,
   ChatMessage,
+  ControlMeStep,
   Conversation,
   ConversationMeta,
   DirEntry,
@@ -137,3 +138,31 @@ export const onFreezeWarning = (cb: (stalledSecs: number) => void) =>
   listen<{ stalled_secs: number }>("freeze-warning", (e) => cb(e.payload.stalled_secs));
 
 export const onFreezeResolved = (cb: () => void) => listen("freeze-resolved", () => cb());
+
+// ------------------------------------------------------------ Control Me
+
+export const runControlMe = (apiKey: string, instruction: string) =>
+  invoke<void>("run_control_me", { apiKey, instruction });
+
+export const cancelControlMe = () => invoke<void>("cancel_control_me");
+
+export const onControlMeStep = (cb: (step: ControlMeStep) => void) =>
+  listen<{ intent: string | null; action: string; label: string }>("control-me-step", (e) =>
+    cb({ thought: e.payload.intent, action: e.payload.action, args: { label: e.payload.label } }),
+  );
+
+export const onControlMeMessage = (cb: (text: string) => void) =>
+  listen<{ text: string }>("control-me-message", (e) => cb(e.payload.text));
+
+export const onControlMeDone = (cb: (summary: string) => void) =>
+  listen<{ summary: string }>("control-me-done", (e) => cb(e.payload.summary));
+
+export const onControlMeError = (cb: (message: string) => void) =>
+  listen<{ message: string }>("control-me-error", (e) => cb(e.payload.message));
+
+export const onControlMeCancelled = (cb: () => void) => listen("control-me-cancelled", () => cb());
+
+export const onControlMeLimit = (cb: () => void) => listen("control-me-limit", () => cb());
+
+export const onControlMeConfirmationRequired = (cb: (payload: { action: string; explanation: string }) => void) =>
+  listen<{ action: string; explanation: string }>("control-me-confirmation-required", (e) => cb(e.payload));

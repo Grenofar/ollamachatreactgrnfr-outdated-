@@ -30,6 +30,7 @@ export interface Settings {
   default_model?: string | null;
   codex_mode: "auto" | "approve";
   codex_last_folder?: string | null;
+  gemini_api_key?: string | null;
 }
 
 export interface DirEntry {
@@ -83,5 +84,11 @@ export interface HfModel {
   downloads: number;
   likes: number;
   tags: string[];
+}
+
+export interface ControlMeStep {
+  thought?: string | null;
+  action: string;
+  args: Record<string, unknown>;
 }
 

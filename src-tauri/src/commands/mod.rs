@@ -1,5 +1,6 @@
 pub mod agent;
 pub mod chat;
+pub mod controlme;
 pub mod conversations;
 pub mod fsops;
 pub mod hardware;

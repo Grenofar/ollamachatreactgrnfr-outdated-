@@ -2,6 +2,7 @@ mod commands;
 
 use commands::agent::{agent_chat, cancel_agent_chat, AgentCancelFlag};
 use commands::chat::{cancel_chat, delete_model, install_model, list_models, send_chat, CancelFlag};
+use commands::controlme::{cancel_control_me, run_control_me, ControlMeCancelFlag};
 use commands::conversations::{
     delete_conversation, list_conversations, load_conversation, save_conversation, search_conversations,
 };
@@ -45,6 +46,7 @@ pub fn run() {
         .manage(CancelFlag(Arc::new(AtomicBool::new(false))))
         .manage(ShellCancelFlag(Arc::new(AtomicBool::new(false))))
         .manage(AgentCancelFlag(Arc::new(AtomicBool::new(false))))
+        .manage(ControlMeCancelFlag(Arc::new(AtomicBool::new(false))))
         .manage(Watchdog::new())
         .setup(|app| {
             let watchdog = app.state::<Watchdog>().0.clone();
@@ -143,6 +145,8 @@ pub fn run() {
             search_hf_models,
             get_system_ram_gb,
             close_app,
+            run_control_me,
+            cancel_control_me,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

@@ -10,6 +10,7 @@ import SendButton from "./components/SendButton";
 import ModelSelect from "./components/ModelSelect";
 
 const CodexView = lazy(() => import("./components/codex/CodexView"));
+const ControlMeView = lazy(() => import("./components/controlme/ControlMeView"));
 import {
   listModels,
   listConversations,
@@ -50,7 +51,7 @@ export default function App() {
   const [connError, setConnError] = useState<string | null>(null);
   const [showSettings, setShowSettings] = useState(false);
   const [showInstall, setShowInstall] = useState(false);
-  const [view, setView] = useState<"chat" | "codex">("chat");
+  const [view, setView] = useState<"chat" | "codex" | "controlme">("chat");
   const [editingIndex, setEditingIndex] = useState<number | null>(null);
   const [editText, setEditText] = useState("");
   const [ramGb, setRamGb] = useState<number | null>(null);
@@ -444,6 +445,7 @@ export default function App() {
         onOpenSettings={() => setShowSettings(true)}
         onOpenInstall={() => setShowInstall(true)}
         onOpenCodex={() => setView("codex")}
+        onOpenControlMe={() => setView("controlme")}
       />
 
       {view === "codex" && settings ? (
@@ -454,6 +456,10 @@ export default function App() {
             onPersistCodexPrefs={handlePersistCodexPrefs}
             onBack={() => setView("chat")}
           />
+        </Suspense>
+      ) : view === "controlme" && settings ? (
+        <Suspense fallback={<div className="codex-editor-empty">Chargement…</div>}>
+          <ControlMeView settings={settings} onBack={() => setView("chat")} />
         </Suspense>
       ) : (
       <div className="main">
