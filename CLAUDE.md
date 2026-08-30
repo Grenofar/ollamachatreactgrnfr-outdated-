@@ -137,6 +137,17 @@ le seul filet de sécurité de l'application — voir Limites connues ci-dessous
   version web") pour éviter toute confusion avec une démo web hébergée. Le
   bouton reste piloté par le même fetch Supabase (une seule fonction, deux
   boutons via la classe `.js-cta`).
+- **2026-08-30** — Simplification radicale de `site/` sur retour explicite de
+  l'utilisateur : un paragraphe de présentation + un seul bouton de
+  téléchargement, plus rien d'autre (pas de nav, pas de cartes
+  fonctionnalités, pas de guide d'installation) — "0 IA dans le site web",
+  page purement présentationnelle. Bug corrigé dans la foulée : le site
+  déployé montrait l'app de chat elle-même au lieu de la page statique,
+  parce que la racine du repo est un projet Vite/React (l'app de bureau) que
+  Vercel build par défaut si le Root Directory du projet Vercel n'est pas
+  positionné sur `site`. Ajout de `vercel.json` **à la racine** du repo
+  (`outputDirectory: "site"`, framework/build/install désactivés) comme
+  filet de sécurité indépendant de ce réglage du dashboard.
 
 ## Prochaines étapes (dans l'ordre du fichier de passation d'origine)
 
