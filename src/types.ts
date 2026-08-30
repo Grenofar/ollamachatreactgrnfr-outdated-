@@ -70,6 +70,13 @@ export interface OpenFile {
   dirty: boolean;
 }
 
+export interface OllamaModel {
+  name: string;
+  size: number;
+  parameter_size?: string | null;
+  quantization_level?: string | null;
+}
+
 export interface HfModel {
   id: string;
   downloads: number;

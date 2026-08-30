@@ -31,8 +31,16 @@ pub struct InstallProgressPayload {
 
 pub struct CancelFlag(pub Arc<AtomicBool>);
 
+#[derive(Serialize, Clone)]
+pub struct OllamaModel {
+    pub name: String,
+    pub size: u64,
+    pub parameter_size: Option<String>,
+    pub quantization_level: Option<String>,
+}
+
 #[tauri::command]
-pub fn list_models(host: String) -> Result<Vec<String>, String> {
+pub fn list_models(host: String) -> Result<Vec<OllamaModel>, String> {
     let url = format!("{}/api/tags", host.trim_end_matches('/'));
     let resp = reqwest::blocking::get(&url)
         .map_err(|e| format!("Impossible de contacter Ollama sur {} : {}", host, e))?;
@@ -40,7 +48,15 @@ pub fn list_models(host: String) -> Result<Vec<String>, String> {
     let models = data["models"].as_array().cloned().unwrap_or_default();
     Ok(models
         .iter()
-        .filter_map(|m| m["name"].as_str().map(|s| s.to_string()))
+        .filter_map(|m| {
+            let name = m["name"].as_str()?.to_string();
+            Some(OllamaModel {
+                name,
+                size: m["size"].as_u64().unwrap_or(0),
+                parameter_size: m["details"]["parameter_size"].as_str().map(|s| s.to_string()),
+                quantization_level: m["details"]["quantization_level"].as_str().map(|s| s.to_string()),
+            })
+        })
         .collect())
 }
 

@@ -2,6 +2,7 @@ pub mod agent;
 pub mod chat;
 pub mod conversations;
 pub mod fsops;
+pub mod hardware;
 pub mod huggingface;
 pub mod settings;
 pub mod shell;

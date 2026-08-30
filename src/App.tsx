@@ -3,8 +3,9 @@ import "./App.css";
 import Sidebar from "./components/Sidebar";
 import MessageBubble from "./components/MessageBubble";
 import SettingsModal from "./components/SettingsModal";
-import InstallPanel from "./components/InstallPanel";
+import HuggingFaceBrowser from "./components/codex/HuggingFaceBrowser";
 import SendButton from "./components/SendButton";
+import ModelSelect from "./components/ModelSelect";
 
 const CodexView = lazy(() => import("./components/codex/CodexView"));
 import {
@@ -23,13 +24,13 @@ import {
   onChatError,
 } from "./api";
 import { estimateTokens, trimMessagesToBudget } from "./memory";
-import type { ChatMessage, Conversation, ConversationMeta, Settings, StoredMessage } from "./types";
+import type { ChatMessage, Conversation, ConversationMeta, OllamaModel, Settings, StoredMessage } from "./types";
 
 const NEW_CONV_TITLE = "Nouvelle discussion";
 
 export default function App() {
   const [settings, setSettings] = useState<Settings | null>(null);
-  const [models, setModels] = useState<string[]>([]);
+  const [models, setModels] = useState<OllamaModel[]>([]);
   const [selectedModel, setSelectedModel] = useState<string>("");
   const [conversations, setConversations] = useState<ConversationMeta[]>([]);
   const [currentConv, setCurrentConv] = useState<Conversation | null>(null);
@@ -43,12 +44,12 @@ export default function App() {
   const scrollRef = useRef<HTMLDivElement>(null);
   const stickToBottomRef = useRef(true);
 
-  async function refreshModels(host: string): Promise<string[]> {
+  async function refreshModels(host: string): Promise<OllamaModel[]> {
     try {
       const list = await listModels(host);
       setModels(list);
       setConnError(null);
-      setSelectedModel((prev) => (list.includes(prev) ? prev : list[0] ?? ""));
+      setSelectedModel((prev) => (list.some((m) => m.name === prev) ? prev : list[0]?.name ?? ""));
       return list;
     } catch {
       setConnError(
@@ -148,7 +149,7 @@ export default function App() {
   async function handleSelectConversation(id: string) {
     const conv = await loadConversation(id);
     setCurrentConv(conv);
-    if (models.includes(conv.model)) setSelectedModel(conv.model);
+    if (models.some((m) => m.name === conv.model)) setSelectedModel(conv.model);
   }
 
   async function handleDeleteConversation(id: string) {
@@ -246,7 +247,6 @@ export default function App() {
         <div className="chat-scroll" ref={scrollRef} onScroll={handleChatScroll}>
           {messages.length === 0 && !sending ? (
             <div className="empty-state">
-              <div className="empty-logo">🦙</div>
               <p>Choisis un modèle en bas et lance la discussion.</p>
             </div>
           ) : (
@@ -269,14 +269,7 @@ export default function App() {
               rows={1}
             />
             <div className="input-controls">
-              <select value={selectedModel} onChange={(e) => setSelectedModel(e.target.value)}>
-                {models.length === 0 && <option value="">Aucun modèle</option>}
-                {models.map((m) => (
-                  <option key={m} value={m}>
-                    {m}
-                  </option>
-                ))}
-              </select>
+              <ModelSelect models={models} value={selectedModel} onChange={setSelectedModel} />
               <SendButton
                 busy={sending}
                 disabled={!input.trim() || !selectedModel}
@@ -299,7 +292,7 @@ export default function App() {
       )}
 
       {showInstall && settings && (
-        <InstallPanel
+        <HuggingFaceBrowser
           host={settings.ollama_host}
           onClose={() => setShowInstall(false)}
           onInstalled={() => refreshModels(settings.ollama_host)}

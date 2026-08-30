@@ -2,13 +2,14 @@ import { useEffect, useRef, useState, type KeyboardEvent } from "react";
 import { pickFolder, readFileText, writeFileText } from "../../api";
 import { CODEX_SYSTEM_PROMPT } from "../../agentTools";
 import { useAgentLoop } from "../../hooks/useAgentLoop";
-import type { OpenFile, Settings } from "../../types";
+import type { OllamaModel, OpenFile, Settings } from "../../types";
 import FileTree from "./FileTree";
 import EditorPane from "./EditorPane";
 import AgentTranscript from "./AgentTranscript";
 import ToolApprovalModal from "./ToolApprovalModal";
 import AskQuestionModal from "./AskQuestionModal";
 import SendButton from "../SendButton";
+import ModelSelect from "../ModelSelect";
 
 const STATUS_LABEL: Record<string, string> = {
   idle: "",
@@ -26,13 +27,13 @@ export default function CodexView({
   onBack,
 }: {
   settings: Settings;
-  models: string[];
+  models: OllamaModel[];
   onPersistCodexPrefs: (mode: "auto" | "approve", lastFolder: string) => void;
   onBack: () => void;
 }) {
   const [rootFolder, setRootFolder] = useState<string | null>(settings.codex_last_folder ?? null);
   const [mode, setMode] = useState<"auto" | "approve">(settings.codex_mode);
-  const [selectedModel, setSelectedModel] = useState(settings.default_model || models[0] || "");
+  const [selectedModel, setSelectedModel] = useState(settings.default_model || models[0]?.name || "");
   const [openFiles, setOpenFiles] = useState<OpenFile[]>([]);
   const [activePath, setActivePath] = useState<string | null>(null);
   const [input, setInput] = useState("");
@@ -158,17 +159,10 @@ export default function CodexView({
       <div className="codex-main">
         <div className="codex-header">
           <button onClick={onBack}>← Chat</button>
-          <button onClick={handlePickFolder}>📁 {rootFolder ? "Changer de dossier" : "Choisir un dossier"}</button>
+          <button onClick={handlePickFolder}>{rootFolder ? "Changer de dossier" : "Choisir un dossier"}</button>
           {rootFolder && <span className="codex-header-title">{rootFolder}</span>}
           <div className="codex-header-spacer" />
-          <select value={selectedModel} onChange={(e) => setSelectedModel(e.target.value)}>
-            {models.length === 0 && <option value="">Aucun modèle</option>}
-            {models.map((m) => (
-              <option key={m} value={m}>
-                {m}
-              </option>
-            ))}
-          </select>
+          <ModelSelect models={models} value={selectedModel} onChange={setSelectedModel} />
           <div className="mode-toggle">
             <button
               className={mode === "approve" ? "mode-toggle-active" : ""}

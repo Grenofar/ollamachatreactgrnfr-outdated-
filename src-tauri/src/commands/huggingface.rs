@@ -22,15 +22,19 @@ struct HfModelRaw {
 #[tauri::command]
 pub fn search_hf_models(query: String) -> Result<Vec<HfModel>, String> {
     let client = reqwest::blocking::Client::new();
-    let resp = client
-        .get("https://huggingface.co/api/models")
-        .query(&[
-            ("search", query.as_str()),
-            ("filter", "gguf"),
-            ("limit", "25"),
-            ("sort", "downloads"),
-            ("direction", "-1"),
-        ])
+    let mut req = client.get("https://huggingface.co/api/models").query(&[
+        ("filter", "gguf"),
+        ("limit", "50"),
+        ("sort", "downloads"),
+        ("direction", "-1"),
+    ]);
+    // Omitted (rather than sent empty) when blank, so opening the browser
+    // without typing anything yet shows the trending GGUF models instead of
+    // an empty/undefined-behavior search.
+    if !query.trim().is_empty() {
+        req = req.query(&[("search", query.trim())]);
+    }
+    let resp = req
         .send()
         .map_err(|e| format!("Impossible de contacter Hugging Face : {}", e))?;
 

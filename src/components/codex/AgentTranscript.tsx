@@ -34,7 +34,7 @@ export default function AgentTranscript({
             {m.role === "assistant" &&
               m.tool_calls?.map((tc) => (
                 <div key={tc.id} className={`tool-card ${MUTATING_TOOLS.has(tc.name) ? "tool-card-mutating" : ""}`}>
-                  <div className="tool-card-name">🔧 {tc.name}</div>
+                  <div className="tool-card-name">{tc.name}</div>
                   <div className="tool-card-body">{formatArgs(tc.arguments)}</div>
                 </div>
               ))}

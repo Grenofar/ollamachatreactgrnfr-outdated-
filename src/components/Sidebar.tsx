@@ -46,13 +46,13 @@ export default function Sidebar({
       </div>
 
       <button className="sidebar-install-btn" onClick={onOpenCodex}>
-        🧑‍💻  Codex
+        Codex
       </button>
       <button className="sidebar-install-btn" onClick={onOpenInstall}>
-        ⬇  Installer un modèle
+        Installer un modèle
       </button>
       <button className="sidebar-settings-btn" onClick={onOpenSettings}>
-        ⚙  Paramètres
+        Paramètres
       </button>
     </div>
   );

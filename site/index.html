@@ -60,19 +60,6 @@
   .flow-item strong { color: var(--text); }
   .flow-item p { margin: 2px 0 0; font-size: 0.92rem; }
 
-  .model-list { margin: 0; padding: 0; list-style: none; }
-  .model-list li {
-    display: flex;
-    justify-content: space-between;
-    gap: 12px;
-    padding: 8px 0;
-    border-bottom: 1px solid var(--border);
-    font-size: 0.92rem;
-  }
-  .model-list li:last-child { border-bottom: none; }
-  .model-list .use { color: var(--text); }
-  .model-list .names { color: var(--text-dim); text-align: right; font-family: Consolas, Menlo, monospace; font-size: 0.85rem; }
-
   .note {
     background: var(--bg-raised);
     border: 1px solid var(--border);
@@ -153,15 +140,6 @@
         <strong>Codex</strong>
         <p>Ouvrez un dossier, décrivez ce que vous voulez : le modèle lit, écrit et modifie des fichiers, exécute des commandes, et vous demande votre avis avant chaque action si vous êtes en mode Approbation.</p>
       </div>
-    </section>
-
-    <section>
-      <h2>Quel modèle choisir</h2>
-      <ul class="model-list">
-        <li><span class="use">PC modeste</span><span class="names">llama3.2:3b, qwen2.5:3b</span></li>
-        <li><span class="use">Usage courant</span><span class="names">llama3.1:8b, qwen2.5:7b</span></li>
-        <li><span class="use">Codex (agent, nécessite le function calling)</span><span class="names">qwen2.5, llama3.1, mistral-nemo</span></li>
-      </ul>
     </section>
 
     <section>

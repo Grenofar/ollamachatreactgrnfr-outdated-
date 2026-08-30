@@ -11,11 +11,12 @@ import type {
   DirEntry,
   EditResult,
   HfModel,
+  OllamaModel,
   Settings,
   UpdateStatus,
 } from "./types";
 
-export const listModels = (host: string) => invoke<string[]>("list_models", { host });
+export const listModels = (host: string) => invoke<OllamaModel[]>("list_models", { host });
 
 export const sendChat = (host: string, model: string, messages: ChatMessage[]) =>
   invoke<void>("send_chat", { host, model, messages });
@@ -122,6 +123,8 @@ export const agentChat = (
 export const cancelAgentChat = () => invoke<void>("cancel_agent_chat");
 
 export const searchHfModels = (query: string) => invoke<HfModel[]>("search_hf_models", { query });
+
+export const getSystemRamGb = () => invoke<number>("get_system_ram_gb");
 
 export const checkForUpdate = () => invoke<UpdateStatus>("check_for_update");
 

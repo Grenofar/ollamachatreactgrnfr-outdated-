@@ -177,8 +177,7 @@ export default function FileTree({
           <span className="tree-toggle">
             {node.entry.is_dir ? (node.loading ? "…" : node.expanded ? "▾" : "▸") : ""}
           </span>
-          <span className="tree-icon">{node.entry.is_dir ? "📁" : "📄"}</span>
-          <span>{node.entry.name}</span>
+          <span className={node.entry.is_dir ? "tree-name-dir" : "tree-name-file"}>{node.entry.name}</span>
           {node.entry.is_dir && (
             <button
               className="tree-row-new-file"
