@@ -3,7 +3,7 @@ use serde::{Deserialize, Serialize};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 use std::time::Duration;
-use tauri::{AppHandle, State};
+use tauri::{AppHandle, Emitter, State};
 
 pub struct AgentCancelFlag(pub Arc<AtomicBool>);
 
@@ -171,6 +171,7 @@ pub async fn agent_chat(
                 if !c.is_empty() {
                     content.push_str(c);
                     report_progress(&watchdog, &app);
+                    let _ = app.emit("agent-chat-chunk", serde_json::json!({ "content": c }));
                 }
             }
             let parsed = parse_tool_calls(&data["message"]["tool_calls"]);

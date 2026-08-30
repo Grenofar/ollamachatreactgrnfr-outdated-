@@ -35,6 +35,7 @@ import type { ChatMessage, Conversation, ConversationMeta, OllamaModel, Settings
 const NEW_CONV_TITLE = "Nouvelle discussion";
 const FREEZE_GRACE_SECS = 20;
 const UPDATE_CHECK_DELAY_MS = 5_000;
+const UPDATE_CHECK_TIMEOUT_MS = 10_000;
 const UPDATE_CHECK_INTERVAL_MS = 4 * 60 * 60 * 1000; // 4h — the app can now live a long time in the tray
 
 export default function App() {
@@ -204,7 +205,7 @@ export default function App() {
     let cancelled = false;
     async function checkSilently() {
       try {
-        const update = await check();
+        const update = await check({ timeout: UPDATE_CHECK_TIMEOUT_MS });
         if (!cancelled && update) setAvailableUpdate(update);
       } catch {
         // Silent: this runs unprompted in the background, a failed check
@@ -226,7 +227,7 @@ export default function App() {
     setUpdateError(null);
     setUpToDate(false);
     try {
-      const update = await check();
+      const update = await check({ timeout: UPDATE_CHECK_TIMEOUT_MS });
       if (update) {
         setAvailableUpdate(update);
         setDismissedUpdateVersion(null);

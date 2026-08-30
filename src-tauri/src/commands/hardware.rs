@@ -4,8 +4,8 @@
 // Windows reports accurately, so model-size recommendations are based on
 // that alone rather than guessing at a GPU budget that might be wrong.
 #[tauri::command]
-pub fn get_system_ram_gb() -> Result<f64, String> {
-    let output = std::process::Command::new("powershell")
+pub async fn get_system_ram_gb() -> Result<f64, String> {
+    let output = tokio::process::Command::new("powershell")
         .args([
             "-NoProfile",
             "-NonInteractive",
@@ -13,6 +13,7 @@ pub fn get_system_ram_gb() -> Result<f64, String> {
             "(Get-CimInstance Win32_ComputerSystem).TotalPhysicalMemory",
         ])
         .output()
+        .await
         .map_err(|e| format!("Impossible de lire la RAM système : {}", e))?;
 
     if !output.status.success() {

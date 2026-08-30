@@ -1177,14 +1177,47 @@ body {
   font-size: 12px;
 }
 
+.tool-card-running {
+  border-color: #4a5f8a;
+}
+
+.tool-card-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 4px;
+}
+
 .tool-card-name {
   color: #9fc0ff;
   font-weight: 600;
-  margin-bottom: 4px;
 }
 
 .tool-card-mutating .tool-card-name {
   color: #f2c880;
+}
+
+.tool-card-badge {
+  font-size: 10px;
+  padding: 1px 7px;
+  border-radius: 8px;
+  font-weight: 500;
+}
+
+.tool-card-badge-approval {
+  background: #3a2f1f;
+  color: #e0b666;
+}
+
+.tool-card-badge-running {
+  background: #1c2634;
+  color: #9fc0ff;
+  animation: tool-badge-pulse 1.4s ease-in-out infinite;
+}
+
+@keyframes tool-badge-pulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.55; }
 }
 
 .tool-card-body {
@@ -1195,6 +1228,28 @@ body {
   overflow-y: auto;
   font-family: Consolas, monospace;
   font-size: 11px;
+}
+
+.tool-card-live-output {
+  margin-top: 8px;
+  background: #141414;
+  border-radius: 8px;
+  padding: 8px 10px;
+  color: #cccccc;
+  white-space: pre-wrap;
+  word-break: break-word;
+  max-height: 220px;
+  overflow-y: auto;
+  font-family: Consolas, monospace;
+  font-size: 11px;
+}
+
+.tool-approval-inline {
+  margin-top: 8px;
+}
+
+.diff-container-inline {
+  height: 220px;
 }
 
 /* ------------------------------------------------------------ approval/ask */

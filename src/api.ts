@@ -122,6 +122,9 @@ export const agentChat = (
   tools: object[],
 ) => invoke<AgentChatResponse>("agent_chat", { host, model, messages, tools });
 
+export const onAgentChatChunk = (cb: (content: string) => void) =>
+  listen<{ content: string }>("agent-chat-chunk", (e) => cb(e.payload.content));
+
 export const cancelAgentChat = () => invoke<void>("cancel_agent_chat");
 
 export const searchHfModels = (query: string) => invoke<HfModel[]>("search_hf_models", { query });

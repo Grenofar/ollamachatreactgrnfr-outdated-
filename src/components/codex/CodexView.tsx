@@ -6,7 +6,6 @@ import type { OllamaModel, OpenFile, Settings } from "../../types";
 import FileTree from "./FileTree";
 import EditorPane from "./EditorPane";
 import AgentTranscript from "./AgentTranscript";
-import ToolApprovalModal from "./ToolApprovalModal";
 import AskQuestionModal from "./AskQuestionModal";
 import SendButton from "../SendButton";
 import ModelSelect from "../ModelSelect";
@@ -14,6 +13,7 @@ import ModelSelect from "../ModelSelect";
 const STATUS_LABEL: Record<string, string> = {
   idle: "",
   "waiting-llm": "L'agent réfléchit…",
+  "running-tool": "L'agent travaille…",
   "awaiting-approval": "En attente de ton approbation…",
   "awaiting-question": "L'agent attend ta réponse…",
   "awaiting-continue": "Limite d'itérations atteinte…",
@@ -41,18 +41,16 @@ export default function CodexView({
   const stickToBottomRef = useRef(true);
 
   const handleFileChanged = (path: string) => {
-    setOpenFiles((prev) => {
-      const idx = prev.findIndex((f) => f.path === path);
-      if (idx === -1) return prev;
-      readFileText(path)
-        .then((content) => {
-          setOpenFiles((cur) =>
-            cur.map((f) => (f.path === path ? { ...f, content, originalContent: content, dirty: false } : f)),
-          );
-        })
-        .catch(() => {});
-      return prev;
-    });
+    readFileText(path)
+      .then((content) => {
+        setOpenFiles((cur) => {
+          const idx = cur.findIndex((f) => f.path === path);
+          const freshFile = { path, content, originalContent: content, dirty: false };
+          return idx === -1 ? [...cur, freshFile] : cur.map((f) => (f.path === path ? freshFile : f));
+        });
+        setActivePath(path);
+      })
+      .catch(() => {});
   };
 
   const agent = useAgentLoop({
@@ -200,7 +198,17 @@ export default function CodexView({
           />
 
           <div className="codex-transcript">
-            <AgentTranscript messages={agent.messages} scrollRef={scrollRef} onScroll={handleTranscriptScroll} />
+            <AgentTranscript
+              messages={agent.messages}
+              scrollRef={scrollRef}
+              onScroll={handleTranscriptScroll}
+              streamingText={agent.streamingText}
+              isThinking={agent.status === "waiting-llm"}
+              runningToolId={agent.runningToolId}
+              runningOutput={agent.runningOutput}
+              pendingApproval={agent.pendingApproval}
+              onResolveApproval={agent.resolveApproval}
+            />
             {STATUS_LABEL[agent.status] && <div className="codex-status">{STATUS_LABEL[agent.status]}</div>}
             {agent.error && <div className="banner banner-error">{agent.error}</div>}
             {agent.notice && <div className="banner banner-info">{agent.notice}</div>}
@@ -229,9 +237,6 @@ export default function CodexView({
         </div>
       </div>
 
-      {agent.pendingApproval && (
-        <ToolApprovalModal request={agent.pendingApproval} onResolve={agent.resolveApproval} />
-      )}
       {agent.pendingQuestion && <AskQuestionModal request={agent.pendingQuestion} onAnswer={agent.resolveQuestion} />}
     </div>
   );

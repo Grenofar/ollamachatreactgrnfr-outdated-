@@ -2625,7 +2625,7 @@ dependencies = [
 
 [[package]]
 name = "ollama-chat-react"
-version = "0.3.1"
+version = "0.3.2"
 dependencies = [
  "reqwest 0.12.28",
  "serde",
@@ -4548,6 +4548,7 @@ dependencies = [
  "libc",
  "mio",
  "pin-project-lite",
+ "signal-hook-registry",
  "socket2",
  "tokio-macros",
  "windows-sys 0.61.2",

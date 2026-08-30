@@ -40,6 +40,7 @@ pas devenir obsolète.
 - [FAIT] Brouillon de message par conversation (au lieu d'un seul brouillon global partagé)
 - [FAIT] Régénérer une réponse avec un modèle différent (utilise le modèle actuellement sélectionné dans le menu, pas forcément celui de la conversation)
 - [FAIT] Icône dans la zone de notification (system tray) : fermer la fenêtre (X) minimise au lieu de quitter ; quitter réellement se fait depuis le menu de l'icône
+- [FAIT] v0.3.2 : correctif du freeze de ~5s au démarrage (timeout manquant sur la vérif de mise à jour + `get_system_ram_gb` synchrone/bloquant, voir "Freeze au démarrage" plus bas) + refonte de l'affichage Codex façon Claude Code dans VS Code (texte en direct, statut d'outil visible, sortie de commande live, approbation inline au lieu d'une modale plein écran qui masquait le chat, fichier édité auto-ouvert) — voir "Streaming visuel dans Codex" dans Architecture
 
 ## Architecture
 
@@ -54,7 +55,7 @@ pas devenir obsolète.
 - `App.tsx` : brouillon de message par conversation (`draftsRef`, une `Map<id, texte>` hors du state React — changer de conversation en cours de frappe sauvegarde/restaure le bon brouillon au lieu de partager un seul brouillon global). `handleRegenerate` utilise le modèle **actuellement sélectionné** dans `ModelSelect`, pas forcément celui de la conversation — change le modèle dans le menu puis clique "Régénérer" pour reformuler avec un autre modèle.
 - System tray (`lib.rs`, feature Cargo `tray-icon`) : fermer la fenêtre (X) la cache au lieu de quitter (`WindowEvent::CloseRequested` → `api.prevent_close()` + `window.hide()`) ; l'icône dans la zone de notification a un menu "Afficher"/"Quitter", et un clic gauche dessus réaffiche aussi la fenêtre. Quitter réellement passe par `app.exit(0)` (menu tray, ou `close_app` du watchdog).
 - `tauri-plugin-updater` + `tauri-plugin-process` : auto-update en continu, voir la section dédiée "Auto-update en continu" plus bas pour le détail complet (signature, endpoint RPC Supabase, en-têtes via le `Builder` Rust). État de vérif (`check()`/`downloadAndInstall()`/`relaunch()`) **lifté dans `App.tsx`**, pas dans `SettingsModal.tsx` — une seule source de vérité pour éviter deux `Update` indépendants qui se marcheraient dessus. Deux consommateurs de ce même état : (1) `SettingsModal` (bouton manuel "Vérifier les mises à jour", reçoit tout en props) et (2) un toast discret (`.update-toast`, coin bas-droit, pas une modale bloquante) déclenché par une vérif automatique au démarrage (`UPDATE_CHECK_DELAY_MS`, 5s après le lancement) puis périodique (`UPDATE_CHECK_INTERVAL_MS`, 4h — l'app peut maintenant vivre longtemps dans le tray). "Plus tard" sur le toast mémorise `dismissedUpdateVersion` (pas de nouvelle relance tant qu'aucune version plus récente n'est détectée, plutôt que de renaguer toutes les 4h pour la même version). Le toast se masque si Réglages est ouvert (évite le doublon d'UI).
-- `src-tauri/src/commands/hardware.rs` : `get_system_ram_gb`, RAM totale via une commande PowerShell one-shot (pas de crate `sysinfo` ajoutée pour ça) — volontairement pas de détection GPU/VRAM, peu fiable sous Windows (drivers rapportent souvent des valeurs plafonnées/fausses).
+- `src-tauri/src/commands/hardware.rs` : `get_system_ram_gb`, RAM totale via une commande PowerShell one-shot (pas de crate `sysinfo` ajoutée pour ça) — volontairement pas de détection GPU/VRAM, peu fiable sous Windows (drivers rapportent souvent des valeurs plafonnées/fausses). Commande **async** (`tokio::process::Command`, feature `process` ajoutée à `tokio`) depuis la v0.3.2, pas `std::process::Command` synchrone — voir "Bug corrigé en v0.3.2" plus bas.
 - `src/components/ModelSelect.tsx` : menu déroulant de modèle (recherche, affiche parameter_size/quantization/taille), partagé entre le chat de base et Codex, remplace le `<select>` HTML natif. Prop `direction` (`"up"` par défaut pour la barre du bas du chat, `"down"` pour l'en-tête de Codex) — sans elle le panneau s'ouvre hors écran quand le déclencheur est en haut de page.
 - `src-tauri/src/commands/watchdog.rs` : système anti-gel, voir section dédiée plus bas.
 - `src-tauri/src/commands/conversations.rs` : persistance JSON locale des conversations.
@@ -65,13 +66,51 @@ pas devenir obsolète.
 ### Codex (agent de codage local)
 - `src/agentTools.ts` : schémas des 6 outils exposés au modèle + `CODEX_SYSTEM_PROMPT`.
 - `src/hooks/useAgentLoop.ts` : boucle agentique — appelle le modèle, exécute les tool_calls un par un, rappelle le modèle avec les résultats, jusqu'à une réponse sans tool_calls (plafond `MAX_AGENT_ITERATIONS = 25`, avec une confirmation utilisateur pour continuer au-delà).
-- `src-tauri/src/commands/agent.rs` : `agent_chat`, appel à `/api/chat` d'Ollama avec le paramètre `tools` (function calling façon OpenAI). Envoie `stream: true` à Ollama et lit la réponse chunk par chunk (NDJSON, même format que `send_chat`), mais **le contrat public ne change pas** : la commande ne renvoie qu'une seule fois le `AgentChatResponse` complet (content accumulé + tool_calls) — le streaming interne sert uniquement à donner un signal de progression réel au watchdog anti-gel (voir plus bas), `useAgentLoop.ts` n'a rien eu à changer. Le contenu se concatène chunk par chunk ; pour `tool_calls`, Ollama envoie le tableau complet d'un coup (pas construit incrémentalement token par token), donc c'est "le dernier tableau non-vide vu gagne", pas une fusion. Async + annulable via `AgentCancelFlag`/`cancel_agent_chat` (voir Décisions techniques) — l'annulation est vérifiée à chaque chunk maintenant, pas juste avant le premier octet. Ollama n'assigne pas d'id aux tool_calls ; un id positionnel est synthétisé côté Rust uniquement pour corréler les promesses d'approbation côté front, jamais renvoyé à Ollama.
+- `src-tauri/src/commands/agent.rs` : `agent_chat`, appel à `/api/chat` d'Ollama avec le paramètre `tools` (function calling façon OpenAI). Envoie `stream: true` à Ollama et lit la réponse chunk par chunk (NDJSON, même format que `send_chat`). Le contrat public (la commande ne résout qu'une fois, avec l'`AgentChatResponse` complet — content accumulé + tool_calls) **n'a pas changé**, mais depuis la v0.3.2 chaque chunk de contenu est **aussi** émis en direct via l'événement `agent-chat-chunk` (`{ content }`), purement additif — voir "Streaming visuel dans Codex" plus bas. Le contenu se concatène chunk par chunk ; pour `tool_calls`, Ollama envoie le tableau complet d'un coup (pas construit incrémentalement token par token), donc c'est "le dernier tableau non-vide vu gagne", pas une fusion. Async + annulable via `AgentCancelFlag`/`cancel_agent_chat` (voir Décisions techniques) — l'annulation est vérifiée à chaque chunk maintenant, pas juste avant le premier octet. Ollama n'assigne pas d'id aux tool_calls ; un id positionnel est synthétisé côté Rust uniquement pour corréler les promesses d'approbation côté front, jamais renvoyé à Ollama.
 - `src-tauri/src/commands/fsops.rs` : `list_dir` (un niveau, paresseux), `read_file_text` (limite 5 Mo), `write_file_text`, `edit_file_text` (remplacement exact, unique sauf `replace_all`).
 - `src-tauri/src/commands/shell.rs` : `run_powershell_command`, streaming live via événements Tauri (`shell-output`/`shell-done`/`shell-error`/`shell-timeout`), timeout 120 s par défaut, annulable via `cancel_shell_command`.
-- `src/components/codex/` : `CodexView` (page principale), `FileTree`, `EditorPane` (Monaco), `ToolApprovalModal` (DiffEditor), `AskQuestionModal`, `AgentTranscript`, `HuggingFaceBrowser`.
+- `src/components/codex/` : `CodexView` (page principale), `FileTree`, `EditorPane` (Monaco), `AskQuestionModal`, `AgentTranscript`, `HuggingFaceBrowser`. `ToolApprovalModal` (overlay plein écran) a été supprimé en v0.3.2, remplacé par une approbation **inline** dans `AgentTranscript` — voir "Streaming visuel dans Codex" plus bas.
 - `src/monacoSetup.ts` : configuration des web workers Monaco sans CDN.
 - `FileTree` : création de fichier inline (bouton toolbar pour la racine, icône "+" au survol d'un dossier). Le nom est saisi *avant* la création (input inline) ; Entrée avec un nom vide, Échap ou perte de focus annule sans rien écrire sur disque.
 - `src/components/SendButton.tsx` : bouton d'envoi partagé (chat de base + Codex) — l'icône flèche se transforme en carré (transition opacity/scale/border-radius) pendant que l'IA génère, et le clic devient alors "Arrêter".
+
+### Streaming visuel dans Codex (v0.3.2)
+
+Avant la v0.3.2, Codex n'affichait strictement rien pendant que l'agent
+réfléchissait (texte final seulement, une fois la réponse complète) et
+chaque outil mutant (write/edit/commande) ouvrait un `.modal-overlay` plein
+écran qui masquait tout le reste de l'app (arborescence, éditeur ET le chat
+lui-même) — signalé explicitement par l'utilisateur comme donnant
+l'impression que l'IA "ne fait rien"/"n'apporte pas de modifications", et
+"enlève le chat" à chaque commande. Refonte complète pour se rapprocher de
+Claude Code dans VS Code :
+- **Texte en direct** : `useAgentLoop.ts` écoute maintenant l'événement
+  `agent-chat-chunk` (voir agent.rs ci-dessus) et expose `streamingText` ;
+  `AgentTranscript` affiche une bulle assistant live pendant que
+  `status === "waiting-llm"`, remplacée par le message final une fois la
+  réponse complète (pas de doublon : le message définitif n'entre dans
+  `messages` qu'une fois la promesse `agentChat(...)` résolue).
+- **Statut d'outil visible** : nouveau statut `"running-tool"` (distinct de
+  `"waiting-llm"`) pendant qu'un outil non-mutant ou déjà approuvé s'exécute
+  réellement, avec un badge "En cours…" animé sur la tool-card correspondante
+  (`runningToolId` dans `useAgentLoop.ts`, comparé à `tc.id`). Pour
+  `run_powershell_command`, la sortie live (déjà streamée via
+  `onShellOutput`, auparavant seulement accumulée en silence pour le résultat
+  final) s'affiche maintenant ligne par ligne dans la tool-card pendant que
+  la commande tourne (`runningOutput`).
+- **Approbation inline, pas de modale plein écran** : `ToolApprovalModal.tsx`
+  supprimé ; la demande d'approbation (diff Monaco pour write/edit, aperçu de
+  commande texte) s'affiche directement **dans** la tool-card concernée au
+  sein du transcript (`tool-approval-inline` dans `AgentTranscript.tsx`), à
+  côté du fichier/de l'arborescence toujours visibles — corrige directement
+  "quand il fait une commande ça enlève le chat". `AskQuestionModal` reste
+  une vraie modale (pas concerné par ce retour, question ponctuelle et rare).
+- **Fichier édité auto-ouvert** : `handleFileChanged` dans `CodexView.tsx`
+  ouvrait avant un fichier modifié seulement s'il était déjà un onglet
+  ouvert (sinon, silence total dans l'éditeur). Il ouvre maintenant
+  systématiquement l'onglet et le rend actif après un `write_file`/`edit_file`
+  réussi — preuve visuelle directe que la modification a eu lieu, plutôt que
+  seulement une ligne de texte dans le panneau transcript de 380px.
 
 ### Les 6 outils de l'agent
 1. `read_file` — lecture texte (limite 5 Mo), chemin absolu
@@ -131,6 +170,48 @@ dans des commandes Tauri complètement séparées, appelées après coup — le
 watchdog n'est jamais actif pendant qu'un fichier est en cours d'écriture,
 donc aucun risque de fermeture en pleine écriture.
 
+### Freeze au démarrage (bug corrigé en v0.3.2)
+
+Signalé par l'utilisateur : un freeze systématique à chaque lancement de
+l'app, ~5 secondes, apparu "depuis la v0.3.0". Deux causes distinctes
+identifiées et corrigées ensemble :
+
+1. **Aucun timeout sur la vérification de mise à jour automatique**.
+   `UPDATE_CHECK_DELAY_MS` vaut exactement 5000ms — coïncidence trop précise
+   avec les "5 secondes" rapportées pour être ignorée. Vérifié en lisant le
+   code source de `tauri-plugin-updater` (`updater.rs` : `timeout: Option<Duration>`,
+   défaut `None`) : ni la vérif automatique au démarrage ni le bouton manuel
+   "Vérifier les mises à jour" ne bornaient jamais la requête HTTP — un
+   réseau lent (DNS, VPN, pare-feu) pouvait faire pendre l'appel
+   indéfiniment, sans jamais résoudre ni rejeter la promesse. Corrigé en
+   passant `{ timeout: UPDATE_CHECK_TIMEOUT_MS }` (10s) à `check()` dans
+   `App.tsx`, pour les deux appels (silencieux et manuel) — la commande
+   `check` du plugin accepte bien ce paramètre côté JS (`CheckOptions.timeout`,
+   transmis jusqu'à `updater.rs`).
+2. **`get_system_ram_gb` bloquait un thread du runtime async**. Commande
+   Rust **non-async** faisant un `std::process::Command::new("powershell")
+   .output()` **synchrone et bloquant** (attente du process PowerShell,
+   souvent 1 à 5s pour un `Get-CimInstance` WMI + démarrage de l'hôte
+   PowerShell) au tout début du montage de `App.tsx`, en parallèle d'autres
+   appels `invoke()` critiques pour le premier rendu (`load_settings`,
+   `list_models`, `list_conversations`). Aucune trace de `spawn_blocking`
+   dans les macros/codegen de Tauri (vérifié dans le cache cargo local) : une
+   commande sync bloquante peut donc immobiliser un thread ouvrier du
+   runtime tokio partagé, ce qui peut retarder d'autres commandes en attente
+   sur un pool de threads restreint (surtout sur une machine à peu de
+   cœurs). Corrigé en passant la commande en `async fn` avec
+   `tokio::process::Command` (feature `process` ajoutée à `tokio` dans
+   `Cargo.toml`) — le process est maintenant attendu de façon async, sans
+   jamais occuper de thread ouvrier pendant l'attente.
+
+Combinées, ces deux corrections éliminent le risque de blocage plutôt que de
+juste le rendre moins probable — bornage explicite (1) et suppression du
+blocage à la source (2), plutôt qu'une seule rustine côté symptôme.
+Vérification faite via `cargo check`/`npx tsc --noEmit` (0 erreur) ; pas de
+reproduction possible en local (pas d'accès GUI dans cet environnement) —
+**à confirmer par l'utilisateur** après installation de la v0.3.2 que le
+freeze a bien disparu.
+
 ## Limites connues et risques
 
 - **Accès fichiers non-sandboxé** : l'agent peut lire/écrire n'importe où sur
@@ -164,14 +245,11 @@ donc aucun risque de fermeture en pleine écriture.
   2026-08-30 par bonne pratique, mais ça ne change rien à SmartScreen.
 - Le mode Approbation est le seul garde-fou : ne l'affaiblis pas (l'assouplir,
   ajouter des exceptions, etc.) sans qu'on te le demande explicitement.
-- `agent_chat` streame maintenant en interne côté Rust (voir Architecture >
-  Codex et Système anti-gel), mais **le frontend ne montre toujours rien au
-  fil de l'eau** pendant le raisonnement de l'agent — `useAgentLoop.ts`
-  attend toujours la réponse complète de la promesse `agentChat(...)`, les
-  chunks internes ne servent qu'au watchdog anti-gel pour l'instant. Afficher
-  la réponse de Codex au fil de l'eau comme le chat simple serait la suite
-  logique si demandé (émettre un événement par chunk depuis `agent_chat`,
-  l'écouter côté front) mais n'a pas été fait.
+- `agent_chat` streame en interne côté Rust (voir Architecture > Codex et
+  Système anti-gel) **et** le frontend affiche maintenant ce flux en direct
+  depuis la v0.3.2 (texte en direct, statut d'outil, sortie de commande live,
+  approbation inline) — voir "Streaming visuel dans Codex" dans Architecture
+  > Codex pour le détail complet. Ancienne limitation résolue.
 
 ## Confidentialité réseau (garantie explicite)
 
@@ -500,6 +578,28 @@ l'utilisateur confirme qu'elle est bien dans `.env` local.
   `app_releases` (avec la signature `.sig`), et vérifié via la clé **anon**
   (fichier : 200 OK, 6 618 789 octets ; `latest_release_manifest` : renvoie
   bien la v0.3.1 avec signature et URL) avant d'annoncer la release
+  terminée.
+- **2026-08-30** — v0.3.2 : deux retours utilisateur après test de v0.3.1.
+  (1) Freeze de ~5s à chaque lancement, "depuis la v0.3.0" — deux causes
+  corrigées ensemble (timeout manquant sur la vérif de mise à jour +
+  `get_system_ram_gb` synchrone bloquant un thread du runtime tokio), voir
+  "Freeze au démarrage" dans Architecture pour le détail complet. (2) Dans
+  Codex : "on voit quelle tool il utilise", "on voit generer quand il
+  parle", "j'ai pas l'impression que l'IA peut apporter des modif", et
+  "quand il fait une commande ça enlève le chat, rends-le semblable à Claude
+  Code dans VS Code" — refonte de `AgentTranscript`/`useAgentLoop.ts` :
+  texte en direct (événement `agent-chat-chunk`), statut d'outil visible
+  (`running-tool`, badge animé), sortie de commande PowerShell affichée
+  ligne par ligne pendant l'exécution, approbation (diff/commande) intégrée
+  **dans** la tool-card du transcript au lieu d'une modale plein écran
+  (`ToolApprovalModal.tsx` supprimé), et le fichier modifié s'ouvre
+  maintenant automatiquement dans l'éditeur — voir "Streaming visuel dans
+  Codex" dans Architecture pour le détail complet. Root-cause du freeze pas
+  reproduite en local (pas d'accès GUI dans cet environnement) — à confirmer
+  par l'utilisateur après installation. Build signé, uploadé dans le bucket
+  Storage `releases`, ligne insérée dans `app_releases`, et vérifié via la
+  clé **anon** (fichier : 200 OK, 6 631 889 octets ; `latest_release_manifest` :
+  renvoie bien la v0.3.2 avec signature et URL) avant d'annoncer la release
   terminée.
 
 ## Prochaines étapes (dans l'ordre du fichier de passation d'origine)

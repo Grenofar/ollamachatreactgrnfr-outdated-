@@ -1,9 +1,10 @@
-import { useCallback, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import {
   agentChat,
   cancelAgentChat,
   editFileText,
   listDir,
+  onAgentChatChunk,
   onShellDone,
   onShellError,
   onShellOutput,
@@ -18,6 +19,7 @@ import type { AgentMessage, AgentToolCall } from "../types";
 export type AgentStatus =
   | "idle"
   | "waiting-llm"
+  | "running-tool"
   | "awaiting-approval"
   | "awaiting-question"
   | "awaiting-continue"
@@ -63,7 +65,12 @@ function useResolvablePrompt<TPayload, TResult>() {
   return { pending, request, resolve };
 }
 
-function runCommandAndCollect(command: string, cwd?: string, timeoutSecs?: number): Promise<string> {
+function runCommandAndCollect(
+  command: string,
+  cwd: string | undefined,
+  timeoutSecs: number | undefined,
+  onLine?: (line: string) => void,
+): Promise<string> {
   return new Promise((resolvePromise) => {
     const lines: string[] = [];
     let settled = false;
@@ -77,7 +84,13 @@ function runCommandAndCollect(command: string, cwd?: string, timeoutSecs?: numbe
       resolvePromise(`${summary}\n${body}`);
     };
 
-    unlistens.push(onShellOutput((p) => lines.push(`[${p.stream}] ${p.line}`)));
+    unlistens.push(
+      onShellOutput((p) => {
+        const formatted = `[${p.stream}] ${p.line}`;
+        lines.push(formatted);
+        onLine?.(formatted);
+      }),
+    );
     unlistens.push(onShellDone((code) => finish(`Commande terminée (code de sortie ${code ?? "inconnu"})`)));
     unlistens.push(onShellError((message) => finish(`Erreur : ${message}`)));
     unlistens.push(onShellTimeout((message) => finish(message)));
@@ -97,6 +110,9 @@ export function useAgentLoop(opts: {
   const [status, setStatus] = useState<AgentStatus>("idle");
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
+  const [streamingText, setStreamingText] = useState("");
+  const [runningToolId, setRunningToolId] = useState<string | null>(null);
+  const [runningOutput, setRunningOutput] = useState("");
   const iterationRef = useRef(0);
   const optsRef = useRef(opts);
   optsRef.current = opts;
@@ -104,6 +120,13 @@ export function useAgentLoop(opts: {
   const approval = useResolvablePrompt<ApprovalRequest, boolean>();
   const question = useResolvablePrompt<QuestionRequest, string>();
   const continuePrompt = useResolvablePrompt<ContinueRequest, boolean>();
+
+  useEffect(() => {
+    const unlisten = onAgentChatChunk((content) => setStreamingText((prev) => prev + content));
+    return () => {
+      unlisten.then((f) => f());
+    };
+  }, []);
 
   const executeTool = useCallback(async (tc: AgentToolCall): Promise<string> => {
     const args = tc.arguments ?? {};
@@ -127,6 +150,7 @@ export function useAgentLoop(opts: {
               newContent: String(args.content ?? ""),
             });
             if (!accepted) return "L'utilisateur a refusé cette action.";
+            setStatus("running-tool");
           }
           await writeFileText(String(args.path), String(args.content ?? ""));
           optsRef.current.onFileChanged?.(String(args.path));
@@ -145,6 +169,7 @@ export function useAgentLoop(opts: {
                 .replace(String(args.old_string ?? ""), String(args.new_string ?? "")),
             });
             if (!accepted) return "L'utilisateur a refusé cette action.";
+            setStatus("running-tool");
           }
           const result = await editFileText(
             String(args.path),
@@ -161,11 +186,14 @@ export function useAgentLoop(opts: {
           if (mode === "approve") {
             const accepted = await approval.request({ toolCall: tc, kind: "command", command });
             if (!accepted) return "L'utilisateur a refusé cette action.";
+            setStatus("running-tool");
           }
+          setRunningOutput("");
           return await runCommandAndCollect(
             command,
             args.cwd ? String(args.cwd) : undefined,
             typeof args.timeout_secs === "number" ? args.timeout_secs : undefined,
+            (line) => setRunningOutput((prev) => (prev ? `${prev}\n${line}` : line)),
           );
         }
 
@@ -187,9 +215,11 @@ export function useAgentLoop(opts: {
     setStatus("waiting-llm");
     setError(null);
     setNotice(null);
+    setStreamingText("");
     let msgs = history;
     try {
       const resp = await agentChat(optsRef.current.host, optsRef.current.model, msgs, AGENT_TOOLS);
+      setStreamingText("");
       const assistantMsg: AgentMessage = {
         role: "assistant",
         content: resp.content,
@@ -217,14 +247,17 @@ export function useAgentLoop(opts: {
       }
 
       for (const tc of resp.tool_calls) {
+        setRunningToolId(tc.id);
+        setRunningOutput("");
         setStatus(
           tc.name === ASK_USER_TOOL
             ? "awaiting-question"
             : MUTATING_TOOLS.has(tc.name) && optsRef.current.mode === "approve"
               ? "awaiting-approval"
-              : "waiting-llm",
+              : "running-tool",
         );
         const result = await executeTool(tc);
+        setRunningToolId(null);
         msgs = [...msgs, { role: "tool", content: result, toolName: tc.name }];
         setMessages(msgs);
       }
@@ -274,6 +307,9 @@ export function useAgentLoop(opts: {
     status,
     error,
     notice,
+    streamingText,
+    runningToolId,
+    runningOutput,
     sendUserMessage,
     cancel,
     reset,
