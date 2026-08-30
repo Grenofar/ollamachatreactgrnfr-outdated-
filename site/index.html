@@ -1,0 +1,158 @@
+<!doctype html>
+<html lang="fr">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Ollama Chat React</title>
+<meta name="description" content="Client de chat pour Ollama en local, avec un éditeur de code agentique (Codex)." />
+<style>
+  :root {
+    color-scheme: dark;
+    --bg: #0b0d10;
+    --bg-raised: #14171b;
+    --border: #23272e;
+    --text: #e8eaed;
+    --text-dim: #9aa0a6;
+    --accent: #6ea8fe;
+    --accent-dim: #3a5a8c;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    background: var(--bg);
+    color: var(--text);
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+    line-height: 1.5;
+  }
+  a { color: var(--accent); }
+  .wrap { max-width: 880px; margin: 0 auto; padding: 0 24px; }
+
+  header.top {
+    padding: 20px 0;
+    border-bottom: 1px solid var(--border);
+  }
+  header.top .wrap { display: flex; align-items: center; justify-content: space-between; }
+  .brand { font-weight: 600; letter-spacing: 0.2px; }
+  .brand span { color: var(--text-dim); font-weight: 400; }
+
+  .hero { padding: 96px 0 64px; text-align: center; }
+  .hero h1 {
+    font-size: clamp(2rem, 5vw, 3.2rem);
+    margin: 0 0 16px;
+    letter-spacing: -0.02em;
+  }
+  .hero p.tagline {
+    color: var(--text-dim);
+    font-size: 1.15rem;
+    max-width: 560px;
+    margin: 0 auto 36px;
+  }
+
+  .cta {
+    display: inline-flex;
+    align-items: center;
+    gap: 10px;
+    padding: 14px 26px;
+    border-radius: 10px;
+    border: 1px solid var(--border);
+    background: var(--bg-raised);
+    color: var(--text-dim);
+    font-size: 0.95rem;
+    cursor: default;
+  }
+  .cta .dot {
+    width: 8px; height: 8px; border-radius: 50%;
+    background: var(--accent);
+    box-shadow: 0 0 0 3px rgba(110,168,254,0.15);
+  }
+
+  section.features {
+    padding: 40px 0 96px;
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+    gap: 20px;
+  }
+  .card {
+    background: var(--bg-raised);
+    border: 1px solid var(--border);
+    border-radius: 14px;
+    padding: 24px;
+  }
+  .card h3 { margin: 0 0 8px; font-size: 1.05rem; }
+  .card p { margin: 0; color: var(--text-dim); font-size: 0.92rem; }
+
+  footer {
+    border-top: 1px solid var(--border);
+    padding: 28px 0 48px;
+    color: var(--text-dim);
+    font-size: 0.85rem;
+    text-align: center;
+  }
+
+  @media (prefers-color-scheme: light) {
+    :root:not([data-theme="dark"]) {
+      --bg: #f7f8fa;
+      --bg-raised: #ffffff;
+      --border: #e2e5e9;
+      --text: #1c1e21;
+      --text-dim: #5f6570;
+      --accent: #2f6fed;
+      --accent-dim: #dbe6fb;
+    }
+  }
+  :root[data-theme="dark"] {
+    --bg: #0b0d10;
+    --bg-raised: #14171b;
+    --border: #23272e;
+    --text: #e8eaed;
+    --text-dim: #9aa0a6;
+    --accent: #6ea8fe;
+  }
+</style>
+</head>
+<body>
+
+  <header class="top">
+    <div class="wrap">
+      <div class="brand">Ollama Chat React <span>· Codex</span></div>
+      <div style="color: var(--text-dim); font-size: 0.85rem;">App bureau</div>
+    </div>
+  </header>
+
+  <div class="wrap">
+    <section class="hero">
+      <h1>Chattez avec Ollama.<br>Codez avec un agent local.</h1>
+      <p class="tagline">
+        Une app bureau (Windows) qui combine un client de chat pour Ollama et
+        un éditeur de code façon VS Code où un modèle local agit en agent :
+        il lit, écrit et modifie des fichiers, exécute des commandes, et vous
+        demande votre avis quand il le faut.
+      </p>
+      <div class="cta">
+        <span class="dot"></span>
+        Téléchargement bientôt disponible
+      </div>
+    </section>
+
+    <section class="features">
+      <div class="card">
+        <h3>Chat Ollama</h3>
+        <p>Conversations, réglages, installation de modèles et recherche de modèles GGUF sur Hugging Face, le tout en local.</p>
+      </div>
+      <div class="card">
+        <h3>Éditeur Codex agentique</h3>
+        <p>Le modèle lit et modifie des fichiers, liste des dossiers, exécute des commandes PowerShell et pose des questions quand une décision vous revient.</p>
+      </div>
+      <div class="card">
+        <h3>Auto / Approbation</h3>
+        <p>Comme le mode d'édition de Claude Code : chaque action qui modifie quelque chose peut être validée via un diff avant d'être appliquée.</p>
+      </div>
+    </section>
+  </div>
+
+  <footer>
+    <div class="wrap">Ollama Chat React — projet personnel</div>
+  </footer>
+
+</body>
+</html>

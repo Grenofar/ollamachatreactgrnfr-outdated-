@@ -13,10 +13,12 @@ pas devenir obsolète.
 - [FAIT] Chat Ollama de base (conversations, réglages, installation de modèles, recherche Hugging Face)
 - [FAIT] Éditeur Codex : agent outillé (6 outils), Monaco, bascule Auto/Approbation
 - [FAIT] `npm run build` (tsc + vite) et `cargo check` passent à 0 erreur
-- [FAIT] Dépôt git initialisé et poussé sur GitHub (`Grenofar/ollamachatreactgrnfr`)
+- [FAIT] Dépôt git initialisé et poussé sur GitHub (`Grenofar/ollamachatreactgrnfr`, dépôt **privé**)
+- [FAIT] Landing page statique dans `site/` (présentation du projet, pas encore de bouton de téléchargement actif)
+- [À FAIRE] Connecter `site/` à Vercel (étape manuelle côté utilisateur, voir `site/README.md`)
 - [À FAIRE] Sync Supabase (sqlx) pour conversations + réglages
 - [À FAIRE] Installeur + auto-update (tauri-plugin-updater + GitHub Releases)
-- [À FAIRE] Site de téléchargement (Vercel — décision prise le 2026-08-30, remplace l'idée initiale de GitHub Pages)
+- [À FAIRE] Brancher le vrai lien de téléchargement sur le site une fois l'installeur publié (Vercel — décision prise le 2026-08-30, remplace l'idée initiale de GitHub Pages)
 
 ## Architecture
 
