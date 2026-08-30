@@ -1,6 +1,7 @@
 import { useCallback, useRef, useState } from "react";
 import {
   agentChat,
+  cancelAgentChat,
   editFileText,
   listDir,
   onShellDone,
@@ -39,6 +40,8 @@ export interface QuestionRequest {
 export interface ContinueRequest {
   iterations: number;
 }
+
+const CANCELLED_MESSAGE = "Annulé par l'utilisateur.";
 
 function useResolvablePrompt<TPayload, TResult>() {
   const resolverRef = useRef<((v: TResult) => void) | null>(null);
@@ -93,6 +96,7 @@ export function useAgentLoop(opts: {
   const [messages, setMessages] = useState<AgentMessage[]>([]);
   const [status, setStatus] = useState<AgentStatus>("idle");
   const [error, setError] = useState<string | null>(null);
+  const [notice, setNotice] = useState<string | null>(null);
   const iterationRef = useRef(0);
   const optsRef = useRef(opts);
   optsRef.current = opts;
@@ -182,6 +186,7 @@ export function useAgentLoop(opts: {
   const runTurn = useCallback(async (history: AgentMessage[]) => {
     setStatus("waiting-llm");
     setError(null);
+    setNotice(null);
     let msgs = history;
     try {
       const resp = await agentChat(optsRef.current.host, optsRef.current.model, msgs, AGENT_TOOLS);
@@ -226,8 +231,14 @@ export function useAgentLoop(opts: {
 
       await runTurn(msgs);
     } catch (e) {
-      setStatus("error");
-      setError(String(e));
+      if (String(e).includes(CANCELLED_MESSAGE)) {
+        iterationRef.current = 0;
+        setStatus("idle");
+        setNotice("Génération annulée.");
+      } else {
+        setStatus("error");
+        setError(String(e));
+      }
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [executeTool, continuePrompt]);
@@ -250,14 +261,21 @@ export function useAgentLoop(opts: {
     setMessages([]);
     setStatus("idle");
     setError(null);
+    setNotice(null);
     iterationRef.current = 0;
+  }, []);
+
+  const cancel = useCallback(() => {
+    cancelAgentChat().catch(() => {});
   }, []);
 
   return {
     messages,
     status,
     error,
+    notice,
     sendUserMessage,
+    cancel,
     reset,
     pendingApproval: approval.pending,
     resolveApproval: approval.resolve,

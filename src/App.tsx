@@ -4,6 +4,7 @@ import Sidebar from "./components/Sidebar";
 import MessageBubble from "./components/MessageBubble";
 import SettingsModal from "./components/SettingsModal";
 import InstallPanel from "./components/InstallPanel";
+import SendButton from "./components/SendButton";
 
 const CodexView = lazy(() => import("./components/codex/CodexView"));
 import {
@@ -276,15 +277,12 @@ export default function App() {
                   </option>
                 ))}
               </select>
-              {sending ? (
-                <button className="send-btn stop-btn" onClick={() => cancelChat()}>
-                  ■
-                </button>
-              ) : (
-                <button className="send-btn" onClick={handleSend} disabled={!input.trim() || !selectedModel}>
-                  ↑
-                </button>
-              )}
+              <SendButton
+                busy={sending}
+                disabled={!input.trim() || !selectedModel}
+                onSend={handleSend}
+                onStop={() => cancelChat()}
+              />
             </div>
           </div>
         </div>

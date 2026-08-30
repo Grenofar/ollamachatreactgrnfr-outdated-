@@ -8,6 +8,7 @@ import EditorPane from "./EditorPane";
 import AgentTranscript from "./AgentTranscript";
 import ToolApprovalModal from "./ToolApprovalModal";
 import AskQuestionModal from "./AskQuestionModal";
+import SendButton from "../SendButton";
 
 const STATUS_LABEL: Record<string, string> = {
   idle: "",
@@ -150,6 +151,7 @@ export default function CodexView({
   }
 
   const busy = agent.status !== "idle" && agent.status !== "error";
+  const thinking = agent.status === "waiting-llm";
 
   return (
     <div className="codex">
@@ -182,9 +184,12 @@ export default function CodexView({
 
         <div className="codex-body">
           {rootFolder ? (
-            <div className="codex-filetree">
-              <FileTree rootPath={rootFolder} activePath={activePath} onOpenFile={openFile} />
-            </div>
+            <FileTree
+              rootPath={rootFolder}
+              activePath={activePath}
+              onOpenFile={openFile}
+              onFileCreated={openFile}
+            />
           ) : (
             <div className="codex-filetree">
               <div className="codex-filetree-empty">Choisis un dossier pour commencer.</div>
@@ -204,6 +209,7 @@ export default function CodexView({
             <AgentTranscript messages={agent.messages} scrollRef={scrollRef} onScroll={handleTranscriptScroll} />
             {STATUS_LABEL[agent.status] && <div className="codex-status">{STATUS_LABEL[agent.status]}</div>}
             {agent.error && <div className="banner banner-error">{agent.error}</div>}
+            {agent.notice && <div className="banner banner-info">{agent.notice}</div>}
 
             <div className="input-area">
               <div className="input-pill">
@@ -216,13 +222,12 @@ export default function CodexView({
                   disabled={busy}
                 />
                 <div className="input-controls">
-                  <button
-                    className="send-btn"
-                    onClick={handleSend}
+                  <SendButton
+                    busy={thinking}
                     disabled={busy || !input.trim() || !selectedModel}
-                  >
-                    ↑
-                  </button>
+                    onSend={handleSend}
+                    onStop={agent.cancel}
+                  />
                 </div>
               </div>
             </div>

@@ -1,4 +1,23 @@
 use serde::{Deserialize, Serialize};
+use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::Arc;
+use std::time::Duration;
+use tauri::State;
+
+pub struct AgentCancelFlag(pub Arc<AtomicBool>);
+
+// Polls the shared flag instead of using a proper async notifier: agent_chat's
+// only two await points (send + json parsing) are short-lived, so ~60ms of
+// added cancel latency is not perceptible and this avoids a lost-wakeup race
+// (cancel arriving between flag creation and first poll).
+async fn wait_for_cancel(flag: Arc<AtomicBool>) {
+    loop {
+        if flag.load(Ordering::SeqCst) {
+            return;
+        }
+        tokio::time::sleep(Duration::from_millis(60)).await;
+    }
+}
 
 #[derive(Deserialize, Serialize, Clone)]
 pub struct AgentToolCall {
@@ -62,13 +81,19 @@ fn to_ollama_message(m: &AgentMessage) -> serde_json::Value {
     obj
 }
 
+const CANCELLED_MESSAGE: &str = "Annulé par l'utilisateur.";
+
 #[tauri::command]
-pub fn agent_chat(
+pub async fn agent_chat(
+    cancel: State<'_, AgentCancelFlag>,
     host: String,
     model: String,
     messages: Vec<AgentMessage>,
     tools: Vec<serde_json::Value>,
 ) -> Result<AgentChatResponse, String> {
+    cancel.0.store(false, Ordering::SeqCst);
+    let flag = cancel.0.clone();
+
     let url = format!("{}/api/chat", host.trim_end_matches('/'));
     let wire_messages: Vec<serde_json::Value> = messages.iter().map(to_ollama_message).collect();
     let body = serde_json::json!({
@@ -78,16 +103,17 @@ pub fn agent_chat(
         "stream": false,
     });
 
-    let client = reqwest::blocking::Client::new();
-    let resp = client
-        .post(&url)
-        .json(&body)
-        .send()
-        .map_err(|e| format!("Impossible de contacter Ollama sur {} : {}", host, e))?;
+    let client = reqwest::Client::new();
+    let resp = tokio::select! {
+        result = client.post(&url).json(&body).send() => {
+            result.map_err(|e| format!("Impossible de contacter Ollama sur {} : {}", host, e))?
+        }
+        _ = wait_for_cancel(flag.clone()) => return Err(CANCELLED_MESSAGE.to_string()),
+    };
 
     if !resp.status().is_success() {
         let status = resp.status();
-        let text = resp.text().unwrap_or_default();
+        let text = resp.text().await.unwrap_or_default();
         if text.contains("does not support tools") {
             return Err(format!(
                 "Le modèle « {} » ne supporte pas les outils. Choisis un modèle compatible (ex. qwen2.5, llama3.1, mistral-nemo).",
@@ -97,7 +123,10 @@ pub fn agent_chat(
         return Err(format!("Ollama a répondu avec le statut {} : {}", status, text));
     }
 
-    let data: serde_json::Value = resp.json().map_err(|e| e.to_string())?;
+    let data: serde_json::Value = tokio::select! {
+        result = resp.json() => result.map_err(|e| e.to_string())?,
+        _ = wait_for_cancel(flag.clone()) => return Err(CANCELLED_MESSAGE.to_string()),
+    };
     if let Some(err) = data.get("error").and_then(|e| e.as_str()) {
         if err.contains("does not support tools") {
             return Err(format!(
@@ -112,4 +141,9 @@ pub fn agent_chat(
     let tool_calls = parse_tool_calls(&data["message"]["tool_calls"]);
 
     Ok(AgentChatResponse { content, tool_calls })
+}
+
+#[tauri::command]
+pub fn cancel_agent_chat(cancel: State<AgentCancelFlag>) {
+    cancel.0.store(true, Ordering::SeqCst);
 }

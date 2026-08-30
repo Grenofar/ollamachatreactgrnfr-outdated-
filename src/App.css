@@ -138,6 +138,11 @@ body {
   color: #f2b880;
 }
 
+.banner-info {
+  background: #262a30;
+  color: #a8b6c8;
+}
+
 .chat-scroll {
   flex: 1;
   overflow-y: auto;
@@ -295,6 +300,7 @@ body {
 }
 
 .send-btn {
+  position: relative;
   width: 32px;
   height: 32px;
   border-radius: 16px;
@@ -303,6 +309,9 @@ body {
   color: #dddddd;
   font-size: 14px;
   cursor: pointer;
+  overflow: hidden;
+  flex-shrink: 0;
+  transition: background 0.2s ease, border-radius 0.2s ease;
 }
 
 .send-btn:disabled {
@@ -310,9 +319,44 @@ body {
   cursor: default;
 }
 
-.stop-btn {
+.send-btn-busy {
   background: #4a2b2b;
   color: #e8a8a8;
+  border-radius: 10px;
+  cursor: pointer;
+}
+
+.send-btn-icon {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: opacity 0.2s ease, transform 0.2s ease;
+}
+
+.send-btn-icon-arrow {
+  opacity: 1;
+  transform: scale(1) rotate(0deg);
+}
+
+.send-btn-icon-stop {
+  opacity: 0;
+  transform: scale(0.3);
+  width: 10px;
+  height: 10px;
+  border-radius: 2px;
+  background: currentColor;
+}
+
+.send-btn-busy .send-btn-icon-arrow {
+  opacity: 0;
+  transform: scale(0.3) rotate(45deg);
+}
+
+.send-btn-busy .send-btn-icon-stop {
+  opacity: 1;
+  transform: scale(1);
 }
 
 /* ----------------------------------------------------------------- modals */
@@ -524,8 +568,37 @@ body {
   flex-shrink: 0;
   background: #1a1a1a;
   border-right: 1px solid #2c2c2c;
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+}
+
+.codex-filetree-toolbar {
+  display: flex;
+  justify-content: flex-end;
+  padding: 6px 6px 2px;
+  flex-shrink: 0;
+}
+
+.codex-filetree-toolbar button {
+  background: transparent;
+  border: none;
+  color: #999999;
+  font-size: 13px;
+  padding: 3px 6px;
+  border-radius: 6px;
+  cursor: pointer;
+}
+
+.codex-filetree-toolbar button:hover {
+  background: #262626;
+  color: #eaeaea;
+}
+
+.codex-filetree-scroll {
+  flex: 1;
   overflow-y: auto;
-  padding: 8px 4px;
+  padding: 2px 4px 8px;
 }
 
 .codex-filetree-empty {
@@ -548,6 +621,46 @@ body {
 
 .tree-row:hover {
   background: #262626;
+}
+
+.tree-row-new-file {
+  opacity: 0;
+  margin-left: auto;
+  background: transparent;
+  border: none;
+  color: #999999;
+  border-radius: 4px;
+  padding: 0 4px;
+  cursor: pointer;
+  font-size: 12px;
+}
+
+.tree-row:hover .tree-row-new-file {
+  opacity: 1;
+}
+
+.tree-row-new-file:hover {
+  color: #eaeaea;
+  background: #333333;
+}
+
+.tree-row-input {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 3px 6px;
+}
+
+.tree-row-input input {
+  flex: 1;
+  min-width: 0;
+  background: #232323;
+  border: 1px solid #3d6dd8;
+  border-radius: 4px;
+  color: #eaeaea;
+  font-size: 12.5px;
+  padding: 2px 5px;
+  outline: none;
 }
 
 .tree-row-active {

@@ -1,6 +1,6 @@
 mod commands;
 
-use commands::agent::agent_chat;
+use commands::agent::{agent_chat, cancel_agent_chat, AgentCancelFlag};
 use commands::chat::{cancel_chat, install_model, list_models, send_chat, CancelFlag};
 use commands::conversations::{delete_conversation, list_conversations, load_conversation, save_conversation};
 use commands::fsops::{edit_file_text, list_dir, read_file_text, write_file_text};
@@ -18,6 +18,7 @@ pub fn run() {
         .plugin(tauri_plugin_dialog::init())
         .manage(CancelFlag(Arc::new(AtomicBool::new(false))))
         .manage(ShellCancelFlag(Arc::new(AtomicBool::new(false))))
+        .manage(AgentCancelFlag(Arc::new(AtomicBool::new(false))))
         .invoke_handler(tauri::generate_handler![
             list_models,
             send_chat,
@@ -36,6 +37,7 @@ pub fn run() {
             run_powershell_command,
             cancel_shell_command,
             agent_chat,
+            cancel_agent_chat,
             search_hf_models,
         ])
         .run(tauri::generate_context!())

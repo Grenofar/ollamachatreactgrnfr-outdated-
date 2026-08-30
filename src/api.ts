@@ -117,4 +117,6 @@ export const agentChat = (
   tools: object[],
 ) => invoke<AgentChatResponse>("agent_chat", { host, model, messages, tools });
 
+export const cancelAgentChat = () => invoke<void>("cancel_agent_chat");
+
 export const searchHfModels = (query: string) => invoke<HfModel[]>("search_hf_models", { query });
