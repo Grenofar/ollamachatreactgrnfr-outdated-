@@ -82,6 +82,19 @@ le seul filet de sécurité de l'application — voir Limites connues ci-dessous
   le PC de l'utilisateur, pas seulement dans le dossier ouvert. Choix
   explicite de l'utilisateur après avoir été prévenu des risques.
 - **Exécution PowerShell autorisée** sans sandbox. Même choix explicite.
+- **Bug corrigé en v0.2.1** : `reqwest` était configuré
+  (`default-features = false, features = ["blocking", "json"]`) **sans aucun
+  backend TLS**, donc toute requête HTTPS échouait au runtime avec "Impossible
+  de contacter Supabase : error sending request for url..." — touchait
+  `check_for_update` ET `search_hf_models` (les deux seuls appels HTTPS du
+  code). Passé inaperçu jusqu'à la v0.2.0 car jamais testé en conditions
+  réelles (seulement vérifié via `curl` en direct côté Supabase, jamais via
+  le binaire compilé). Corrigé en ajoutant la feature `rustls-tls` à
+  `reqwest` dans `Cargo.toml`. **Leçon** : `cargo check`/`cargo build` ne
+  détectent pas ce genre de problème (c'est un échec runtime, pas de
+  compilation) — pour toute nouvelle commande qui fait un appel HTTPS,
+  vérifier qu'elle marche réellement une fois l'app lancée, pas juste que ça
+  compile.
 - **Installeur non signé** : Windows SmartScreen affiche un avertissement
   "Éditeur inconnu" au premier lancement (constaté par l'utilisateur avec la
   v0.1.0). Seule une signature de code (certificat payant, OV ou EV) ou une
@@ -285,6 +298,15 @@ l'utilisateur confirme qu'elle est bien dans `.env` local.
   calculateur de config (RAM saisie manuellement — un site web ne peut pas
   lire le matériel du visiteur — calcul déterministe, pas d'IA ni d'appel
   réseau) listant les conséquences de prendre un modèle trop gros.
+- **2026-08-30** — v0.2.1, correctif : `reqwest` n'avait aucun backend TLS
+  (voir Limites connues et risques ci-dessus) — signalé par l'utilisateur qui
+  a eu l'erreur "Impossible de contacter Supabase" en testant réellement le
+  bouton de vérification de mise à jour dans l'app installée. Ajout de
+  `rustls-tls` aux features de `reqwest`. Publiée via le flux CLI
+  (`.env` + `service_role`, voir "Publier une release" ci-dessus). Site élargi
+  (560px → 820px) et calculateur de config enrichi (menu déroulant de
+  modèles GPU NVIDIA/AMD avec VRAM connue à la place d'une case à cocher,
+  ajout d'un sélecteur de niveau de processeur).
 
 ## Prochaines étapes (dans l'ordre du fichier de passation d'origine)
 
