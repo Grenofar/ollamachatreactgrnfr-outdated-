@@ -19,9 +19,9 @@ pas devenir obsolète.
 - [FAIT] Menu de modèle repensé (`ModelSelect`, recherche + taille/quantization affichées) dans le chat et Codex, à la place du `<select>` HTML brut
 - [FAIT] Navigateur de modèles Hugging Face branché dans l'app (il existait mais n'était appelé nulle part) : parcours élargi par défaut, recommandation par RAM système détectée
 - [À FAIRE] Connecter `site/` à Vercel (étape manuelle côté utilisateur, voir `site/README.md`)
-- [FAIT] Supabase en lecture seule branché ET table `app_releases` créée + peuplée (app : `check_for_update` + Réglages ; site : fetch client-side)
+- [FAIT] Supabase en lecture seule branché ET table `app_releases` créée + peuplée (site : fetch client-side ; app : voir auto-update ci-dessous)
 - [FAIT] Premier installeur construit (`npm run tauri build`, NSIS+MSI) et publié : v0.1.0 hébergée sur Supabase Storage (bucket public `releases`), lien de téléchargement fonctionnel de bout en bout
-- [À FAIRE] Auto-update en continu (`tauri-plugin-updater`) — pour l'instant la vérification de version est manuelle (bouton dans Réglages), pas de mise à jour silencieuse au démarrage
+- [FAIT] **Auto-update en continu** (`tauri-plugin-updater`) — depuis v0.3.0, "Vérifier les mises à jour" télécharge, installe et redémarre l'app toute seule, sans navigateur ni Supabase ouvert manuellement. Voir section dédiée plus bas pour le détail (signature cryptographique, endpoint RPC Supabase, `.env`).
 - [À FAIRE] Signature de code (SmartScreen affiche "Éditeur inconnu" tant que ce n'est pas fait — décision explicite de l'utilisateur le 2026-08-30 de ne rien faire pour l'instant, voir Décisions techniques)
 - [FAIT] Rendu Markdown réel dans le chat (`marked` + `DOMPurify`), avec coloration/copie de bloc de code préservées
 - [FAIT] Éditer un message envoyé (tronque et renvoie) et régénérer la dernière réponse
@@ -52,6 +52,7 @@ pas devenir obsolète.
 - `src/components/Sidebar.tsx` : renommage par double-clic sur le titre (input inline, Entrée valide/Échap ou blur annule — même pattern que la création de fichier dans `FileTree`), recherche **serveur** (debounce 200ms) via `search_conversations` — cherche dans le titre ET le contenu des messages, pas juste le titre affiché (les titres sont auto-générés depuis les ~40 premiers caractères du premier message, donc une recherche titre-seul ratait la plupart d'une vieille conversation).
 - `App.tsx` : brouillon de message par conversation (`draftsRef`, une `Map<id, texte>` hors du state React — changer de conversation en cours de frappe sauvegarde/restaure le bon brouillon au lieu de partager un seul brouillon global). `handleRegenerate` utilise le modèle **actuellement sélectionné** dans `ModelSelect`, pas forcément celui de la conversation — change le modèle dans le menu puis clique "Régénérer" pour reformuler avec un autre modèle.
 - System tray (`lib.rs`, feature Cargo `tray-icon`) : fermer la fenêtre (X) la cache au lieu de quitter (`WindowEvent::CloseRequested` → `api.prevent_close()` + `window.hide()`) ; l'icône dans la zone de notification a un menu "Afficher"/"Quitter", et un clic gauche dessus réaffiche aussi la fenêtre. Quitter réellement passe par `app.exit(0)` (menu tray, ou `close_app` du watchdog).
+- `tauri-plugin-updater` + `tauri-plugin-process` : auto-update en continu, voir la section dédiée "Auto-update en continu" plus bas pour le détail complet (signature, endpoint RPC Supabase). Câblé uniquement dans `SettingsModal.tsx` (`check()`/`downloadAndInstall()`/`relaunch()` de `@tauri-apps/plugin-updater`/`plugin-process`) — pas de vérification silencieuse au démarrage, reste un bouton explicite.
 - `src-tauri/src/commands/hardware.rs` : `get_system_ram_gb`, RAM totale via une commande PowerShell one-shot (pas de crate `sysinfo` ajoutée pour ça) — volontairement pas de détection GPU/VRAM, peu fiable sous Windows (drivers rapportent souvent des valeurs plafonnées/fausses).
 - `src/components/ModelSelect.tsx` : menu déroulant de modèle (recherche, affiche parameter_size/quantization/taille), partagé entre le chat de base et Codex, remplace le `<select>` HTML natif. Prop `direction` (`"up"` par défaut pour la barre du bas du chat, `"down"` pour l'en-tête de Codex) — sans elle le panneau s'ouvre hors écran quand le déclencheur est en haut de page.
 - `src-tauri/src/commands/watchdog.rs` : système anti-gel, voir section dédiée plus bas.
@@ -198,40 +199,94 @@ demande confirmation avant d'envoyer quoi que ce soit qui ressemble à des
 données utilisateur (conversations, contenu de fichiers, réglages) vers autre
 chose que `ollama_host`.
 
+## Auto-update en continu
+
+Depuis la v0.3.0 (2026-08-30), "Vérifier les mises à jour" dans Réglages
+utilise `tauri-plugin-updater` : télécharge, installe et redémarre l'app
+avec le nouveau code, sans jamais ouvrir de navigateur. L'ancien flux (bouton
+qui ouvrait le lien Supabase Storage dans le navigateur) a été retiré
+entièrement — `update.rs`/`check_for_update` supprimés côté Rust,
+`checkForUpdate`/`openExternalUrl`/`UpdateStatus`/`AppRelease` supprimés
+côté TS. Le site (`site/index.html`), lui, continue de lire `app_releases`
+directement en HTTP pour son propre bouton de téléchargement — logique
+différente, pas concerné par ce qui suit.
+
+**Pourquoi une signature cryptographique est obligatoire** : `tauri-plugin-updater`
+refuse d'installer un update non signé, par design (empêche d'injecter une
+mise à jour malveillante même si l'endpoint ou le fichier hébergé étaient
+compromis). Clé générée le 2026-08-30 via `tauri signer generate --ci -p ""`
+(sans mot de passe). La clé **publique** est commitée dans
+`tauri.conf.json` → `plugins.updater.pubkey` (sans risque, c'est fait pour
+être public, comme la clé anon Supabase). La clé **privée** vit dans `.env`
+(`TAURI_SIGNING_PRIVATE_KEY` + `TAURI_SIGNING_PRIVATE_KEY_PASSWORD`, cette
+dernière vide) — si elle est perdue, aucun install existant ne pourra plus
+jamais vérifier une future mise à jour signée avec une nouvelle clé (il
+faudrait qu'ils réinstallent manuellement une fois, comme pour n'importe
+quel changement de clé de signature).
+
+**Pourquoi un endpoint RPC plutôt qu'une lecture directe de la table** :
+`tauri-plugin-updater` attend un JSON précis
+(`{version, notes, pub_date, platforms: {"windows-x86_64": {signature, url}}}`),
+qu'une requête REST classique sur `app_releases` ne peut pas produire (la
+table est plate, pas imbriquée). `supabase/updater_migration.sql` ajoute une
+colonne `signature` et une fonction `latest_release_manifest()` (SQL,
+`stable`, donc appelable en GET par PostgREST) qui reformate la dernière
+ligne dans la forme attendue. `tauri.conf.json` pointe
+`plugins.updater.endpoints` vers
+`{SUPABASE_URL}/rest/v1/rpc/latest_release_manifest`, avec la clé anon en
+en-têtes (`plugins.updater.headers`).
+
+**Transition ponctuelle** : les installs jusqu'à la v0.2.3 n'ont pas du tout
+le plugin updater — elles ne peuvent pas détecter automatiquement la v0.3.0.
+Un utilisateur doit récupérer celle-ci manuellement une fois (site ou lien
+Supabase Storage direct) ; à partir de là, les mises à jour suivantes se
+font vraiment en un clic depuis l'app.
+
 ## Publier une release
 
-Depuis la v0.2.0 (2026-08-30), la publication se fait en CLI plutôt que via
-le dashboard Supabase, avec la clé **`service_role`** (contourne toute RLS —
-différente de la clé anon utilisée partout ailleurs dans ce projet, qui elle
-reste committable). Elle vit dans `.env` à la racine, **gitignoré** (voir
-`.env.example` pour le template, jamais rempli avec la vraie valeur).
+La publication se fait en CLI avec la clé **`service_role`** (contourne
+toute RLS — différente de la clé anon utilisée partout ailleurs dans ce
+projet, qui elle reste committable). Elle vit dans `.env` à la racine,
+**gitignoré** (voir `.env.example` pour le template, jamais rempli avec la
+vraie valeur).
 
 Étapes pour publier une nouvelle version :
 
 1. Bump la version dans `package.json`, `src-tauri/Cargo.toml` et
    `src-tauri/tauri.conf.json` (les trois, gardés synchronisés) — sans ça,
-   `check_for_update` compare deux versions identiques et ne détecte aucune
-   mise à jour même si le binaire a changé.
-2. `npm run tauri build` → récupère
-   `src-tauri/target/release/bundle/nsis/<nom>_<version>_x64-setup.exe`.
-3. Upload vers Supabase Storage (bucket public `releases`) avec la
-   `service_role` key :
-   `POST {SUPABASE_URL}/storage/v1/object/releases/<fichier>`,
-   headers `Authorization: Bearer <service_role>` + `apikey: <service_role>`,
-   corps = le fichier en binaire.
-4. Insère la ligne dans `app_releases` :
+   deux versions identiques ne déclenchent aucune mise à jour détectée même
+   si le binaire a changé.
+2. **`source .env && npm run tauri build`** (bien sourcer `.env` dans la
+   **même** commande shell que le build — les variables d'environnement ne
+   survivent pas d'un appel Bash à l'autre dans cet environnement). Ça
+   produit `<nom>_<version>_x64-setup.exe` **et** un fichier `.sig` à côté
+   (signature auto-générée par le bundler grâce aux variables
+   `TAURI_SIGNING_PRIVATE_KEY*`) — sans `.env` sourcé, le build réussit quand
+   même mais sans signature, et l'updater refusera silencieusement cette
+   version.
+3. Upload l'installeur vers Supabase Storage (bucket public `releases`) avec
+   la `service_role` key :
+   `POST {SUPABASE_URL}/storage/v1/object/releases/<fichier>`, headers
+   `Authorization: Bearer <service_role>` + `apikey: <service_role>`, corps =
+   le fichier en binaire.
+4. Insère la ligne dans `app_releases`, **avec le contenu du `.sig`** dans le
+   champ `signature` :
    `POST {SUPABASE_URL}/rest/v1/app_releases` (mêmes headers,
    `Content-Type: application/json`, `Prefer: return=minimal`) avec
-   `{"version", "download_url", "notes"}`.
+   `{"version", "download_url", "notes", "signature"}`. Le `.sig` contient
+   des retours à la ligne (format minisign) — construire le JSON avec un
+   petit script (Node par ex.), pas à la main, pour ne pas casser
+   l'échappement.
 5. Vérifie avec la clé **anon** (celle que l'app/le site utilisent
-   réellement) que la ligne et le fichier sont bien lisibles publiquement —
-   ne jamais considérer une release publiée sans cette vérification côté
-   lecture publique.
+   réellement) : le fichier est lisible publiquement (`curl -I` sur l'URL de
+   storage), **et** `GET {SUPABASE_URL}/rest/v1/rpc/latest_release_manifest`
+   renvoie bien le JSON avec la nouvelle version — ne jamais considérer une
+   release publiée sans ces deux vérifications côté lecture publique.
 
-**Pourquoi cette clé est traitée différemment de l'anon key** : l'anon key
-est conçue pour être publique (protégée par RLS), donc committée sans
-souci dans `site/index.html` et `update.rs`. La `service_role` key
-contourne RLS entièrement — un mot de passe root sur tout le projet
+**Pourquoi la clé `service_role` est traitée différemment de l'anon key** :
+l'anon key est conçue pour être publique (protégée par RLS), donc committée
+sans souci dans `site/index.html` et `tauri.conf.json`. La `service_role`
+key contourne RLS entièrement — un mot de passe root sur tout le projet
 Supabase, pas juste cette table. D'où : `.env` gitignoré, jamais lue par
 l'app elle-même (aucun `SUPABASE_SERVICE_ROLE_KEY` dans le code Rust/TS —
 uniquement utilisée manuellement en CLI au moment de publier), et redemandée
@@ -390,6 +445,20 @@ l'utilisateur confirme qu'elle est bien dans `.env` local.
   `CloseRequestApi::prevent_close()`, pas `prevent_default()` (erreur de
   compilation immédiate, corrigée avant tout test — mais un rappel que les
   noms d'API Tauri v1→v2 ne se devinent pas toujours par analogie).
+- **2026-08-30** — v0.3.0 : vrai auto-update en continu (`tauri-plugin-updater`),
+  sur demande explicite de l'utilisateur — l'ancien bouton "Vérifier les mises
+  à jour" ouvrait juste un lien Supabase dans le navigateur, il fallait
+  relancer le setup soi-même. Génération d'une paire de clés de signature
+  (`tauri signer generate`), migration Supabase ajoutant une colonne
+  `signature` et une fonction RPC `latest_release_manifest()` (voir section
+  dédiée plus haut pour le détail complet). `update.rs` et tout ce qui s'y
+  rattachait côté front (`checkForUpdate`, `openExternalUrl`,
+  `UpdateStatus`/`AppRelease`) supprimés, remplacés par
+  `@tauri-apps/plugin-updater` + `@tauri-apps/plugin-process` directement
+  dans `SettingsModal`. Publié en suivant le nouveau processus de "Publier
+  une release" (avec signature) ; vérifié via la clé anon que le fichier ET
+  le nouvel endpoint RPC répondent correctement avant d'annoncer la release
+  terminée.
 
 ## Prochaines étapes (dans l'ordre du fichier de passation d'origine)
 
@@ -405,13 +474,10 @@ précédente sans accès `git push`) pour le détail d'origine.
    produits. Le `.exe` NSIS est uploadé dans le bucket public Supabase
    Storage `releases`, `download_url` renseigné dans `app_releases` — lien
    de téléchargement vérifié fonctionnel (200 OK, taille exacte) de bout en
-   bout côté app et site. **Reste pour une vraie mise en place d'auto-update
-   en continu** : `tauri-plugin-updater` (vérif + install silencieuse au
-   démarrage) n'est pas branché — aujourd'hui c'est un check manuel
-   (bouton dans Réglages). Toujours prévoir un chemin de retour en arrière
-   si tu ajoutes l'auto-update (cf. rigueur du pattern snapshot/rollback de
-   l'installeur C# du projet sœur OmniDeck, pas forcément transposable tel
-   quel ici).
+   bout côté app et site.
+4bis. ~~Auto-update en continu~~ — `tauri-plugin-updater` branché le
+   2026-08-30 (v0.3.0), voir la section dédiée "Auto-update en continu"
+   plus haut pour le détail complet (signature, endpoint RPC, `.env`).
 5. **Vercel** : connecter `site/` (voir `site/README.md`) — pas encore fait
    côté utilisateur à cette date. `vercel.json` racine déjà en place pour
    éviter que Vercel ne build l'app à la place du site (voir Journal des
