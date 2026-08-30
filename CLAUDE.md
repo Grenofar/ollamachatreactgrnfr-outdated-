@@ -14,12 +14,13 @@ pas devenir obsolète.
 - [FAIT] Éditeur Codex : agent outillé (6 outils), Monaco, bascule Auto/Approbation
 - [FAIT] `npm run build` (tsc + vite) et `cargo check` passent à 0 erreur
 - [FAIT] Dépôt git initialisé et poussé sur GitHub (`Grenofar/ollamachatreactgrnfr`, dépôt **privé**)
-- [FAIT] Landing page statique dans `site/` (présentation du projet, pas encore de bouton de téléchargement actif)
+- [FAIT] Landing page statique dans `site/` — présentation minimale + comment ça marche + conseil de modèle + note SmartScreen + bouton de téléchargement
 - [FAIT] Création de fichier inline dans Codex (toolbar + par dossier), génération annulable (chat et Codex) avec bouton animé
 - [À FAIRE] Connecter `site/` à Vercel (étape manuelle côté utilisateur, voir `site/README.md`)
-- [FAIT] Supabase en lecture seule branché (app : `check_for_update` + Réglages ; site : fetch client-side) — table `app_releases` pas encore créée côté Supabase, voir `supabase/schema.sql`
-- [À FAIRE] Installeur + auto-update (tauri-plugin-updater + GitHub Releases)
-- [À FAIRE] Publier une release (ligne dans `app_releases`) une fois l'installeur construit — l'app et le site afficheront alors le vrai lien automatiquement
+- [FAIT] Supabase en lecture seule branché ET table `app_releases` créée + peuplée (app : `check_for_update` + Réglages ; site : fetch client-side)
+- [FAIT] Premier installeur construit (`npm run tauri build`, NSIS+MSI) et publié : v0.1.0 hébergée sur Supabase Storage (bucket public `releases`), lien de téléchargement fonctionnel de bout en bout
+- [À FAIRE] Auto-update en continu (`tauri-plugin-updater`) — pour l'instant la vérification de version est manuelle (bouton dans Réglages), pas de mise à jour silencieuse au démarrage
+- [À FAIRE] Signature de code (SmartScreen affiche "Éditeur inconnu" tant que ce n'est pas fait)
 
 ## Architecture
 
@@ -64,6 +65,13 @@ le seul filet de sécurité de l'application — voir Limites connues ci-dessous
   le PC de l'utilisateur, pas seulement dans le dossier ouvert. Choix
   explicite de l'utilisateur après avoir été prévenu des risques.
 - **Exécution PowerShell autorisée** sans sandbox. Même choix explicite.
+- **Installeur non signé** : Windows SmartScreen affiche un avertissement
+  "Éditeur inconnu" au premier lancement (constaté par l'utilisateur avec la
+  v0.1.0). Seule une signature de code (certificat payant) fait disparaître
+  cet avertissement — non fait pour l'instant. Le site documente comment
+  passer outre (`Informations complémentaires` → `Exécuter quand même`).
+  Metadata Cargo.toml/tauri.conf.json (description, publisher) corrigées le
+  2026-08-30 par bonne pratique, mais ça ne change rien à SmartScreen.
 - Le mode Approbation est le seul garde-fou : ne l'affaiblis pas (l'assouplir,
   ajouter des exceptions, etc.) sans qu'on te le demande explicitement.
 - `agent_chat` est **non-streaming** : un appel modèle avec des outils
@@ -148,6 +156,17 @@ le seul filet de sécurité de l'application — voir Limites connues ci-dessous
   positionné sur `site`. Ajout de `vercel.json` **à la racine** du repo
   (`outputDirectory: "site"`, framework/build/install désactivés) comme
   filet de sécurité indépendant de ce réglage du dashboard.
+- **2026-08-30** — Téléchargement rendu fonctionnel de bout en bout :
+  premier build release (`npm run tauri build`, ~22 min, NSIS + MSI),
+  bucket public Supabase Storage `releases` créé par l'utilisateur, `.exe`
+  NSIS uploadé, ligne insérée dans `app_releases` — vérifié avec `curl`
+  (200 OK, `Content-Length` exact). Site enrichi sur demande explicite d'un
+  "Comment ça marche" (2 courtes descriptions Chat/Codex) et d'un "Quel
+  modèle choisir" (repris des modèles déjà recommandés par l'app elle-même
+  dans son message d'erreur function-calling), plus une note sur
+  l'avertissement SmartScreen. Métadonnées Cargo.toml/tauri.conf.json
+  corrigées (description/publisher) pour les prochains builds — n'affecte
+  pas le binaire déjà publié.
 
 ## Prochaines étapes (dans l'ordre du fichier de passation d'origine)
 
@@ -156,31 +175,31 @@ précédente sans accès `git push`) pour le détail d'origine.
 
 1. ~~Git + GitHub~~ — fait.
 2. ~~CLAUDE.md~~ — ce fichier.
-3. ~~Supabase (lecture seule)~~ — branché côté code le 2026-08-30
-   (`check_for_update`, Réglages, `site/index.html`). Reste à faire : que
-   l'utilisateur exécute `supabase/schema.sql` une fois dans l'éditeur SQL
-   Supabase (crée `app_releases` + policy SELECT anon) — sans ça, l'app et
-   le site voient juste "table introuvable" (dégradation silencieuse par
-   design, pas une erreur bloquante).
-4. **Installeur + auto-update** : `tauri-plugin-updater` + GitHub Releases
-   comme canal de distribution. Toujours prévoir un chemin de retour en
-   arrière (cf. rigueur du pattern snapshot/rollback de l'installeur C# du
-   projet sœur OmniDeck, pas forcément transposable tel quel ici). **Point à
-   trancher avant de publier une release** : le dépôt est privé, or un asset
-   de GitHub Release sur un dépôt privé n'est pas téléchargeable
-   anonymement — soit le dépôt devient public à ce moment-là, soit le
-   binaire est hébergé ailleurs (ex. Supabase Storage) et c'est cette URL-là
-   qui va dans `download_url`.
-5. **Site de téléchargement sur Vercel** : connecter `site/` (voir
-   `site/README.md`). À clarifier avec l'utilisateur : contenu de la page
-   tant qu'aucune release n'existe encore (déjà géré côté code : message
-   statique "bientôt disponible" tant que `app_releases` est vide, cf.
-   étape 3).
+3. ~~Supabase (lecture seule)~~ — branché le 2026-08-30, table `app_releases`
+   créée et peuplée.
+4. ~~Installeur (premier build)~~ — `npm run tauri build` exécuté le
+   2026-08-30, NSIS (`ollama-chat-react_0.1.0_x64-setup.exe`, 5,57 Mo) et MSI
+   produits. Le `.exe` NSIS est uploadé dans le bucket public Supabase
+   Storage `releases`, `download_url` renseigné dans `app_releases` — lien
+   de téléchargement vérifié fonctionnel (200 OK, taille exacte) de bout en
+   bout côté app et site. **Reste pour une vraie mise en place d'auto-update
+   en continu** : `tauri-plugin-updater` (vérif + install silencieuse au
+   démarrage) n'est pas branché — aujourd'hui c'est un check manuel
+   (bouton dans Réglages). Toujours prévoir un chemin de retour en arrière
+   si tu ajoutes l'auto-update (cf. rigueur du pattern snapshot/rollback de
+   l'installeur C# du projet sœur OmniDeck, pas forcément transposable tel
+   quel ici).
+5. **Vercel** : connecter `site/` (voir `site/README.md`) — pas encore fait
+   côté utilisateur à cette date. `vercel.json` racine déjà en place pour
+   éviter que Vercel ne build l'app à la place du site (voir Journal des
+   changements).
+6. **Signature de code** : pas fait, SmartScreen avertit "Éditeur inconnu"
+   au premier lancement (voir Limites connues). Nécessite l'achat d'un
+   certificat — décision à prendre par l'utilisateur, pas de blocage
+   fonctionnel en attendant.
 
 ## Ce qu'il faut demander à l'utilisateur avant d'agir
 
-- Où héberger le binaire de l'installeur une fois construit, vu que le dépôt
-  est privé (voir note à l'étape 4 ci-dessus).
 - Toute action irréversible ou visible publiquement (push, création de
   ressources externes, publication du site, rendre le dépôt public) doit être
   confirmée explicitement avant exécution.
