@@ -1,7 +1,6 @@
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 import { open } from "@tauri-apps/plugin-dialog";
-import { openUrl } from "@tauri-apps/plugin-opener";
 import type {
   AgentChatResponse,
   AgentMessage,
@@ -13,7 +12,6 @@ import type {
   HfModel,
   OllamaModel,
   Settings,
-  UpdateStatus,
 } from "./types";
 
 export const listModels = (host: string) => invoke<OllamaModel[]>("list_models", { host });
@@ -129,10 +127,6 @@ export const cancelAgentChat = () => invoke<void>("cancel_agent_chat");
 export const searchHfModels = (query: string) => invoke<HfModel[]>("search_hf_models", { query });
 
 export const getSystemRamGb = () => invoke<number>("get_system_ram_gb");
-
-export const checkForUpdate = () => invoke<UpdateStatus>("check_for_update");
-
-export const openExternalUrl = (url: string) => openUrl(url);
 
 export const closeApp = () => invoke<void>("close_app");
 

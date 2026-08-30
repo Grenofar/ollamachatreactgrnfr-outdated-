@@ -85,16 +85,3 @@ export interface HfModel {
   tags: string[];
 }
 
-export interface AppRelease {
-  version: string;
-  download_url?: string | null;
-  notes?: string | null;
-  published_at?: string | null;
-}
-
-export interface UpdateStatus {
-  current_version: string;
-  latest: AppRelease | null;
-  update_available: boolean;
-  error?: string | null;
-}

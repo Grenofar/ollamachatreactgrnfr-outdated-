@@ -27,6 +27,7 @@
   "bundle": {
     "active": true,
     "targets": "all",
+    "createUpdaterArtifacts": true,
     "publisher": "Grenofar",
     "shortDescription": "Client de chat pour Ollama avec éditeur de code agentique (Codex)",
     "icon": [
@@ -36,5 +37,20 @@
       "icons/icon.icns",
       "icons/icon.ico"
     ]
+  },
+  "plugins": {
+    "updater": {
+      "pubkey": "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IDZGNTE1ODQ4NTEwNEI2QzkKUldUSnRnUlJTRmhSYndjSjB0SlVtQkQ4U2dneXh5Z0NoK1FIQzY2UWcrVXZqbTY0VmRRbU13cWsK",
+      "endpoints": [
+        "https://cihuwuiyziarnghethbi.supabase.co/rest/v1/rpc/latest_release_manifest"
+      ],
+      "headers": {
+        "apikey": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImNpaHV3dWl5emlhcm5naGV0aGJpIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODgwNjM3OTQsImV4cCI6MjEwMzYzOTc5NH0.AkAe00Vzu4506nHSjh2bl99x5hZUSejZRm3pJwVuGtI",
+        "Authorization": "Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImNpaHV3dWl5emlhcm5naGV0aGJpIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODgwNjM3OTQsImV4cCI6MjEwMzYzOTc5NH0.AkAe00Vzu4506nHSjh2bl99x5hZUSejZRm3pJwVuGtI"
+      },
+      "windows": {
+        "installMode": "passive"
+      }
+    }
   }
 }

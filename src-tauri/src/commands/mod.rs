@@ -6,7 +6,6 @@ pub mod hardware;
 pub mod huggingface;
 pub mod settings;
 pub mod shell;
-pub mod update;
 pub mod watchdog;
 
 use tauri::{AppHandle, Manager};

@@ -10,7 +10,6 @@ use commands::hardware::get_system_ram_gb;
 use commands::huggingface::search_hf_models;
 use commands::settings::{load_settings, save_settings};
 use commands::shell::{cancel_shell_command, run_powershell_command, ShellCancelFlag};
-use commands::update::check_for_update;
 use commands::watchdog::{close_app, spawn_watchdog_thread, Watchdog};
 use std::sync::atomic::AtomicBool;
 use std::sync::Arc;
@@ -25,6 +24,8 @@ pub fn run() {
         .plugin(tauri_plugin_clipboard_manager::init())
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_window_state::Builder::default().build())
+        .plugin(tauri_plugin_process::init())
+        .plugin(tauri_plugin_updater::Builder::new().build())
         .manage(CancelFlag(Arc::new(AtomicBool::new(false))))
         .manage(ShellCancelFlag(Arc::new(AtomicBool::new(false))))
         .manage(AgentCancelFlag(Arc::new(AtomicBool::new(false))))
@@ -102,7 +103,6 @@ pub fn run() {
             cancel_agent_chat,
             search_hf_models,
             get_system_ram_gb,
-            check_for_update,
             close_app,
         ])
         .run(tauri::generate_context!())
