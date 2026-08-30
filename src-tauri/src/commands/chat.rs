@@ -170,6 +170,24 @@ pub fn cancel_chat(cancel: State<CancelFlag>) {
 }
 
 #[tauri::command]
+pub fn delete_model(host: String, name: String) -> Result<(), String> {
+    let url = format!("{}/api/delete", host.trim_end_matches('/'));
+    let client = reqwest::blocking::Client::new();
+    let resp = client
+        .delete(&url)
+        .json(&serde_json::json!({ "model": name }))
+        .send()
+        .map_err(|e| format!("Impossible de contacter Ollama sur {} : {}", host, e))?;
+
+    if !resp.status().is_success() {
+        let status = resp.status();
+        let text = resp.text().unwrap_or_default();
+        return Err(format!("Ollama a répondu avec le statut {} : {}", status, text));
+    }
+    Ok(())
+}
+
+#[tauri::command]
 pub fn install_model(app: AppHandle, host: String, reference: String) -> Result<(), String> {
     std::thread::spawn(move || {
         let url = format!("{}/api/pull", host.trim_end_matches('/'));

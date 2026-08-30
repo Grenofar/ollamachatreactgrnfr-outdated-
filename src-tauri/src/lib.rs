@@ -1,7 +1,7 @@
 mod commands;
 
 use commands::agent::{agent_chat, cancel_agent_chat, AgentCancelFlag};
-use commands::chat::{cancel_chat, install_model, list_models, send_chat, CancelFlag};
+use commands::chat::{cancel_chat, delete_model, install_model, list_models, send_chat, CancelFlag};
 use commands::conversations::{delete_conversation, list_conversations, load_conversation, save_conversation};
 use commands::fsops::{edit_file_text, list_dir, read_file_text, write_file_text};
 use commands::hardware::get_system_ram_gb;
@@ -18,6 +18,7 @@ pub fn run() {
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_clipboard_manager::init())
         .plugin(tauri_plugin_dialog::init())
+        .plugin(tauri_plugin_window_state::Builder::default().build())
         .manage(CancelFlag(Arc::new(AtomicBool::new(false))))
         .manage(ShellCancelFlag(Arc::new(AtomicBool::new(false))))
         .manage(AgentCancelFlag(Arc::new(AtomicBool::new(false))))
@@ -26,6 +27,7 @@ pub fn run() {
             send_chat,
             cancel_chat,
             install_model,
+            delete_model,
             list_conversations,
             load_conversation,
             save_conversation,

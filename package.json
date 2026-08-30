@@ -15,12 +15,15 @@
     "@tauri-apps/plugin-clipboard-manager": "^2",
     "@tauri-apps/plugin-dialog": "^2.7.2",
     "@tauri-apps/plugin-opener": "^2",
+    "dompurify": "^3.4.14",
+    "marked": "^18.0.11",
     "monaco-editor": "^0.56.0",
     "react": "^19.1.0",
     "react-dom": "^19.1.0"
   },
   "devDependencies": {
     "@tauri-apps/cli": "^2",
+    "@types/dompurify": "^3.0.5",
     "@types/react": "^19.1.8",
     "@types/react-dom": "^19.1.6",
     "@vitejs/plugin-react": "^4.6.0",

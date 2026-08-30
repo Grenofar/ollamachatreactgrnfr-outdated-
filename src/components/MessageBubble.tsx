@@ -1,52 +1,42 @@
-import { useState } from "react";
+import { useMemo, type MouseEvent } from "react";
+import { marked } from "marked";
+import DOMPurify from "dompurify";
 import { writeText } from "@tauri-apps/plugin-clipboard-manager";
 
-type Segment = { type: "text"; content: string } | { type: "code"; lang: string; code: string };
-
-const CODE_FENCE_RE = /```(\w*)\n?([\s\S]*?)```/g;
-
-function parseSegments(text: string): Segment[] {
-  const segments: Segment[] = [];
-  let lastEnd = 0;
-  let m: RegExpExecArray | null;
-  CODE_FENCE_RE.lastIndex = 0;
-  while ((m = CODE_FENCE_RE.exec(text))) {
-    if (m.index > lastEnd) {
-      segments.push({ type: "text", content: text.slice(lastEnd, m.index) });
-    }
-    segments.push({ type: "code", lang: m[1], code: m[2].replace(/^\n+|\n+$/g, "") });
-    lastEnd = CODE_FENCE_RE.lastIndex;
-  }
-  if (lastEnd < text.length) {
-    segments.push({ type: "text", content: text.slice(lastEnd) });
-  }
-  return segments.length ? segments : [{ type: "text", content: text }];
+function escapeHtml(s: string): string {
+  return s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
 }
 
-function CodeBlock({ lang, code }: { lang: string; code: string }) {
-  const [copied, setCopied] = useState(false);
+function toBase64(str: string): string {
+  const bytes = new TextEncoder().encode(str);
+  let binary = "";
+  bytes.forEach((b) => (binary += String.fromCharCode(b)));
+  return btoa(binary);
+}
 
-  async function handleCopy() {
-    try {
-      await writeText(code);
-      setCopied(true);
-      setTimeout(() => setCopied(false), 1200);
-    } catch {
-      setCopied(false);
-    }
-  }
+function fromBase64(b64: string): string {
+  const binary = atob(b64);
+  const bytes = Uint8Array.from(binary, (c) => c.charCodeAt(0));
+  return new TextDecoder().decode(bytes);
+}
 
-  return (
-    <div className="code-block">
-      <div className="code-block-header">
-        <span>{lang || "code"}</span>
-        <button onClick={handleCopy}>{copied ? "Copié !" : "Copier"}</button>
-      </div>
-      <pre>
-        <code>{code}</code>
-      </pre>
-    </div>
-  );
+marked.use({
+  breaks: true,
+  renderer: {
+    code({ text, lang }) {
+      const encoded = toBase64(text);
+      return `<div class="code-block"><div class="code-block-header"><span>${escapeHtml(
+        lang || "code",
+      )}</span><button class="code-copy-btn" data-code="${encoded}">Copier</button></div><pre><code>${escapeHtml(
+        text,
+      )}</code></pre></div>`;
+    },
+  },
+});
+
+function renderMarkdown(content: string): string {
+  const html = marked.parse(content, { async: false }) as string;
+  return DOMPurify.sanitize(html, { ADD_ATTR: ["data-code"] });
 }
 
 export default function MessageBubble({
@@ -56,23 +46,31 @@ export default function MessageBubble({
   role: "user" | "assistant" | "system";
   content: string;
 }) {
-  const segments = parseSegments(content);
+  const html = useMemo(() => renderMarkdown(content), [content]);
+
+  async function handleClick(e: MouseEvent<HTMLDivElement>) {
+    const btn = (e.target as HTMLElement).closest(".code-copy-btn") as HTMLButtonElement | null;
+    if (!btn) return;
+    const encoded = btn.dataset.code ?? "";
+    try {
+      await writeText(fromBase64(encoded));
+      const original = btn.textContent;
+      btn.textContent = "Copié !";
+      setTimeout(() => {
+        btn.textContent = original;
+      }, 1200);
+    } catch {
+      // clipboard unavailable: silently do nothing rather than show an error for a copy button
+    }
+  }
 
   return (
     <div className={`bubble-row bubble-row-${role}`}>
-      <div className={`bubble bubble-${role}`}>
-        {segments.map((seg, i) =>
-          seg.type === "text" ? (
-            seg.content.trim() ? (
-              <p key={i} className="bubble-text">
-                {seg.content.trim()}
-              </p>
-            ) : null
-          ) : (
-            <CodeBlock key={i} lang={seg.lang} code={seg.code} />
-          ),
-        )}
-      </div>
+      <div
+        className={`bubble bubble-${role} bubble-markdown`}
+        onClick={handleClick}
+        dangerouslySetInnerHTML={{ __html: html }}
+      />
     </div>
   );
 }

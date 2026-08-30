@@ -22,13 +22,25 @@ pas devenir obsolète.
 - [FAIT] Supabase en lecture seule branché ET table `app_releases` créée + peuplée (app : `check_for_update` + Réglages ; site : fetch client-side)
 - [FAIT] Premier installeur construit (`npm run tauri build`, NSIS+MSI) et publié : v0.1.0 hébergée sur Supabase Storage (bucket public `releases`), lien de téléchargement fonctionnel de bout en bout
 - [À FAIRE] Auto-update en continu (`tauri-plugin-updater`) — pour l'instant la vérification de version est manuelle (bouton dans Réglages), pas de mise à jour silencieuse au démarrage
-- [À FAIRE] Signature de code (SmartScreen affiche "Éditeur inconnu" tant que ce n'est pas fait)
+- [À FAIRE] Signature de code (SmartScreen affiche "Éditeur inconnu" tant que ce n'est pas fait — décision explicite de l'utilisateur le 2026-08-30 de ne rien faire pour l'instant, voir Décisions techniques)
+- [FAIT] Rendu Markdown réel dans le chat (`marked` + `DOMPurify`), avec coloration/copie de bloc de code préservées
+- [FAIT] Éditer un message envoyé (tronque et renvoie) et régénérer la dernière réponse
+- [FAIT] Renommer (double-clic) et rechercher une conversation dans la Sidebar
+- [FAIT] Désinstaller un modèle installé, depuis les Réglages
+- [FAIT] Taille/position de la fenêtre persistées entre les lancements (`tauri-plugin-window-state`)
+- [FAIT] Compteurs de tokens : par conversation, budget de contexte ("mémoire") utilisé vs `max_context_tokens`, total toutes conversations confondues
+- [FAIT] Site : avertissement "app de bureau, consommateur de ressources" + calculateur de config (RAM saisie manuellement, calcul déterministe côté client, pas d'appel réseau)
 
 ## Architecture
 
 ### Chat (base)
 - `src/api.ts` : appels Tauri (`invoke`) vers les commandes Rust.
-- `src-tauri/src/commands/chat.rs` : liste des modèles (nom + taille + parameter_size + quantization_level, pas juste le nom), envoi de message (streaming), annulation, installation de modèle.
+- `src-tauri/src/commands/chat.rs` : liste des modèles (nom + taille + parameter_size + quantization_level, pas juste le nom), envoi de message (streaming), annulation, installation **et désinstallation** de modèle (`delete_model`, `DELETE /api/delete`).
+- `src/components/MessageBubble.tsx` : rendu Markdown réel via `marked` (renderer personnalisé pour les blocs de code, garde le bouton "Copier" existant) + `DOMPurify.sanitize` (avec `data-code` autorisé) avant `dangerouslySetInnerHTML` — nécessaire dès qu'on injecte du HTML généré, même localement.
+- `App.tsx` : éditer un message utilisateur (tronque l'historique après lui, renvoie) et régénérer la dernière réponse assistant (retire ce message, renvoie la même requête) partagent une fonction `submitToOllama` commune avec `handleSend`.
+- Compteurs de tokens (App.tsx) : par conversation (`messages.reduce` sur `tokens`), budget de contexte via `trimMessagesToBudget` (ce qui serait réellement envoyé au modèle), total global en sommant `ConversationMeta.total_tokens` (calculé côté Rust dans `list_conversations`, pas besoin de recharger chaque conversation).
+- `tauri-plugin-window-state` : persistance automatique taille/position/maximisé de la fenêtre, aucune config front nécessaire (le plugin réagit aux événements de fenêtre côté Rust).
+- `src/components/Sidebar.tsx` : renommage par double-clic sur le titre (input inline, Entrée valide/Échap ou blur annule — même pattern que la création de fichier dans `FileTree`), recherche client-side sur le titre.
 - `src-tauri/src/commands/hardware.rs` : `get_system_ram_gb`, RAM totale via une commande PowerShell one-shot (pas de crate `sysinfo` ajoutée pour ça) — volontairement pas de détection GPU/VRAM, peu fiable sous Windows (drivers rapportent souvent des valeurs plafonnées/fausses).
 - `src/components/ModelSelect.tsx` : menu déroulant de modèle (recherche, affiche parameter_size/quantization/taille), partagé entre le chat de base et Codex, remplace le `<select>` HTML natif.
 - `src-tauri/src/commands/conversations.rs` : persistance JSON locale des conversations.
@@ -87,6 +99,33 @@ le seul filet de sécurité de l'application — voir Limites connues ci-dessous
 - `agent_chat` est **non-streaming** : un appel modèle avec des outils
   bloque jusqu'à la réponse complète (pas de tokens affichés au fil de l'eau
   pendant le raisonnement de l'agent, contrairement au chat simple).
+
+## Confidentialité réseau (garantie explicite)
+
+Audité le 2026-08-30 (demande explicite de l'utilisateur : "aucune donnée ne
+sort de l'appli, tout rentre mais rien ne sort"). Liste exhaustive des appels
+réseau sortants dans `src-tauri/src/commands/` à cette date :
+
+1. **`agent_chat` / `send_chat` / `list_models` / `install_model` /
+   `delete_model`** (chat.rs, agent.rs) → vers `settings.ollama_host`
+   uniquement, réglage contrôlé par l'utilisateur (défaut
+   `http://127.0.0.1:11434`, local). C'est le cœur de l'app : les messages et
+   fichiers lus par Codex partent forcément vers ce host pour obtenir une
+   réponse — attendu, pas une fuite, tant que le host reste local ou choisi
+   explicitement par l'utilisateur.
+2. **`search_hf_models`** (huggingface.rs) → Hugging Face, envoie uniquement
+   le texte de recherche tapé par l'utilisateur (nom de modèle), jamais de
+   conversation/fichier/réglage.
+3. **`check_for_update`** (update.rs), et le site (`site/index.html`) → API
+   REST Supabase en lecture seule, aucune donnée envoyée à part la requête
+   elle-même (clé anon en en-tête).
+
+Aucune autre destination réseau n'existe dans le code (pas de télémétrie, pas
+d'analytics, pas d'appel automatique à un service tiers). Si tu ajoutes un
+nouvel appel réseau, vérifie qu'il tombe dans un de ces trois cas — sinon,
+demande confirmation avant d'envoyer quoi que ce soit qui ressemble à des
+données utilisateur (conversations, contenu de fichiers, réglages) vers autre
+chose que `ollama_host`.
 
 ## Décisions techniques (le pourquoi)
 
@@ -193,6 +232,19 @@ le seul filet de sécurité de l'application — voir Limites connues ci-dessous
   derniers emoji restants dans l'UI de l'app (Sidebar, FileTree, CodexView,
   AgentTranscript, HuggingFaceBrowser, écran vide du chat) — la consigne
   "pas d'emoji" n'avait jusque-là été appliquée qu'à la doc et au site.
+- **2026-08-30** — Lot de fonctionnalités demandées explicitement par
+  l'utilisateur : rendu Markdown réel dans le chat (`marked` + `DOMPurify`),
+  édition/régénération de message, renommage + recherche de conversation
+  dans la Sidebar, désinstallation de modèle, persistance taille/position de
+  fenêtre (`tauri-plugin-window-state`), compteurs de tokens (conversation /
+  contexte-mémoire / total global). Audit réseau documenté (section
+  "Confidentialité réseau" ci-dessus) sur demande explicite de l'utilisateur
+  — confirmé qu'aucune donnée utilisateur ne part ailleurs que vers
+  `ollama_host`. Site : ajout d'un avertissement "app de bureau,
+  consommatrice de ressources, pas pour du matériel limité" et d'un
+  calculateur de config (RAM saisie manuellement — un site web ne peut pas
+  lire le matériel du visiteur — calcul déterministe, pas d'IA ni d'appel
+  réseau) listant les conséquences de prendre un modèle trop gros.
 
 ## Prochaines étapes (dans l'ordre du fichier de passation d'origine)
 

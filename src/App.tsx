@@ -41,6 +41,8 @@ export default function App() {
   const [showSettings, setShowSettings] = useState(false);
   const [showInstall, setShowInstall] = useState(false);
   const [view, setView] = useState<"chat" | "codex">("chat");
+  const [editingIndex, setEditingIndex] = useState<number | null>(null);
+  const [editText, setEditText] = useState("");
   const scrollRef = useRef<HTMLDivElement>(null);
   const stickToBottomRef = useRef(true);
 
@@ -159,6 +161,35 @@ export default function App() {
     await refreshConversations();
   }
 
+  async function handleRenameConversation(id: string, title: string) {
+    if (currentConv?.id === id) {
+      // The currentConv effect below already saves + refreshes on change.
+      setCurrentConv({ ...currentConv, title });
+      return;
+    }
+    const conv = await loadConversation(id);
+    await saveConversation({ ...conv, title });
+    await refreshConversations();
+  }
+
+  async function submitToOllama(messages: StoredMessage[], model: string) {
+    if (!settings) return;
+    const history = trimMessagesToBudget(messages, settings.max_context_tokens);
+    const apiMessages: ChatMessage[] = history.map((m) => ({ role: m.role, content: m.content }));
+    if (settings.system_prompt.trim()) {
+      apiMessages.unshift({ role: "system", content: settings.system_prompt.trim() });
+    }
+
+    setSending(true);
+    setStreamingText("");
+    try {
+      await sendChat(settings.ollama_host, model, apiMessages);
+    } catch (e) {
+      setSending(false);
+      setConnError(String(e));
+    }
+  }
+
   async function handleSend() {
     if (sending || !input.trim() || !settings || !selectedModel) return;
     const text = input.trim();
@@ -177,21 +208,38 @@ export default function App() {
     const title = base.title === NEW_CONV_TITLE && base.messages.length === 0 ? text.slice(0, 40) : base.title;
     const updated: Conversation = { ...base, title, messages: [...base.messages, userMsg] };
     setCurrentConv(updated);
+    await submitToOllama(updated.messages, updated.model);
+  }
 
-    const history = trimMessagesToBudget(updated.messages, settings.max_context_tokens);
-    const apiMessages: ChatMessage[] = history.map((m) => ({ role: m.role, content: m.content }));
-    if (settings.system_prompt.trim()) {
-      apiMessages.unshift({ role: "system", content: settings.system_prompt.trim() });
-    }
+  function handleRegenerate() {
+    if (!currentConv || sending) return;
+    const msgs = currentConv.messages;
+    if (msgs.length === 0 || msgs[msgs.length - 1].role !== "assistant") return;
+    const truncated = msgs.slice(0, -1);
+    setCurrentConv({ ...currentConv, messages: truncated });
+    submitToOllama(truncated, currentConv.model);
+  }
 
-    setSending(true);
-    setStreamingText("");
-    try {
-      await sendChat(settings.ollama_host, updated.model, apiMessages);
-    } catch (e) {
-      setSending(false);
-      setConnError(String(e));
-    }
+  function startEdit(index: number, content: string) {
+    if (sending) return;
+    setEditingIndex(index);
+    setEditText(content);
+  }
+
+  function cancelEdit() {
+    setEditingIndex(null);
+    setEditText("");
+  }
+
+  async function submitEdit(index: number) {
+    if (!currentConv || !editText.trim()) return;
+    const truncated = currentConv.messages.slice(0, index);
+    const userMsg: StoredMessage = { role: "user", content: editText.trim(), tokens: estimateTokens(editText.trim()) };
+    const updated: Conversation = { ...currentConv, messages: [...truncated, userMsg] };
+    setCurrentConv(updated);
+    setEditingIndex(null);
+    setEditText("");
+    await submitToOllama(updated.messages, updated.model);
   }
 
   function handleKeyDown(e: KeyboardEvent<HTMLTextAreaElement>) {
@@ -217,6 +265,14 @@ export default function App() {
   }
 
   const messages = currentConv?.messages ?? [];
+  const conversationTokens = messages.reduce((sum, m) => sum + (m.tokens ?? estimateTokens(m.content)), 0);
+  const contextTokens = settings
+    ? trimMessagesToBudget(messages, settings.max_context_tokens).reduce(
+        (sum, m) => sum + (m.tokens ?? estimateTokens(m.content)),
+        0,
+      )
+    : 0;
+  const totalTokens = conversations.reduce((sum, c) => sum + c.total_tokens, 0);
 
   return (
     <div className="app">
@@ -226,6 +282,7 @@ export default function App() {
         onNew={handleNewConversation}
         onSelect={handleSelectConversation}
         onDelete={handleDeleteConversation}
+        onRename={handleRenameConversation}
         onOpenSettings={() => setShowSettings(true)}
         onOpenInstall={() => setShowInstall(true)}
         onOpenCodex={() => setView("codex")}
@@ -251,13 +308,50 @@ export default function App() {
             </div>
           ) : (
             <>
-              {messages.map((m, i) => (
-                <MessageBubble key={i} role={m.role} content={m.content} />
-              ))}
+              {messages.map((m, i) =>
+                editingIndex === i ? (
+                  <div key={i} className="message-edit">
+                    <textarea
+                      autoFocus
+                      value={editText}
+                      onChange={(e) => setEditText(e.target.value)}
+                      rows={3}
+                    />
+                    <div className="message-edit-actions">
+                      <button onClick={cancelEdit}>Annuler</button>
+                      <button className="primary-btn" onClick={() => submitEdit(i)} disabled={!editText.trim()}>
+                        Enregistrer et renvoyer
+                      </button>
+                    </div>
+                  </div>
+                ) : (
+                  <div key={i} className="message-row">
+                    <MessageBubble role={m.role} content={m.content} />
+                    <div className={`message-actions message-actions-${m.role}`}>
+                      {m.role === "user" && !sending && (
+                        <button onClick={() => startEdit(i, m.content)}>Modifier</button>
+                      )}
+                      {m.role === "assistant" && i === messages.length - 1 && !sending && (
+                        <button onClick={handleRegenerate}>Régénérer</button>
+                      )}
+                    </div>
+                  </div>
+                ),
+              )}
               {sending && <MessageBubble role="assistant" content={streamingText || "· · ·"} />}
             </>
           )}
         </div>
+
+        {currentConv && (
+          <div className="token-stats">
+            <span>Conversation : {conversationTokens.toLocaleString()} tokens</span>
+            <span>
+              Contexte : {contextTokens.toLocaleString()} / {settings?.max_context_tokens.toLocaleString()} tokens
+            </span>
+            <span>Total (toutes conversations) : {totalTokens.toLocaleString()} tokens</span>
+          </div>
+        )}
 
         <div className="input-area">
           <div className="input-pill">
@@ -285,6 +379,7 @@ export default function App() {
       {showSettings && settings && (
         <SettingsModal
           settings={settings}
+          models={models}
           onClose={() => setShowSettings(false)}
           onSave={handleSaveSettings}
           onRefreshModels={() => refreshModels(settings.ollama_host)}

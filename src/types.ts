@@ -20,6 +20,7 @@ export interface ConversationMeta {
   title: string;
   model: string;
   created_at: number;
+  total_tokens: number;
 }
 
 export interface Settings {

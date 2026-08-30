@@ -54,6 +54,34 @@ body {
   background: #333333;
 }
 
+.sidebar-search {
+  background: #262626;
+  border: none;
+  border-radius: 10px;
+  color: #eaeaea;
+  padding: 8px 10px;
+  font-size: 12.5px;
+  margin-top: 8px;
+  outline: none;
+}
+
+.sidebar-empty {
+  color: #777777;
+  font-size: 12px;
+  padding: 8px 10px;
+}
+
+.sidebar-item-rename {
+  flex: 1;
+  background: #1c1c1c;
+  border: 1px solid #3d6dd8;
+  border-radius: 8px;
+  color: #eaeaea;
+  padding: 7px 9px;
+  font-size: 13px;
+  outline: none;
+}
+
 .sidebar-list {
   flex: 1;
   overflow-y: auto;
@@ -175,6 +203,92 @@ body {
   justify-content: flex-start;
 }
 
+.message-actions {
+  display: flex;
+  width: 100%;
+  max-width: 720px;
+  margin: -2px auto 6px;
+  padding: 0 12px;
+  gap: 12px;
+  opacity: 0;
+  transition: opacity 0.15s ease;
+}
+
+.message-row:hover .message-actions {
+  opacity: 1;
+}
+
+.message-actions-user {
+  justify-content: flex-end;
+}
+
+.message-actions-assistant,
+.message-actions-system {
+  justify-content: flex-start;
+}
+
+.message-actions button {
+  background: transparent;
+  border: none;
+  color: #888888;
+  font-size: 11px;
+  cursor: pointer;
+  padding: 2px 4px;
+}
+
+.message-actions button:hover {
+  color: #cccccc;
+  text-decoration: underline;
+}
+
+.message-edit {
+  width: 100%;
+  max-width: 720px;
+  margin: 6px auto;
+  padding: 0 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.message-edit textarea {
+  width: 100%;
+  background: #232323;
+  border: 1px solid #3d6dd8;
+  border-radius: 10px;
+  color: #eaeaea;
+  padding: 10px 12px;
+  font-size: 14px;
+  font-family: inherit;
+  resize: vertical;
+}
+
+.message-edit-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+}
+
+.message-edit-actions button {
+  background: #2c2c2c;
+  color: #dddddd;
+  border: none;
+  border-radius: 8px;
+  padding: 6px 12px;
+  font-size: 12px;
+  cursor: pointer;
+}
+
+.token-stats {
+  display: flex;
+  justify-content: center;
+  gap: 16px;
+  padding: 4px 16px;
+  font-size: 11px;
+  color: #888888;
+  flex-wrap: wrap;
+}
+
 .bubble {
   border-radius: 18px;
   padding: 4px 4px;
@@ -195,12 +309,78 @@ body {
   margin: 0 auto;
 }
 
-.bubble-text {
-  margin: 0;
+.bubble-markdown {
   padding: 8px 14px;
-  white-space: pre-wrap;
   font-size: 14px;
-  line-height: 1.5;
+  line-height: 1.55;
+}
+
+.bubble-markdown > *:first-child {
+  margin-top: 0;
+}
+
+.bubble-markdown > *:last-child {
+  margin-bottom: 0;
+}
+
+.bubble-markdown p {
+  margin: 6px 0;
+  white-space: pre-wrap;
+}
+
+.bubble-markdown ul,
+.bubble-markdown ol {
+  margin: 6px 0;
+  padding-left: 22px;
+}
+
+.bubble-markdown li {
+  margin: 2px 0;
+}
+
+.bubble-markdown a {
+  color: #8fc0ff;
+}
+
+.bubble-markdown blockquote {
+  margin: 6px 0;
+  padding: 2px 12px;
+  border-left: 3px solid #444444;
+  color: #bbbbbb;
+}
+
+.bubble-markdown h1,
+.bubble-markdown h2,
+.bubble-markdown h3,
+.bubble-markdown h4 {
+  margin: 10px 0 6px;
+  font-size: 1.05em;
+}
+
+.bubble-markdown code {
+  background: #1a1a1a;
+  border-radius: 4px;
+  padding: 1px 5px;
+  font-family: Consolas, monospace;
+  font-size: 0.92em;
+}
+
+.bubble-markdown table {
+  border-collapse: collapse;
+  margin: 6px 0;
+  font-size: 0.92em;
+}
+
+.bubble-markdown th,
+.bubble-markdown td {
+  border: 1px solid #3a3a3a;
+  padding: 4px 8px;
+}
+
+.bubble-markdown hr {
+  border: none;
+  border-top: 1px solid #3a3a3a;
+  margin: 10px 0;
 }
 
 .code-block {
@@ -236,6 +416,9 @@ body {
 }
 
 .code-block code {
+  background: transparent;
+  padding: 0;
+  border-radius: 0;
   font-family: Consolas, monospace;
   font-size: 12px;
   color: #d4d4d4;
@@ -581,6 +764,53 @@ body {
 .install-error {
   color: #e8a8a8;
   font-size: 13px;
+}
+
+.installed-models {
+  max-height: 160px;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.installed-model-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  background: #232323;
+  border-radius: 8px;
+  padding: 6px 10px;
+}
+
+.installed-model-name {
+  flex: 1;
+  font-size: 12.5px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.installed-model-size {
+  color: #999999;
+  font-size: 11px;
+  flex-shrink: 0;
+}
+
+.installed-model-delete {
+  background: transparent;
+  border: none;
+  color: #e0a0a0;
+  font-size: 11px;
+  padding: 4px 8px;
+  cursor: pointer;
+  flex-shrink: 0;
+}
+
+.installed-model-delete:hover {
+  color: #e8a8a8;
+  background: #3a2a2a;
+  border-radius: 6px;
 }
 
 .update-status {

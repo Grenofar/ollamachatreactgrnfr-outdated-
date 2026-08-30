@@ -26,6 +26,8 @@ export const cancelChat = () => invoke<void>("cancel_chat");
 export const installModel = (host: string, reference: string) =>
   invoke<void>("install_model", { host, reference });
 
+export const deleteModel = (host: string, name: string) => invoke<void>("delete_model", { host, name });
+
 export const listConversations = () => invoke<ConversationMeta[]>("list_conversations");
 export const loadConversation = (id: string) => invoke<Conversation>("load_conversation", { id });
 export const saveConversation = (conversation: Conversation) =>

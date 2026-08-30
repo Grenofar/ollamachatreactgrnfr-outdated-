@@ -24,6 +24,7 @@ pub struct ConversationMeta {
     pub title: String,
     pub model: String,
     pub created_at: f64,
+    pub total_tokens: u64,
 }
 
 #[tauri::command]
@@ -44,11 +45,13 @@ pub fn list_conversations(app: AppHandle) -> Result<Vec<ConversationMeta>, Strin
             Ok(c) => c,
             Err(_) => continue,
         };
+        let total_tokens = conv.messages.iter().filter_map(|m| m.tokens).sum();
         items.push(ConversationMeta {
             id: conv.id,
             title: conv.title,
             model: conv.model,
             created_at: conv.created_at,
+            total_tokens,
         });
     }
     items.sort_by(|a, b| b.created_at.partial_cmp(&a.created_at).unwrap());

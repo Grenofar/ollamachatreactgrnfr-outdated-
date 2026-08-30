@@ -1,14 +1,24 @@
 import { useState } from "react";
-import { checkForUpdate, openExternalUrl } from "../api";
-import type { Settings, UpdateStatus } from "../types";
+import { checkForUpdate, deleteModel, openExternalUrl } from "../api";
+import type { OllamaModel, Settings, UpdateStatus } from "../types";
+
+function formatBytes(n: number): string {
+  if (!n) return "";
+  const gb = n / 1024 / 1024 / 1024;
+  if (gb >= 1) return `${gb.toFixed(1)} Go`;
+  const mb = n / 1024 / 1024;
+  return `${mb.toFixed(0)} Mo`;
+}
 
 export default function SettingsModal({
   settings,
+  models,
   onClose,
   onSave,
   onRefreshModels,
 }: {
   settings: Settings;
+  models: OllamaModel[];
   onClose: () => void;
   onSave: (settings: Settings) => void;
   onRefreshModels: () => void;
@@ -16,6 +26,7 @@ export default function SettingsModal({
   const [form, setForm] = useState<Settings>({ ...settings });
   const [updateStatus, setUpdateStatus] = useState<UpdateStatus | null>(null);
   const [checkingUpdate, setCheckingUpdate] = useState(false);
+  const [deletingModel, setDeletingModel] = useState<string | null>(null);
 
   function handleSave() {
     onSave(form);
@@ -28,6 +39,19 @@ export default function SettingsModal({
       setUpdateStatus(await checkForUpdate());
     } finally {
       setCheckingUpdate(false);
+    }
+  }
+
+  async function handleDeleteModel(name: string) {
+    if (!window.confirm(`Supprimer définitivement le modèle ${name} ?`)) return;
+    setDeletingModel(name);
+    try {
+      await deleteModel(form.ollama_host, name);
+      onRefreshModels();
+    } catch (e) {
+      window.alert(`Impossible de supprimer ${name} : ${String(e)}`);
+    } finally {
+      setDeletingModel(null);
     }
   }
 
@@ -59,6 +83,27 @@ export default function SettingsModal({
           value={form.system_prompt}
           onChange={(e) => setForm({ ...form, system_prompt: e.target.value })}
         />
+
+        <label>Modèles installés</label>
+        {models.length === 0 ? (
+          <div className="modal-hint">Aucun modèle installé.</div>
+        ) : (
+          <div className="installed-models">
+            {models.map((m) => (
+              <div key={m.name} className="installed-model-row">
+                <span className="installed-model-name">{m.name}</span>
+                <span className="installed-model-size">{formatBytes(m.size)}</span>
+                <button
+                  className="installed-model-delete"
+                  onClick={() => handleDeleteModel(m.name)}
+                  disabled={deletingModel !== null}
+                >
+                  {deletingModel === m.name ? "Suppression…" : "Supprimer"}
+                </button>
+              </div>
+            ))}
+          </div>
+        )}
 
         <label>Mises à jour</label>
         <button onClick={handleCheckUpdate} disabled={checkingUpdate}>
