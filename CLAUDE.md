@@ -17,9 +17,9 @@ pas devenir obsolète.
 - [FAIT] Landing page statique dans `site/` (présentation du projet, pas encore de bouton de téléchargement actif)
 - [FAIT] Création de fichier inline dans Codex (toolbar + par dossier), génération annulable (chat et Codex) avec bouton animé
 - [À FAIRE] Connecter `site/` à Vercel (étape manuelle côté utilisateur, voir `site/README.md`)
-- [À FAIRE] Supabase en lecture seule : vérif de version dans l'app + données affichées sur le site (voir Décisions techniques — périmètre revu le 2026-08-30, ni sqlx ni sync conversations/réglages)
+- [FAIT] Supabase en lecture seule branché (app : `check_for_update` + Réglages ; site : fetch client-side) — table `app_releases` pas encore créée côté Supabase, voir `supabase/schema.sql`
 - [À FAIRE] Installeur + auto-update (tauri-plugin-updater + GitHub Releases)
-- [À FAIRE] Brancher le vrai lien de téléchargement sur le site une fois l'installeur publié (Vercel — décision prise le 2026-08-30, remplace l'idée initiale de GitHub Pages)
+- [À FAIRE] Publier une release (ligne dans `app_releases`) une fois l'installeur construit — l'app et le site afficheront alors le vrai lien automatiquement
 
 ## Architecture
 
@@ -106,6 +106,12 @@ le seul filet de sécurité de l'application — voir Limites connues ci-dessous
   Nécessite `reqwest::Client` (async) plutôt que `reqwest::blocking` pour cette
   commande précise — `tokio` a été ajouté comme dépendance directe (`time` +
   `macros`) pour `select!`/`sleep`.
+- **Clé anon Supabase commitée en dur** (`src-tauri/src/commands/update.rs`
+  et `site/index.html`) plutôt que mise dans les réglages ou un `.env` : c'est
+  précisément l'usage prévu par Supabase pour cette clé (protégée par les
+  policies RLS, pas un secret), même logique que n'importe quel site
+  JAMstack public qui l'embarque côté client. Seule la clé `service_role`
+  serait un vrai secret à ne jamais commiter.
 
 ## Journal des changements
 
@@ -118,6 +124,13 @@ le seul filet de sécurité de l'application — voir Limites connues ci-dessous
   d'envoi animé (flèche → carré) partagé entre le chat de base et Codex.
   Périmètre Supabase précisé par l'utilisateur : lecture seule (version-check
   + site), pas de sync conversations/réglages, pas de sqlx.
+- **2026-08-30** — URL et clé anon Supabase reçues. Ajout de
+  `check_for_update` (Rust, jamais d'échec de l'invoke, erreurs réseau dans
+  `UpdateStatus.error`), d'une section "Mises à jour" dans les Réglages, et
+  d'un fetch client-side équivalent dans `site/index.html` (lien de
+  téléchargement réel si une release existe, sinon message statique
+  inchangé). Table `app_releases` pas encore créée côté Supabase — SQL prêt
+  dans `supabase/schema.sql`, à exécuter une fois par l'utilisateur.
 
 ## Prochaines étapes (dans l'ordre du fichier de passation d'origine)
 
@@ -126,29 +139,31 @@ précédente sans accès `git push`) pour le détail d'origine.
 
 1. ~~Git + GitHub~~ — fait.
 2. ~~CLAUDE.md~~ — ce fichier.
-3. **Supabase (lecture seule)** : URL + clé anon du projet Supabase existant
-   de l'utilisateur pas encore fournies (demandées le 2026-08-30) — à
-   récupérer avant de commencer. Périmètre confirmé : uniquement vérif de
-   version dans l'app + données affichées sur le site, aucune donnée ne part
-   de l'app vers Supabase. Une fois les identifiants reçus : créer une table
-   publique en lecture seule (ex. `app_releases` : version, url de
-   téléchargement, notes, date de publication), l'app et `site/` la lisent
-   via l'API REST (clé anon, RLS avec policy SELECT uniquement).
+3. ~~Supabase (lecture seule)~~ — branché côté code le 2026-08-30
+   (`check_for_update`, Réglages, `site/index.html`). Reste à faire : que
+   l'utilisateur exécute `supabase/schema.sql` une fois dans l'éditeur SQL
+   Supabase (crée `app_releases` + policy SELECT anon) — sans ça, l'app et
+   le site voient juste "table introuvable" (dégradation silencieuse par
+   design, pas une erreur bloquante).
 4. **Installeur + auto-update** : `tauri-plugin-updater` + GitHub Releases
    comme canal de distribution. Toujours prévoir un chemin de retour en
    arrière (cf. rigueur du pattern snapshot/rollback de l'installeur C# du
-   projet sœur OmniDeck, pas forcément transposable tel quel ici).
-5. **Site de téléchargement sur Vercel** : page sombre et moderne pointant
-   vers le dernier binaire publié en GitHub Release. À clarifier avec
-   l'utilisateur : contenu de la page tant qu'aucune release n'existe encore
-   (page de présentation du projet en attendant, ou on attend d'avoir un
-   binaire avant de publier le site ?).
+   projet sœur OmniDeck, pas forcément transposable tel quel ici). **Point à
+   trancher avant de publier une release** : le dépôt est privé, or un asset
+   de GitHub Release sur un dépôt privé n'est pas téléchargeable
+   anonymement — soit le dépôt devient public à ce moment-là, soit le
+   binaire est hébergé ailleurs (ex. Supabase Storage) et c'est cette URL-là
+   qui va dans `download_url`.
+5. **Site de téléchargement sur Vercel** : connecter `site/` (voir
+   `site/README.md`). À clarifier avec l'utilisateur : contenu de la page
+   tant qu'aucune release n'existe encore (déjà géré côté code : message
+   statique "bientôt disponible" tant que `app_releases` est vide, cf.
+   étape 3).
 
 ## Ce qu'il faut demander à l'utilisateur avant d'agir
 
-- URL + clé anon du projet Supabase (périmètre déjà confirmé : lecture seule).
-- Contenu du site de téléchargement Vercel tant qu'il n'y a pas encore de
-  release publiée.
+- Où héberger le binaire de l'installeur une fois construit, vu que le dépôt
+  est privé (voir note à l'étape 4 ci-dessus).
 - Toute action irréversible ou visible publiquement (push, création de
-  ressources externes, publication du site) doit être confirmée explicitement
-  avant exécution.
+  ressources externes, publication du site, rendre le dépôt public) doit être
+  confirmée explicitement avant exécution.
