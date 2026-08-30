@@ -18,15 +18,20 @@ import {
   saveSettings,
   sendChat,
   cancelChat,
+  getSystemRamGb,
+  closeApp,
   onChatChunk,
   onChatDone,
   onChatCancelled,
   onChatError,
+  onFreezeWarning,
+  onFreezeResolved,
 } from "./api";
 import { estimateTokens, trimMessagesToBudget } from "./memory";
 import type { ChatMessage, Conversation, ConversationMeta, OllamaModel, Settings, StoredMessage } from "./types";
 
 const NEW_CONV_TITLE = "Nouvelle discussion";
+const FREEZE_GRACE_SECS = 20;
 
 export default function App() {
   const [settings, setSettings] = useState<Settings | null>(null);
@@ -43,8 +48,13 @@ export default function App() {
   const [view, setView] = useState<"chat" | "codex">("chat");
   const [editingIndex, setEditingIndex] = useState<number | null>(null);
   const [editText, setEditText] = useState("");
+  const [ramGb, setRamGb] = useState<number | null>(null);
+  const [freezeWarning, setFreezeWarning] = useState<{ stalledSecs: number } | null>(null);
+  const [graceRemaining, setGraceRemaining] = useState(FREEZE_GRACE_SECS);
   const scrollRef = useRef<HTMLDivElement>(null);
   const stickToBottomRef = useRef(true);
+  const graceTimeoutRef = useRef<number | null>(null);
+  const graceIntervalRef = useRef<number | null>(null);
 
   async function refreshModels(host: string): Promise<OllamaModel[]> {
     try {
@@ -74,6 +84,11 @@ export default function App() {
       await refreshConversations();
       if (list.length === 0) setShowInstall(true);
     })();
+    // Fire-and-forget, off the critical startup path: spawns a PowerShell
+    // process (WMI query), noticeably slower than everything else above.
+    getSystemRamGb()
+      .then(setRamGb)
+      .catch(() => setRamGb(null));
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
@@ -124,6 +139,45 @@ export default function App() {
     saveConversation(currentConv).then(refreshConversations);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [currentConv]);
+
+  function clearFreezeTimers() {
+    if (graceTimeoutRef.current !== null) {
+      window.clearTimeout(graceTimeoutRef.current);
+      graceTimeoutRef.current = null;
+    }
+    if (graceIntervalRef.current !== null) {
+      window.clearInterval(graceIntervalRef.current);
+      graceIntervalRef.current = null;
+    }
+  }
+
+  function startGraceCountdown() {
+    clearFreezeTimers();
+    setGraceRemaining(FREEZE_GRACE_SECS);
+    graceTimeoutRef.current = window.setTimeout(() => closeApp(), FREEZE_GRACE_SECS * 1000);
+    graceIntervalRef.current = window.setInterval(() => {
+      setGraceRemaining((s) => Math.max(0, s - 1));
+    }, 1000);
+  }
+
+  useEffect(() => {
+    // Watches only the basic chat's streaming generation — see
+    // src-tauri/src/commands/watchdog.rs for why Codex is excluded.
+    const unlistenWarning = onFreezeWarning((stalledSecs) => {
+      setFreezeWarning({ stalledSecs });
+      startGraceCountdown();
+    });
+    const unlistenResolved = onFreezeResolved(() => {
+      clearFreezeTimers();
+      setFreezeWarning(null);
+    });
+    return () => {
+      unlistenWarning.then((f) => f());
+      unlistenResolved.then((f) => f());
+      clearFreezeTimers();
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   useEffect(() => {
     if (stickToBottomRef.current) {
@@ -240,6 +294,10 @@ export default function App() {
     setEditingIndex(null);
     setEditText("");
     await submitToOllama(updated.messages, updated.model);
+  }
+
+  function handleKeepWaiting() {
+    startGraceCountdown();
   }
 
   function handleKeyDown(e: KeyboardEvent<HTMLTextAreaElement>) {
@@ -389,9 +447,29 @@ export default function App() {
       {showInstall && settings && (
         <HuggingFaceBrowser
           host={settings.ollama_host}
+          ramGb={ramGb}
           onClose={() => setShowInstall(false)}
           onInstalled={() => refreshModels(settings.ollama_host)}
         />
+      )}
+
+      {freezeWarning && (
+        <div className="modal-overlay">
+          <div className="modal">
+            <h2>Ça ne répond plus</h2>
+            <p className="modal-hint">
+              Aucun mot reçu d'Ollama depuis {freezeWarning.stalledSecs}s — ça ressemble à un
+              blocage plutôt qu'à une génération lente. Fermeture automatique dans{" "}
+              {graceRemaining}s, sauf si tu choisis d'attendre encore.
+            </p>
+            <div className="modal-actions">
+              <button onClick={handleKeepWaiting}>Attendre encore</button>
+              <button className="primary-btn" onClick={() => closeApp()}>
+                Fermer maintenant
+              </button>
+            </div>
+          </div>
+        </div>
       )}
     </div>
   );

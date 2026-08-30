@@ -162,7 +162,7 @@ export default function CodexView({
           <button onClick={handlePickFolder}>{rootFolder ? "Changer de dossier" : "Choisir un dossier"}</button>
           {rootFolder && <span className="codex-header-title">{rootFolder}</span>}
           <div className="codex-header-spacer" />
-          <ModelSelect models={models} value={selectedModel} onChange={setSelectedModel} />
+          <ModelSelect models={models} value={selectedModel} onChange={setSelectedModel} direction="down" />
           <div className="mode-toggle">
             <button
               className={mode === "approve" ? "mode-toggle-active" : ""}

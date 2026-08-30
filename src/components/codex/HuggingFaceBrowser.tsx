@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { getSystemRamGb, installModel, onInstallDone, onInstallError, onInstallProgress, searchHfModels } from "../../api";
+import { installModel, onInstallDone, onInstallError, onInstallProgress, searchHfModels } from "../../api";
 import type { HfModel } from "../../types";
 
 // Rule of thumb consistent with this app's own prior guidance (the old
@@ -23,10 +23,14 @@ function parseParamsB(id: string): number | null {
 
 export default function HuggingFaceBrowser({
   host,
+  ramGb,
   onClose,
   onInstalled,
 }: {
   host: string;
+  /** Fetched once at app startup (spawning PowerShell per modal-open was
+   * itself a source of noticeable stutter) — null if detection failed. */
+  ramGb: number | null;
   onClose: () => void;
   onInstalled: () => void;
 }) {
@@ -34,7 +38,6 @@ export default function HuggingFaceBrowser({
   const [results, setResults] = useState<HfModel[]>([]);
   const [searching, setSearching] = useState(false);
   const [searchError, setSearchError] = useState<string | null>(null);
-  const [ramGb, setRamGb] = useState<number | null>(null);
 
   const [installingRef, setInstallingRef] = useState<string | null>(null);
   const [status, setStatus] = useState("");
@@ -46,9 +49,6 @@ export default function HuggingFaceBrowser({
   const [manualRef, setManualRef] = useState("hf.co/bartowski/Qwen2.5-Coder-14B-Instruct-abliterated-GGUF:Q4_K_M");
 
   useEffect(() => {
-    getSystemRamGb()
-      .then(setRamGb)
-      .catch(() => setRamGb(null));
     handleSearch();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);

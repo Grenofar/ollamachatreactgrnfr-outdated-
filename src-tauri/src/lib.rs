@@ -9,8 +9,10 @@ use commands::huggingface::search_hf_models;
 use commands::settings::{load_settings, save_settings};
 use commands::shell::{cancel_shell_command, run_powershell_command, ShellCancelFlag};
 use commands::update::check_for_update;
+use commands::watchdog::{close_app, spawn_watchdog_thread, Watchdog};
 use std::sync::atomic::AtomicBool;
 use std::sync::Arc;
+use tauri::Manager;
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
@@ -22,6 +24,12 @@ pub fn run() {
         .manage(CancelFlag(Arc::new(AtomicBool::new(false))))
         .manage(ShellCancelFlag(Arc::new(AtomicBool::new(false))))
         .manage(AgentCancelFlag(Arc::new(AtomicBool::new(false))))
+        .manage(Watchdog::new())
+        .setup(|app| {
+            let watchdog = app.state::<Watchdog>().0.clone();
+            spawn_watchdog_thread(app.handle().clone(), watchdog);
+            Ok(())
+        })
         .invoke_handler(tauri::generate_handler![
             list_models,
             send_chat,
@@ -45,6 +53,7 @@ pub fn run() {
             search_hf_models,
             get_system_ram_gb,
             check_for_update,
+            close_app,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

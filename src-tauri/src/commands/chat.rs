@@ -1,3 +1,4 @@
+use super::watchdog::{report_progress, Watchdog, WatchdogGuard};
 use serde::{Deserialize, Serialize};
 use std::io::{BufRead, BufReader};
 use std::sync::atomic::{AtomicBool, Ordering};
@@ -64,14 +65,17 @@ pub fn list_models(host: String) -> Result<Vec<OllamaModel>, String> {
 pub fn send_chat(
     app: AppHandle,
     cancel: State<CancelFlag>,
+    watchdog: State<Watchdog>,
     host: String,
     model: String,
     messages: Vec<ChatMessage>,
 ) -> Result<(), String> {
     cancel.0.store(false, Ordering::SeqCst);
     let flag = cancel.0.clone();
+    let watchdog = watchdog.0.clone();
 
     std::thread::spawn(move || {
+        let _watchdog_guard = WatchdogGuard::start(&watchdog);
         let url = format!("{}/api/chat", host.trim_end_matches('/'));
         let body = serde_json::json!({ "model": model, "messages": messages, "stream": true });
         let client = reqwest::blocking::Client::new();
@@ -143,6 +147,7 @@ pub fn send_chat(
             let content = chunk["message"]["content"].as_str().unwrap_or("").to_string();
             if !content.is_empty() {
                 assembled.push_str(&content);
+                report_progress(&watchdog, &app);
                 let _ = app.emit("chat-chunk", serde_json::json!({ "content": content }));
             }
             if chunk["done"].as_bool().unwrap_or(false) {

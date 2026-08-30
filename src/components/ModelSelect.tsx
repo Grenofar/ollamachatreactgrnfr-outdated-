@@ -18,11 +18,15 @@ export default function ModelSelect({
   value,
   onChange,
   disabled,
+  direction = "up",
 }: {
   models: OllamaModel[];
   value: string;
   onChange: (name: string) => void;
   disabled?: boolean;
+  /** "up" (default) for triggers near the bottom of the screen (basic chat's input bar),
+   * "down" for triggers near the top (Codex's header) — otherwise the panel opens off-screen. */
+  direction?: "up" | "down";
 }) {
   const [open, setOpen] = useState(false);
   const [filter, setFilter] = useState("");
@@ -67,7 +71,7 @@ export default function ModelSelect({
       </button>
 
       {open && (
-        <div className="model-select-panel">
+        <div className={`model-select-panel model-select-panel-${direction}`}>
           <input
             autoFocus
             className="model-select-search"

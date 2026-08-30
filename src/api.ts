@@ -131,3 +131,10 @@ export const getSystemRamGb = () => invoke<number>("get_system_ram_gb");
 export const checkForUpdate = () => invoke<UpdateStatus>("check_for_update");
 
 export const openExternalUrl = (url: string) => openUrl(url);
+
+export const closeApp = () => invoke<void>("close_app");
+
+export const onFreezeWarning = (cb: (stalledSecs: number) => void) =>
+  listen<{ stalled_secs: number }>("freeze-warning", (e) => cb(e.payload.stalled_secs));
+
+export const onFreezeResolved = (cb: () => void) => listen("freeze-resolved", () => cb());

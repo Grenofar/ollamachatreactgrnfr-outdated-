@@ -1,4 +1,5 @@
 use serde::{Deserialize, Serialize};
+use std::time::Duration;
 
 #[derive(Serialize, Clone)]
 pub struct HfModel {
@@ -35,6 +36,7 @@ pub fn search_hf_models(query: String) -> Result<Vec<HfModel>, String> {
         req = req.query(&[("search", query.trim())]);
     }
     let resp = req
+        .timeout(Duration::from_secs(10))
         .send()
         .map_err(|e| format!("Impossible de contacter Hugging Face : {}", e))?;
 

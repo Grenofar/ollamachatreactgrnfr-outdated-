@@ -30,6 +30,11 @@ pas devenir obsolète.
 - [FAIT] Taille/position de la fenêtre persistées entre les lancements (`tauri-plugin-window-state`)
 - [FAIT] Compteurs de tokens : par conversation, budget de contexte ("mémoire") utilisé vs `max_context_tokens`, total toutes conversations confondues
 - [FAIT] Site : avertissement "app de bureau, consommateur de ressources" + calculateur de config (RAM saisie manuellement, calcul déterministe côté client, pas d'appel réseau)
+- [FAIT] Site élargi (560px → 820px), calculateur enrichi (menu GPU NVIDIA/AMD avec VRAM connue, niveau de processeur)
+- [FAIT] Bug corrigé : `reqwest` sans backend TLS cassait tout appel HTTPS (`check_for_update`, `search_hf_models`) — voir Limites connues
+- [FAIT] Bug corrigé : `ModelSelect` s'ouvrait hors écran dans Codex (panneau pensé pour un déclencheur en bas de page, réutilisé dans l'en-tête en haut) — nouvelle prop `direction`
+- [FAIT] RAM système détectée une seule fois au démarrage (au lieu de respawn PowerShell à chaque ouverture du navigateur Hugging Face) + timeout ajouté sur la recherche HF, contre le ralentissement perçu signalé par l'utilisateur
+- [FAIT] Système anti-gel (chat de base uniquement, voir Limites connues et Décisions techniques pour le pourquoi de ce périmètre)
 
 ## Architecture
 
@@ -42,7 +47,8 @@ pas devenir obsolète.
 - `tauri-plugin-window-state` : persistance automatique taille/position/maximisé de la fenêtre, aucune config front nécessaire (le plugin réagit aux événements de fenêtre côté Rust).
 - `src/components/Sidebar.tsx` : renommage par double-clic sur le titre (input inline, Entrée valide/Échap ou blur annule — même pattern que la création de fichier dans `FileTree`), recherche client-side sur le titre.
 - `src-tauri/src/commands/hardware.rs` : `get_system_ram_gb`, RAM totale via une commande PowerShell one-shot (pas de crate `sysinfo` ajoutée pour ça) — volontairement pas de détection GPU/VRAM, peu fiable sous Windows (drivers rapportent souvent des valeurs plafonnées/fausses).
-- `src/components/ModelSelect.tsx` : menu déroulant de modèle (recherche, affiche parameter_size/quantization/taille), partagé entre le chat de base et Codex, remplace le `<select>` HTML natif.
+- `src/components/ModelSelect.tsx` : menu déroulant de modèle (recherche, affiche parameter_size/quantization/taille), partagé entre le chat de base et Codex, remplace le `<select>` HTML natif. Prop `direction` (`"up"` par défaut pour la barre du bas du chat, `"down"` pour l'en-tête de Codex) — sans elle le panneau s'ouvre hors écran quand le déclencheur est en haut de page.
+- `src-tauri/src/commands/watchdog.rs` : système anti-gel, voir section dédiée plus bas.
 - `src-tauri/src/commands/conversations.rs` : persistance JSON locale des conversations.
 - `src-tauri/src/commands/settings.rs` : réglages persistés en JSON local (`Settings` : host Ollama, contexte max, prompt système, modèle par défaut, mode Codex, dernier dossier Codex).
 - `src-tauri/src/commands/huggingface.rs` : recherche publique sur le Hub Hugging Face (filtrée GGUF, 50 résultats, recherche vide acceptée → tendances par téléchargements) ; l'installation réutilise `install_model` avec la référence `hf.co/<repo>`.
@@ -75,6 +81,48 @@ Réglage `codex_mode` (`"auto"|"approve"`, défaut `"approve"`). En mode
 Approbation, chaque outil mutant ouvre une modale (diff Monaco pour
 write/edit, confirmation textuelle pour les commandes) avant exécution. C'est
 le seul filet de sécurité de l'application — voir Limites connues ci-dessous.
+
+### Système anti-gel
+
+Demandé explicitement par l'utilisateur : fermer l'app si elle semble figée,
+sans jamais la fermer juste parce qu'elle utilise 100% des ressources en
+train de vraiment générer. Périmètre volontairement limité au **chat de
+base** (`send_chat`) :
+
+- `src-tauri/src/commands/watchdog.rs` — `Watchdog` (état partagé
+  `Arc<Mutex<...>>`, managé par Tauri), `WatchdogGuard` (RAII : marque la
+  génération active à la création, inactive au `Drop`, donc chaque sortie du
+  thread de `send_chat` — erreur, annulation, fin normale — le désactive
+  correctement sans avoir à s'en souvenir à chaque `return`), un thread qui
+  vérifie toutes les 5s si ça fait plus de 120s sans le moindre token reçu.
+- Chaque chunk streamé compte comme une vraie preuve de progression
+  (`report_progress`, appelé depuis `chat.rs`) — si des tokens recommencent à
+  arriver après un avertissement, il se résout tout seul (`freeze-resolved`),
+  sans que l'utilisateur ait à cliquer quoi que ce soit.
+- Si 120s s'écoulent sans le moindre token : événement `freeze-warning`
+  (`stalled_secs`) envoyé au front. Le compte à rebours de grâce (20s,
+  `FREEZE_GRACE_SECS` dans `App.tsx`) est géré **côté front**, pas par le
+  watchdog Rust lui-même — celui-ci se contente de détecter et prévenir, la
+  fermeture réelle passe par la commande `close_app` (`app.exit(0)`),
+  déclenchée soit par le timer du front, soit par le bouton "Fermer
+  maintenant", soit annulée/reportée par "Attendre encore".
+
+**Pourquoi pas Codex (`agent_chat`)** : deux raisons combinées, pas une seule.
+1. `agent_chat` est non-streaming (voir Limites connues ci-dessous) : aucun
+   signal de progression token par token n'existe pour distinguer "modèle
+   volumineux qui répond lentement" de "vraiment bloqué" — un timeout fixe se
+   tromperait dans un sens ou dans l'autre.
+2. Plus important : un appel Codex peut être en plein
+   `write_file`/`edit_file`/`run_powershell_command` au moment où le
+   watchdog déciderait de fermer. Tuer l'app à ce moment-là risque un fichier
+   à moitié écrit — un dommage réel, pas juste une réponse ratée. Mieux vaut
+   laisser tourner (voire un vrai freeze système) que risquer de corrompre
+   les fichiers de l'utilisateur.
+
+Si Codex doit un jour avoir son propre filet anti-gel, il faudra d'abord le
+faire streamer en interne (accumuler les chunks NDJSON d'Ollama même sans
+changer le contrat public de `agent_chat`, pour obtenir un vrai signal de
+progression) — pas juste lui coller le même timeout fixe.
 
 ## Limites connues et risques
 
@@ -307,6 +355,16 @@ l'utilisateur confirme qu'elle est bien dans `.env` local.
   (560px → 820px) et calculateur de config enrichi (menu déroulant de
   modèles GPU NVIDIA/AMD avec VRAM connue à la place d'une case à cocher,
   ajout d'un sélecteur de niveau de processeur).
+- **2026-08-30** — Retours utilisateur après test réel de v0.2.1 : (1)
+  `ModelSelect` s'ouvrait hors écran dans Codex, corrigé avec la prop
+  `direction` ; (2) le navigateur Hugging Face "faisait bugger le PC" —
+  cause probable identifiée (RAM système re-détectée en respawnant
+  PowerShell à chaque ouverture de la modale, en plus d'une recherche HTTP
+  sans timeout), corrigé en détectant la RAM une fois au démarrage de l'app
+  et en ajoutant un timeout de 10s à `search_hf_models` ; (3) système
+  anti-gel ajouté pour le chat de base, périmètre volontairement limité
+  (voir section dédiée ci-dessus) — pas pour Codex, à cause du risque de
+  fichier corrompu si l'app est tuée en pleine écriture.
 
 ## Prochaines étapes (dans l'ordre du fichier de passation d'origine)
 
