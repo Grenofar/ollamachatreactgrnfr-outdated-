@@ -55,6 +55,10 @@ export default function App() {
   const stickToBottomRef = useRef(true);
   const graceTimeoutRef = useRef<number | null>(null);
   const graceIntervalRef = useRef<number | null>(null);
+  // Per-conversation draft text, kept outside React state (drafts are
+  // transient and don't need to trigger re-renders on their own) so
+  // switching conversations doesn't leak or drop what you were typing.
+  const draftsRef = useRef<Map<string, string>>(new Map());
 
   async function refreshModels(host: string): Promise<OllamaModel[]> {
     try {
@@ -161,8 +165,8 @@ export default function App() {
   }
 
   useEffect(() => {
-    // Watches only the basic chat's streaming generation — see
-    // src-tauri/src/commands/watchdog.rs for why Codex is excluded.
+    // Fires for either the basic chat or Codex generating — both report
+    // progress to the same Rust-side watchdog, see watchdog.rs.
     const unlistenWarning = onFreezeWarning((stalledSecs) => {
       setFreezeWarning({ stalledSecs });
       startGraceCountdown();
@@ -191,10 +195,20 @@ export default function App() {
     stickToBottomRef.current = el.scrollHeight - el.scrollTop - el.clientHeight < 80;
   }
 
+  // Saves the outgoing conversation's in-progress draft and restores the
+  // incoming one's, so switching conversations mid-type doesn't leak text
+  // into the wrong discussion or silently drop what you were writing.
+  function switchDraft(newKey: string) {
+    draftsRef.current.set(currentConv?.id ?? "", input);
+    setInput(draftsRef.current.get(newKey) ?? "");
+  }
+
   function handleNewConversation() {
     if (!selectedModel) return;
+    const id = crypto.randomUUID();
+    switchDraft(id);
     setCurrentConv({
-      id: crypto.randomUUID(),
+      id,
       title: NEW_CONV_TITLE,
       model: selectedModel,
       created_at: Date.now() / 1000,
@@ -204,6 +218,7 @@ export default function App() {
 
   async function handleSelectConversation(id: string) {
     const conv = await loadConversation(id);
+    switchDraft(id);
     setCurrentConv(conv);
     if (models.some((m) => m.name === conv.model)) setSelectedModel(conv.model);
   }
@@ -211,7 +226,11 @@ export default function App() {
   async function handleDeleteConversation(id: string) {
     if (!window.confirm("Supprimer définitivement cette discussion ?")) return;
     await deleteConversation(id);
-    if (currentConv?.id === id) setCurrentConv(null);
+    draftsRef.current.delete(id);
+    if (currentConv?.id === id) {
+      setInput("");
+      setCurrentConv(null);
+    }
     await refreshConversations();
   }
 
@@ -266,12 +285,15 @@ export default function App() {
   }
 
   function handleRegenerate() {
-    if (!currentConv || sending) return;
+    if (!currentConv || sending || !selectedModel) return;
     const msgs = currentConv.messages;
     if (msgs.length === 0 || msgs[msgs.length - 1].role !== "assistant") return;
     const truncated = msgs.slice(0, -1);
-    setCurrentConv({ ...currentConv, messages: truncated });
-    submitToOllama(truncated, currentConv.model);
+    // Uses whichever model is picked in the dropdown right now, not
+    // necessarily the one the conversation was started with — pick a
+    // different model first, then regenerate, to answer with it instead.
+    setCurrentConv({ ...currentConv, model: selectedModel, messages: truncated });
+    submitToOllama(truncated, selectedModel);
   }
 
   function startEdit(index: number, content: string) {
@@ -390,7 +412,9 @@ export default function App() {
                         <button onClick={() => startEdit(i, m.content)}>Modifier</button>
                       )}
                       {m.role === "assistant" && i === messages.length - 1 && !sending && (
-                        <button onClick={handleRegenerate}>Régénérer</button>
+                        <button onClick={handleRegenerate} title="Choisis un autre modèle dans le menu pour régénérer avec">
+                          Régénérer{selectedModel && selectedModel !== currentConv?.model ? ` avec ${selectedModel}` : ""}
+                        </button>
                       )}
                     </div>
                   </div>

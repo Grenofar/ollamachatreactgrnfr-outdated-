@@ -29,6 +29,8 @@ export const installModel = (host: string, reference: string) =>
 export const deleteModel = (host: string, name: string) => invoke<void>("delete_model", { host, name });
 
 export const listConversations = () => invoke<ConversationMeta[]>("list_conversations");
+export const searchConversations = (query: string) =>
+  invoke<ConversationMeta[]>("search_conversations", { query });
 export const loadConversation = (id: string) => invoke<Conversation>("load_conversation", { id });
 export const saveConversation = (conversation: Conversation) =>
   invoke<void>("save_conversation", { conversation });

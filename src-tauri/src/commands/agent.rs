@@ -1,8 +1,9 @@
+use super::watchdog::{report_progress, Watchdog, WatchdogGuard};
 use serde::{Deserialize, Serialize};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 use std::time::Duration;
-use tauri::State;
+use tauri::{AppHandle, State};
 
 pub struct AgentCancelFlag(pub Arc<AtomicBool>);
 
@@ -83,9 +84,18 @@ fn to_ollama_message(m: &AgentMessage) -> serde_json::Value {
 
 const CANCELLED_MESSAGE: &str = "Annulé par l'utilisateur.";
 
+// Streams internally (stream: true against Ollama) purely to get a
+// per-chunk progress signal for the freeze watchdog — the external contract
+// is unchanged, this still resolves once with the complete
+// AgentChatResponse, so useAgentLoop.ts needed no changes at all. Ollama
+// sends the tool_calls array whole (not built up incrementally token by
+// token) in whichever chunk carries it, so "last non-empty tool_calls array
+// seen wins" is the correct way to accumulate it across chunks.
 #[tauri::command]
 pub async fn agent_chat(
     cancel: State<'_, AgentCancelFlag>,
+    watchdog: State<'_, Watchdog>,
+    app: AppHandle,
     host: String,
     model: String,
     messages: Vec<AgentMessage>,
@@ -93,6 +103,8 @@ pub async fn agent_chat(
 ) -> Result<AgentChatResponse, String> {
     cancel.0.store(false, Ordering::SeqCst);
     let flag = cancel.0.clone();
+    let watchdog = watchdog.0.clone();
+    let _watchdog_guard = WatchdogGuard::start(&watchdog);
 
     let url = format!("{}/api/chat", host.trim_end_matches('/'));
     let wire_messages: Vec<serde_json::Value> = messages.iter().map(to_ollama_message).collect();
@@ -100,11 +112,11 @@ pub async fn agent_chat(
         "model": model,
         "messages": wire_messages,
         "tools": tools,
-        "stream": false,
+        "stream": true,
     });
 
     let client = reqwest::Client::new();
-    let resp = tokio::select! {
+    let mut resp = tokio::select! {
         result = client.post(&url).json(&body).send() => {
             result.map_err(|e| format!("Impossible de contacter Ollama sur {} : {}", host, e))?
         }
@@ -123,22 +135,51 @@ pub async fn agent_chat(
         return Err(format!("Ollama a répondu avec le statut {} : {}", status, text));
     }
 
-    let data: serde_json::Value = tokio::select! {
-        result = resp.json() => result.map_err(|e| e.to_string())?,
-        _ = wait_for_cancel(flag.clone()) => return Err(CANCELLED_MESSAGE.to_string()),
-    };
-    if let Some(err) = data.get("error").and_then(|e| e.as_str()) {
-        if err.contains("does not support tools") {
-            return Err(format!(
-                "Le modèle « {} » ne supporte pas les outils. Choisis un modèle compatible (ex. qwen2.5, llama3.1, mistral-nemo).",
-                model
-            ));
-        }
-        return Err(err.to_string());
-    }
+    let mut content = String::new();
+    let mut tool_calls: Vec<AgentToolCall> = Vec::new();
+    let mut buffer = String::new();
 
-    let content = data["message"]["content"].as_str().unwrap_or("").to_string();
-    let tool_calls = parse_tool_calls(&data["message"]["tool_calls"]);
+    loop {
+        let chunk = tokio::select! {
+            c = resp.chunk() => c.map_err(|e| format!("Erreur pendant la réception de la réponse : {}", e))?,
+            _ = wait_for_cancel(flag.clone()) => return Err(CANCELLED_MESSAGE.to_string()),
+        };
+        let Some(bytes) = chunk else { break };
+        buffer.push_str(&String::from_utf8_lossy(&bytes));
+
+        while let Some(pos) = buffer.find('\n') {
+            let line = buffer[..pos].trim().to_string();
+            buffer.drain(..=pos);
+            if line.is_empty() {
+                continue;
+            }
+            let data: serde_json::Value = match serde_json::from_str(&line) {
+                Ok(v) => v,
+                Err(_) => continue,
+            };
+            if let Some(err) = data.get("error").and_then(|e| e.as_str()) {
+                if err.contains("does not support tools") {
+                    return Err(format!(
+                        "Le modèle « {} » ne supporte pas les outils. Choisis un modèle compatible (ex. qwen2.5, llama3.1, mistral-nemo).",
+                        model
+                    ));
+                }
+                return Err(err.to_string());
+            }
+
+            if let Some(c) = data["message"]["content"].as_str() {
+                if !c.is_empty() {
+                    content.push_str(c);
+                    report_progress(&watchdog, &app);
+                }
+            }
+            let parsed = parse_tool_calls(&data["message"]["tool_calls"]);
+            if !parsed.is_empty() {
+                tool_calls = parsed;
+                report_progress(&watchdog, &app);
+            }
+        }
+    }
 
     Ok(AgentChatResponse { content, tool_calls })
 }

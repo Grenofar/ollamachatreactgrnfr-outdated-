@@ -1,4 +1,5 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
+import { searchConversations } from "../api";
 import type { ConversationMeta } from "../types";
 
 export default function Sidebar({
@@ -23,12 +24,33 @@ export default function Sidebar({
   onOpenCodex: () => void;
 }) {
   const [search, setSearch] = useState("");
+  const [searchResults, setSearchResults] = useState<ConversationMeta[] | null>(null);
+  const [searching, setSearching] = useState(false);
   const [renamingId, setRenamingId] = useState<string | null>(null);
   const [renameText, setRenameText] = useState("");
 
-  const filtered = search.trim()
-    ? conversations.filter((c) => c.title.toLowerCase().includes(search.trim().toLowerCase()))
-    : conversations;
+  // Searches title AND message content (server-side, see search_conversations)
+  // rather than just filtering the loaded list client-side — titles are
+  // auto-generated from the first message, so most of what's in an older
+  // conversation wouldn't be findable by title alone.
+  useEffect(() => {
+    const query = search.trim();
+    if (!query) {
+      setSearchResults(null);
+      setSearching(false);
+      return;
+    }
+    setSearching(true);
+    const handle = window.setTimeout(() => {
+      searchConversations(query)
+        .then(setSearchResults)
+        .catch(() => setSearchResults([]))
+        .finally(() => setSearching(false));
+    }, 200);
+    return () => window.clearTimeout(handle);
+  }, [search]);
+
+  const filtered = searchResults ?? conversations;
 
   function startRename(conv: ConversationMeta) {
     setRenamingId(conv.id);
@@ -98,7 +120,8 @@ export default function Sidebar({
             </button>
           </div>
         ))}
-        {conversations.length > 0 && filtered.length === 0 && (
+        {searching && <div className="sidebar-empty">Recherche…</div>}
+        {!searching && conversations.length > 0 && filtered.length === 0 && (
           <div className="sidebar-empty">Aucun résultat.</div>
         )}
       </div>

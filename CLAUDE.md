@@ -34,7 +34,11 @@ pas devenir obsolète.
 - [FAIT] Bug corrigé : `reqwest` sans backend TLS cassait tout appel HTTPS (`check_for_update`, `search_hf_models`) — voir Limites connues
 - [FAIT] Bug corrigé : `ModelSelect` s'ouvrait hors écran dans Codex (panneau pensé pour un déclencheur en bas de page, réutilisé dans l'en-tête en haut) — nouvelle prop `direction`
 - [FAIT] RAM système détectée une seule fois au démarrage (au lieu de respawn PowerShell à chaque ouverture du navigateur Hugging Face) + timeout ajouté sur la recherche HF, contre le ralentissement perçu signalé par l'utilisateur
-- [FAIT] Système anti-gel (chat de base uniquement, voir Limites connues et Décisions techniques pour le pourquoi de ce périmètre)
+- [FAIT] Système anti-gel — couvre maintenant le chat de base ET Codex (`agent_chat` a été converti pour streamer en interne, voir Architecture > Codex), scopé pour ne jamais se déclencher pendant une écriture de fichier
+- [FAIT] Recherche de conversation par contenu (pas juste le titre), `search_conversations` côté Rust
+- [FAIT] Brouillon de message par conversation (au lieu d'un seul brouillon global partagé)
+- [FAIT] Régénérer une réponse avec un modèle différent (utilise le modèle actuellement sélectionné dans le menu, pas forcément celui de la conversation)
+- [FAIT] Icône dans la zone de notification (system tray) : fermer la fenêtre (X) minimise au lieu de quitter ; quitter réellement se fait depuis le menu de l'icône
 
 ## Architecture
 
@@ -45,7 +49,9 @@ pas devenir obsolète.
 - `App.tsx` : éditer un message utilisateur (tronque l'historique après lui, renvoie) et régénérer la dernière réponse assistant (retire ce message, renvoie la même requête) partagent une fonction `submitToOllama` commune avec `handleSend`.
 - Compteurs de tokens (App.tsx) : par conversation (`messages.reduce` sur `tokens`), budget de contexte via `trimMessagesToBudget` (ce qui serait réellement envoyé au modèle), total global en sommant `ConversationMeta.total_tokens` (calculé côté Rust dans `list_conversations`, pas besoin de recharger chaque conversation).
 - `tauri-plugin-window-state` : persistance automatique taille/position/maximisé de la fenêtre, aucune config front nécessaire (le plugin réagit aux événements de fenêtre côté Rust).
-- `src/components/Sidebar.tsx` : renommage par double-clic sur le titre (input inline, Entrée valide/Échap ou blur annule — même pattern que la création de fichier dans `FileTree`), recherche client-side sur le titre.
+- `src/components/Sidebar.tsx` : renommage par double-clic sur le titre (input inline, Entrée valide/Échap ou blur annule — même pattern que la création de fichier dans `FileTree`), recherche **serveur** (debounce 200ms) via `search_conversations` — cherche dans le titre ET le contenu des messages, pas juste le titre affiché (les titres sont auto-générés depuis les ~40 premiers caractères du premier message, donc une recherche titre-seul ratait la plupart d'une vieille conversation).
+- `App.tsx` : brouillon de message par conversation (`draftsRef`, une `Map<id, texte>` hors du state React — changer de conversation en cours de frappe sauvegarde/restaure le bon brouillon au lieu de partager un seul brouillon global). `handleRegenerate` utilise le modèle **actuellement sélectionné** dans `ModelSelect`, pas forcément celui de la conversation — change le modèle dans le menu puis clique "Régénérer" pour reformuler avec un autre modèle.
+- System tray (`lib.rs`, feature Cargo `tray-icon`) : fermer la fenêtre (X) la cache au lieu de quitter (`WindowEvent::CloseRequested` → `api.prevent_close()` + `window.hide()`) ; l'icône dans la zone de notification a un menu "Afficher"/"Quitter", et un clic gauche dessus réaffiche aussi la fenêtre. Quitter réellement passe par `app.exit(0)` (menu tray, ou `close_app` du watchdog).
 - `src-tauri/src/commands/hardware.rs` : `get_system_ram_gb`, RAM totale via une commande PowerShell one-shot (pas de crate `sysinfo` ajoutée pour ça) — volontairement pas de détection GPU/VRAM, peu fiable sous Windows (drivers rapportent souvent des valeurs plafonnées/fausses).
 - `src/components/ModelSelect.tsx` : menu déroulant de modèle (recherche, affiche parameter_size/quantization/taille), partagé entre le chat de base et Codex, remplace le `<select>` HTML natif. Prop `direction` (`"up"` par défaut pour la barre du bas du chat, `"down"` pour l'en-tête de Codex) — sans elle le panneau s'ouvre hors écran quand le déclencheur est en haut de page.
 - `src-tauri/src/commands/watchdog.rs` : système anti-gel, voir section dédiée plus bas.
@@ -57,7 +63,7 @@ pas devenir obsolète.
 ### Codex (agent de codage local)
 - `src/agentTools.ts` : schémas des 6 outils exposés au modèle + `CODEX_SYSTEM_PROMPT`.
 - `src/hooks/useAgentLoop.ts` : boucle agentique — appelle le modèle, exécute les tool_calls un par un, rappelle le modèle avec les résultats, jusqu'à une réponse sans tool_calls (plafond `MAX_AGENT_ITERATIONS = 25`, avec une confirmation utilisateur pour continuer au-delà).
-- `src-tauri/src/commands/agent.rs` : `agent_chat`, appel à `/api/chat` d'Ollama avec le paramètre `tools` (function calling façon OpenAI), toujours `stream: false` (une seule réponse, pas de tokens au fil de l'eau). Async + annulable via `AgentCancelFlag`/`cancel_agent_chat` (voir Décisions techniques). Ollama n'assigne pas d'id aux tool_calls ; un id positionnel est synthétisé côté Rust uniquement pour corréler les promesses d'approbation côté front, jamais renvoyé à Ollama.
+- `src-tauri/src/commands/agent.rs` : `agent_chat`, appel à `/api/chat` d'Ollama avec le paramètre `tools` (function calling façon OpenAI). Envoie `stream: true` à Ollama et lit la réponse chunk par chunk (NDJSON, même format que `send_chat`), mais **le contrat public ne change pas** : la commande ne renvoie qu'une seule fois le `AgentChatResponse` complet (content accumulé + tool_calls) — le streaming interne sert uniquement à donner un signal de progression réel au watchdog anti-gel (voir plus bas), `useAgentLoop.ts` n'a rien eu à changer. Le contenu se concatène chunk par chunk ; pour `tool_calls`, Ollama envoie le tableau complet d'un coup (pas construit incrémentalement token par token), donc c'est "le dernier tableau non-vide vu gagne", pas une fusion. Async + annulable via `AgentCancelFlag`/`cancel_agent_chat` (voir Décisions techniques) — l'annulation est vérifiée à chaque chunk maintenant, pas juste avant le premier octet. Ollama n'assigne pas d'id aux tool_calls ; un id positionnel est synthétisé côté Rust uniquement pour corréler les promesses d'approbation côté front, jamais renvoyé à Ollama.
 - `src-tauri/src/commands/fsops.rs` : `list_dir` (un niveau, paresseux), `read_file_text` (limite 5 Mo), `write_file_text`, `edit_file_text` (remplacement exact, unique sauf `replace_all`).
 - `src-tauri/src/commands/shell.rs` : `run_powershell_command`, streaming live via événements Tauri (`shell-output`/`shell-done`/`shell-error`/`shell-timeout`), timeout 120 s par défaut, annulable via `cancel_shell_command`.
 - `src/components/codex/` : `CodexView` (page principale), `FileTree`, `EditorPane` (Monaco), `ToolApprovalModal` (DiffEditor), `AskQuestionModal`, `AgentTranscript`, `HuggingFaceBrowser`.
@@ -86,20 +92,26 @@ le seul filet de sécurité de l'application — voir Limites connues ci-dessous
 
 Demandé explicitement par l'utilisateur : fermer l'app si elle semble figée,
 sans jamais la fermer juste parce qu'elle utilise 100% des ressources en
-train de vraiment générer. Périmètre volontairement limité au **chat de
-base** (`send_chat`) :
+train de vraiment générer. Couvre maintenant **le chat de base ET Codex**
+(`send_chat` et `agent_chat` partagent le même `Watchdog`) :
 
 - `src-tauri/src/commands/watchdog.rs` — `Watchdog` (état partagé
-  `Arc<Mutex<...>>`, managé par Tauri), `WatchdogGuard` (RAII : marque la
-  génération active à la création, inactive au `Drop`, donc chaque sortie du
-  thread de `send_chat` — erreur, annulation, fin normale — le désactive
-  correctement sans avoir à s'en souvenir à chaque `return`), un thread qui
-  vérifie toutes les 5s si ça fait plus de 120s sans le moindre token reçu.
-- Chaque chunk streamé compte comme une vraie preuve de progression
-  (`report_progress`, appelé depuis `chat.rs`) — si des tokens recommencent à
-  arriver après un avertissement, il se résout tout seul (`freeze-resolved`),
-  sans que l'utilisateur ait à cliquer quoi que ce soit.
-- Si 120s s'écoulent sans le moindre token : événement `freeze-warning`
+  `Arc<Mutex<...>>`, managé par Tauri), `WatchdogGuard` (RAII : incrémente un
+  compteur de générations actives à la création, le décrémente au `Drop`, donc
+  chaque sortie du thread/appel qui l'utilise — erreur, annulation, fin
+  normale — se désenregistre correctement sans avoir à s'en souvenir à chaque
+  `return`), un thread qui vérifie toutes les 5s si ça fait plus de 120s sans
+  le moindre chunk reçu **alors qu'au moins une génération est active**.
+- **Compteur plutôt que booléen** : rien n'empêche le chat de base et Codex de
+  générer en même temps (changer de vue ne coupe pas une requête en cours) —
+  un simple booléen aurait un bug où la première génération à finir désactive
+  à tort le suivi de l'autre encore en cours.
+- Chaque chunk streamé (`send_chat` ET maintenant `agent_chat`, voir
+  Architecture > Codex) compte comme une vraie preuve de progression
+  (`report_progress`) — si des chunks recommencent à arriver après un
+  avertissement, il se résout tout seul (`freeze-resolved`), sans que
+  l'utilisateur ait à cliquer quoi que ce soit.
+- Si 120s s'écoulent sans le moindre chunk : événement `freeze-warning`
   (`stalled_secs`) envoyé au front. Le compte à rebours de grâce (20s,
   `FREEZE_GRACE_SECS` dans `App.tsx`) est géré **côté front**, pas par le
   watchdog Rust lui-même — celui-ci se contente de détecter et prévenir, la
@@ -107,22 +119,15 @@ base** (`send_chat`) :
   déclenchée soit par le timer du front, soit par le bouton "Fermer
   maintenant", soit annulée/reportée par "Attendre encore".
 
-**Pourquoi pas Codex (`agent_chat`)** : deux raisons combinées, pas une seule.
-1. `agent_chat` est non-streaming (voir Limites connues ci-dessous) : aucun
-   signal de progression token par token n'existe pour distinguer "modèle
-   volumineux qui répond lentement" de "vraiment bloqué" — un timeout fixe se
-   tromperait dans un sens ou dans l'autre.
-2. Plus important : un appel Codex peut être en plein
-   `write_file`/`edit_file`/`run_powershell_command` au moment où le
-   watchdog déciderait de fermer. Tuer l'app à ce moment-là risque un fichier
-   à moitié écrit — un dommage réel, pas juste une réponse ratée. Mieux vaut
-   laisser tourner (voire un vrai freeze système) que risquer de corrompre
-   les fichiers de l'utilisateur.
-
-Si Codex doit un jour avoir son propre filet anti-gel, il faudra d'abord le
-faire streamer en interne (accumuler les chunks NDJSON d'Ollama même sans
-changer le contrat public de `agent_chat`, pour obtenir un vrai signal de
-progression) — pas juste lui coller le même timeout fixe.
+**Pourquoi c'est sûr pour Codex maintenant** (ça ne l'était pas avant que
+`agent_chat` streame en interne, voir Architecture > Codex pour le pourquoi
+technique) : le `WatchdogGuard` de `agent_chat` est scopé strictement à
+l'appel HTTP vers Ollama lui-même — il se désenregistre dès que `agent_chat`
+retourne, **avant** que `useAgentLoop.ts` n'exécute le moindre tool_call. Les
+outils mutants (`write_file`/`edit_file`/`run_powershell_command`) tournent
+dans des commandes Tauri complètement séparées, appelées après coup — le
+watchdog n'est jamais actif pendant qu'un fichier est en cours d'écriture,
+donc aucun risque de fermeture en pleine écriture.
 
 ## Limites connues et risques
 
@@ -157,9 +162,14 @@ progression) — pas juste lui coller le même timeout fixe.
   2026-08-30 par bonne pratique, mais ça ne change rien à SmartScreen.
 - Le mode Approbation est le seul garde-fou : ne l'affaiblis pas (l'assouplir,
   ajouter des exceptions, etc.) sans qu'on te le demande explicitement.
-- `agent_chat` est **non-streaming** : un appel modèle avec des outils
-  bloque jusqu'à la réponse complète (pas de tokens affichés au fil de l'eau
-  pendant le raisonnement de l'agent, contrairement au chat simple).
+- `agent_chat` streame maintenant en interne côté Rust (voir Architecture >
+  Codex et Système anti-gel), mais **le frontend ne montre toujours rien au
+  fil de l'eau** pendant le raisonnement de l'agent — `useAgentLoop.ts`
+  attend toujours la réponse complète de la promesse `agentChat(...)`, les
+  chunks internes ne servent qu'au watchdog anti-gel pour l'instant. Afficher
+  la réponse de Codex au fil de l'eau comme le chat simple serait la suite
+  logique si demandé (émettre un événement par chunk depuis `agent_chat`,
+  l'écouter côté front) mais n'a pas été fait.
 
 ## Confidentialité réseau (garantie explicite)
 
@@ -365,6 +375,21 @@ l'utilisateur confirme qu'elle est bien dans `.env` local.
   anti-gel ajouté pour le chat de base, périmètre volontairement limité
   (voir section dédiée ci-dessus) — pas pour Codex, à cause du risque de
   fichier corrompu si l'app est tuée en pleine écriture.
+- **2026-08-30** — Retour sur la limitation ci-dessus, sur demande explicite
+  de l'utilisateur : `agent_chat` streame maintenant en interne (Ollama
+  `stream: true`, parsing NDJSON comme `send_chat`, mais le contrat public de
+  la commande ne change pas). Ça donne un vrai signal de progression, donc le
+  système anti-gel couvre maintenant Codex aussi (le `WatchdogGuard` est
+  scopé à l'appel HTTP seul, jamais actif pendant l'exécution d'un outil,
+  donc toujours pas de risque de fichier corrompu). Ajouté dans la foulée :
+  recherche de conversation par contenu (`search_conversations`), brouillon
+  de message par conversation au lieu d'un seul brouillon global, régénérer
+  avec un modèle différent de celui de la conversation, et une icône dans la
+  zone de notification (fermer la fenêtre minimise au lieu de quitter).
+  **Leçon** : l'API Tauri v2 pour empêcher une fermeture de fenêtre s'appelle
+  `CloseRequestApi::prevent_close()`, pas `prevent_default()` (erreur de
+  compilation immédiate, corrigée avant tout test — mais un rappel que les
+  noms d'API Tauri v1→v2 ne se devinent pas toujours par analogie).
 
 ## Prochaines étapes (dans l'ordre du fichier de passation d'origine)
 
