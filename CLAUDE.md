@@ -14,8 +14,10 @@ pas devenir obsolète.
 - [FAIT] Éditeur Codex : agent outillé (6 outils), Monaco, bascule Auto/Approbation
 - [FAIT] `npm run build` (tsc + vite) et `cargo check` passent à 0 erreur
 - [FAIT] Dépôt git initialisé et poussé sur GitHub (`Grenofar/ollamachatreactgrnfr`, dépôt **privé**)
-- [FAIT] Landing page statique dans `site/` — présentation minimale + comment ça marche + conseil de modèle + note SmartScreen + bouton de téléchargement
+- [FAIT] Landing page statique dans `site/` — présentation minimale + comment ça marche + note SmartScreen + bouton de téléchargement (conseil de modèle retiré du site, déplacé dans l'app, voir plus bas)
 - [FAIT] Création de fichier inline dans Codex (toolbar + par dossier), génération annulable (chat et Codex) avec bouton animé
+- [FAIT] Menu de modèle repensé (`ModelSelect`, recherche + taille/quantization affichées) dans le chat et Codex, à la place du `<select>` HTML brut
+- [FAIT] Navigateur de modèles Hugging Face branché dans l'app (il existait mais n'était appelé nulle part) : parcours élargi par défaut, recommandation par RAM système détectée
 - [À FAIRE] Connecter `site/` à Vercel (étape manuelle côté utilisateur, voir `site/README.md`)
 - [FAIT] Supabase en lecture seule branché ET table `app_releases` créée + peuplée (app : `check_for_update` + Réglages ; site : fetch client-side)
 - [FAIT] Premier installeur construit (`npm run tauri build`, NSIS+MSI) et publié : v0.1.0 hébergée sur Supabase Storage (bucket public `releases`), lien de téléchargement fonctionnel de bout en bout
@@ -26,10 +28,13 @@ pas devenir obsolète.
 
 ### Chat (base)
 - `src/api.ts` : appels Tauri (`invoke`) vers les commandes Rust.
-- `src-tauri/src/commands/chat.rs` : liste des modèles, envoi de message (streaming), annulation, installation de modèle.
+- `src-tauri/src/commands/chat.rs` : liste des modèles (nom + taille + parameter_size + quantization_level, pas juste le nom), envoi de message (streaming), annulation, installation de modèle.
+- `src-tauri/src/commands/hardware.rs` : `get_system_ram_gb`, RAM totale via une commande PowerShell one-shot (pas de crate `sysinfo` ajoutée pour ça) — volontairement pas de détection GPU/VRAM, peu fiable sous Windows (drivers rapportent souvent des valeurs plafonnées/fausses).
+- `src/components/ModelSelect.tsx` : menu déroulant de modèle (recherche, affiche parameter_size/quantization/taille), partagé entre le chat de base et Codex, remplace le `<select>` HTML natif.
 - `src-tauri/src/commands/conversations.rs` : persistance JSON locale des conversations.
 - `src-tauri/src/commands/settings.rs` : réglages persistés en JSON local (`Settings` : host Ollama, contexte max, prompt système, modèle par défaut, mode Codex, dernier dossier Codex).
-- `src-tauri/src/commands/huggingface.rs` : recherche publique sur le Hub Hugging Face (filtrée GGUF) ; l'installation réutilise `install_model` avec la référence `hf.co/<repo>`.
+- `src-tauri/src/commands/huggingface.rs` : recherche publique sur le Hub Hugging Face (filtrée GGUF, 50 résultats, recherche vide acceptée → tendances par téléchargements) ; l'installation réutilise `install_model` avec la référence `hf.co/<repo>`.
+- `src/components/codex/HuggingFaceBrowser.tsx` : modale "Installer un modèle" (bouton Sidebar) — charge les modèles tendance au montage, badge "Adapté à ta RAM"/"Volumineux pour ta RAM" par modèle (règle : paramètres max recommandés ≈ RAM(Go) × 1,75, cohérent avec l'ancien conseil par défaut d'`InstallPanel`), section repliable pour installer une référence exacte. Remplace `InstallPanel.tsx` (supprimé) qui n'offrait que la saisie manuelle.
 
 ### Codex (agent de codage local)
 - `src/agentTools.ts` : schémas des 6 outils exposés au modèle + `CODEX_SYSTEM_PROMPT`.
@@ -172,6 +177,22 @@ le seul filet de sécurité de l'application — voir Limites connues ci-dessous
   l'avertissement SmartScreen. Métadonnées Cargo.toml/tauri.conf.json
   corrigées (description/publisher) pour les prochains builds — n'affecte
   pas le binaire déjà publié.
+- **2026-08-30** — Découverte que `HuggingFaceBrowser.tsx` existait déjà
+  (session précédente) mais n'était jamais rendu nulle part : branché sur le
+  bouton Sidebar "Installer un modèle" à la place d'`InstallPanel.tsx`
+  (supprimé, sa saisie manuelle de référence fusionnée dans une section
+  repliable de `HuggingFaceBrowser`). Ajout de `get_system_ram_gb` (RAM
+  système via PowerShell, pas de tentative de détection GPU/VRAM — peu
+  fiable sous Windows) pour badger chaque résultat "Adapté à ta RAM" /
+  "Volumineux pour ta RAM". `list_models` renvoie maintenant taille +
+  parameter_size + quantization_level (plus juste le nom), utilisés par le
+  nouveau composant `ModelSelect` (menu déroulant cherchable) qui remplace
+  le `<select>` HTML natif dans le chat de base et Codex. Retrait de la
+  section "Quel modèle choisir" du site (le conseil vit maintenant dans
+  l'app, avec de vraies données au lieu d'une liste statique). Nettoyage des
+  derniers emoji restants dans l'UI de l'app (Sidebar, FileTree, CodexView,
+  AgentTranscript, HuggingFaceBrowser, écran vide du chat) — la consigne
+  "pas d'emoji" n'avait jusque-là été appliquée qu'à la doc et au site.
 
 ## Prochaines étapes (dans l'ordre du fichier de passation d'origine)
 
