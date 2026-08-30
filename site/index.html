@@ -26,7 +26,7 @@
     line-height: 1.55;
   }
   .wrap {
-    max-width: 560px;
+    max-width: 820px;
     margin: 0 auto;
     padding: 56px 24px 64px;
   }
@@ -38,31 +38,40 @@
     margin-bottom: 28px;
   }
   h1 {
-    font-size: clamp(1.7rem, 5vw, 2.3rem);
+    font-size: clamp(1.7rem, 4.5vw, 2.4rem);
     margin: 0 0 20px;
     letter-spacing: -0.01em;
   }
   h2 {
-    font-size: 1.05rem;
+    font-size: 1.1rem;
     margin: 0 0 12px;
   }
   p { color: var(--text-dim); margin: 0 0 12px; }
-  .intro { font-size: 1.05rem; margin-bottom: 8px; }
+  .intro {
+    font-size: 1.05rem;
+    margin: 0 auto 8px;
+    max-width: 620px;
+  }
 
   section {
-    padding-top: 32px;
-    margin-top: 32px;
+    padding-top: 36px;
+    margin-top: 36px;
     border-top: 1px solid var(--border);
   }
 
-  .flow-item { margin-bottom: 14px; }
-  .flow-item:last-child { margin-bottom: 0; }
+  .flow {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+    gap: 20px;
+  }
   .flow-item strong { color: var(--text); }
-  .flow-item p { margin: 2px 0 0; font-size: 0.92rem; }
+  .flow-item p { margin: 4px 0 0; font-size: 0.92rem; }
 
   .pc-warning {
     font-size: 0.85rem;
     color: var(--warn);
+    max-width: 620px;
+    margin: 0 auto;
   }
 
   .section-hint {
@@ -70,42 +79,49 @@
     margin-top: -6px;
   }
 
-  .calc {
-    display: flex;
-    flex-direction: column;
-    align-items: flex-start;
-    gap: 10px;
+  .calc-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+    gap: 16px;
+    align-items: end;
   }
 
-  .calc select {
+  .calc-field {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+  }
+
+  .calc-field label {
+    font-size: 0.82rem;
+    color: var(--text-dim);
+  }
+
+  .calc-field select {
     background: var(--bg-raised);
     color: var(--text);
     border: 1px solid var(--border);
     border-radius: 8px;
-    padding: 8px 10px;
+    padding: 9px 10px;
     font-size: 0.92rem;
   }
 
-  .calc-checkbox {
-    display: flex;
-    align-items: center;
-    gap: 8px;
-    font-size: 0.88rem;
-    color: var(--text-dim);
+  .calc-actions {
+    margin-top: 18px;
   }
 
   .calc-result {
-    margin-top: 16px;
+    margin-top: 20px;
     background: var(--bg-raised);
     border: 1px solid var(--border);
     border-radius: 10px;
-    padding: 14px 16px;
-    font-size: 0.88rem;
+    padding: 16px 18px;
+    font-size: 0.9rem;
   }
 
   .calc-result h3 {
-    margin: 0 0 6px;
-    font-size: 0.95rem;
+    margin: 0 0 8px;
+    font-size: 1rem;
     color: var(--text);
   }
 
@@ -115,8 +131,21 @@
     color: var(--accent);
   }
 
-  .calc-result .consequences {
+  .calc-result .extra {
+    margin-top: 8px;
+    font-size: 0.85rem;
+  }
+
+  .calc-result .speed {
     margin-top: 10px;
+    font-size: 0.85rem;
+    color: var(--text-dim);
+  }
+
+  .calc-result .consequences {
+    margin-top: 12px;
+    padding-top: 12px;
+    border-top: 1px solid var(--border);
     color: var(--text-dim);
   }
 
@@ -198,35 +227,71 @@
 
     <section>
       <h2>Comment ça marche</h2>
-      <div class="flow-item">
-        <strong>Chat</strong>
-        <p>Choisissez un modèle installé dans Ollama, discutez normalement — l'app garde vos conversations en local.</p>
-      </div>
-      <div class="flow-item">
-        <strong>Codex</strong>
-        <p>Ouvrez un dossier, décrivez ce que vous voulez : le modèle lit, écrit et modifie des fichiers, exécute des commandes, et vous demande votre avis avant chaque action si vous êtes en mode Approbation.</p>
+      <div class="flow">
+        <div class="flow-item">
+          <strong>Chat</strong>
+          <p>Choisissez un modèle installé dans Ollama, discutez normalement — l'app garde vos conversations en local.</p>
+        </div>
+        <div class="flow-item">
+          <strong>Codex</strong>
+          <p>Ouvrez un dossier, décrivez ce que vous voulez : le modèle lit, écrit et modifie des fichiers, exécute des commandes, et vous demande votre avis avant chaque action si vous êtes en mode Approbation.</p>
+        </div>
       </div>
     </section>
 
     <section>
       <h2>Quel modèle pour ta config</h2>
       <p class="section-hint">
-        Indique ta RAM, le calcul se fait dans ton navigateur (rien n'est
-        envoyé nulle part).
+        Indique ta RAM, ton processeur et ta carte graphique — le calcul se
+        fait dans ton navigateur (rien n'est envoyé nulle part).
       </p>
-      <div class="calc">
-        <label for="calc-ram">RAM installée</label>
-        <select id="calc-ram">
-          <option value="4">4 Go</option>
-          <option value="8" selected>8 Go</option>
-          <option value="16">16 Go</option>
-          <option value="32">32 Go</option>
-          <option value="64">64 Go ou plus</option>
-        </select>
-        <label class="calc-checkbox">
-          <input type="checkbox" id="calc-gpu" />
-          J'ai une carte graphique dédiée (NVIDIA/AMD)
-        </label>
+
+      <div class="calc-grid">
+        <div class="calc-field">
+          <label for="calc-ram">RAM installée</label>
+          <select id="calc-ram">
+            <option value="4">4 Go</option>
+            <option value="8" selected>8 Go</option>
+            <option value="16">16 Go</option>
+            <option value="32">32 Go</option>
+            <option value="64">64 Go ou plus</option>
+          </select>
+        </div>
+
+        <div class="calc-field">
+          <label for="calc-cpu">Processeur</label>
+          <select id="calc-cpu">
+            <option value="old">Ancien / entrée de gamme (≤ 4 cœurs)</option>
+            <option value="mid" selected>Milieu de gamme (Ryzen 5 / Core i5 récents, 6 cœurs)</option>
+            <option value="high">Récent et puissant (Ryzen 7/9, Core i7/i9, 8 cœurs+)</option>
+          </select>
+        </div>
+
+        <div class="calc-field">
+          <label for="calc-gpu">Carte graphique</label>
+          <select id="calc-gpu">
+            <option value="0" selected>Aucune / graphique intégré</option>
+            <optgroup label="NVIDIA">
+              <option value="4">GTX 1650 (4 Go)</option>
+              <option value="6">GTX 1660 / Super / Ti (6 Go)</option>
+              <option value="8">RTX 3050 / 3070 / 4060 (8 Go)</option>
+              <option value="10">RTX 3080 (10 Go)</option>
+              <option value="12">RTX 3060 / 3080 Ti / 4070 / 4070 Ti (12 Go)</option>
+              <option value="16">RTX 4060 Ti 16 Go / 4070 Ti Super / 4080 (16 Go)</option>
+              <option value="24">RTX 3090 / 4090 (24 Go)</option>
+            </optgroup>
+            <optgroup label="AMD">
+              <option value="8">RX 5700 XT / 6600 (XT) (8 Go)</option>
+              <option value="12">RX 6700 XT / 7700 XT (12 Go)</option>
+              <option value="16">RX 6800 (XT) / 7800 XT (16 Go)</option>
+              <option value="20">RX 7900 XT (20 Go)</option>
+              <option value="24">RX 7900 XTX (24 Go)</option>
+            </optgroup>
+          </select>
+        </div>
+      </div>
+
+      <div class="calc-actions">
         <button type="button" class="btn btn-primary" id="calc-btn">Analyser ma config</button>
       </div>
       <div id="calc-result" class="calc-result" hidden></div>
@@ -292,9 +357,10 @@
     loadLatestRelease();
 
     // Simple deterministic rule-of-thumb calculator — no network call, no
-    // AI, just arithmetic on numbers the visitor types in themselves.
-    // Ratio consistent with the app's own in-app recommendation (RAM(Go) ×
-    // 1.75 for CPU-only, a bit more headroom when a dedicated GPU is ticked).
+    // AI, just arithmetic on numbers the visitor picks themselves. Ratios
+    // consistent with the app's own in-app recommendation: effective(Go) ×
+    // 1.75 on CPU/RAM alone, × 2.2 when it fits in dedicated VRAM (GPU
+    // inference is more memory-efficient per format).
     const TIERS = [
       { max: 4, label: "jusqu'à ~3 milliards de paramètres", names: "llama3.2:3b, qwen2.5:3b, phi3:mini" },
       { max: 9, label: "jusqu'à ~8 milliards de paramètres", names: "llama3.1:8b, qwen2.5:7b" },
@@ -303,25 +369,42 @@
       { max: Infinity, label: "70 milliards de paramètres et plus", names: "llama3.1:70b" },
     ];
 
+    const CPU_SPEED = {
+      old: "Génération lente sur CPU seul (plusieurs secondes par mot) — privilégie le bas de la fourchette recommandée.",
+      mid: "Génération correcte sur CPU pour les petits/moyens modèles ; au-delà, ça ralentit nettement.",
+      high: "Assez de cœurs pour rester utilisable même sans GPU, mais un modèle qui tient dans la VRAM restera toujours bien plus rapide.",
+    };
+
     function pickTier(maxParamsB) {
       return TIERS.find((t) => maxParamsB < t.max) ?? TIERS[TIERS.length - 1];
     }
 
     document.getElementById("calc-btn").addEventListener("click", () => {
       const ramGb = Number(document.getElementById("calc-ram").value);
-      const hasGpu = document.getElementById("calc-gpu").checked;
-      const maxParamsB = ramGb * (hasGpu ? 2.2 : 1.75);
-      const tier = pickTier(maxParamsB);
+      const cpuTier = document.getElementById("calc-cpu").value;
+      const gpuVramGb = Number(document.getElementById("calc-gpu").value);
+      const hasGpu = gpuVramGb > 0;
+
+      const comfortableB = (hasGpu ? gpuVramGb : ramGb) * (hasGpu ? 2.2 : 1.75);
+      const extendedB = ramGb * 1.75;
+      const tier = pickTier(comfortableB);
 
       const result = document.getElementById("calc-result");
       result.hidden = false;
       result.innerHTML = "";
 
       const h3 = document.createElement("h3");
-      h3.textContent = `Avec ${ramGb} Go de RAM${hasGpu ? " + GPU dédié" : ""}, vise : ${tier.label}`;
+      h3.textContent = hasGpu
+        ? `Avec ${gpuVramGb} Go de VRAM dédiée, vise : ${tier.label}`
+        : `Avec ${ramGb} Go de RAM (pas de GPU dédié), vise : ${tier.label}`;
       const names = document.createElement("div");
       names.className = "names";
       names.textContent = tier.names;
+
+      const speed = document.createElement("div");
+      speed.className = "speed";
+      speed.textContent = CPU_SPEED[cpuTier];
+
       const consequences = document.createElement("div");
       consequences.className = "consequences";
       consequences.textContent =
@@ -329,6 +412,18 @@
 
       result.appendChild(h3);
       result.appendChild(names);
+
+      if (hasGpu && extendedB > comfortableB) {
+        const extendedTier = pickTier(extendedB);
+        if (extendedTier.label !== tier.label) {
+          const extra = document.createElement("div");
+          extra.className = "extra";
+          extra.textContent = `Avec tes ${ramGb} Go de RAM, tu peux aussi faire tenir des modèles ${extendedTier.label} en partie déchargés sur le CPU — mais nettement plus lent qu'un modèle qui tient entièrement dans la VRAM.`;
+          result.appendChild(extra);
+        }
+      }
+
+      result.appendChild(speed);
       result.appendChild(consequences);
     });
   </script>
