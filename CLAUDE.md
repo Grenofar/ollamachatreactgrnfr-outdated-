@@ -127,6 +127,46 @@ demande confirmation avant d'envoyer quoi que ce soit qui ressemble à des
 données utilisateur (conversations, contenu de fichiers, réglages) vers autre
 chose que `ollama_host`.
 
+## Publier une release
+
+Depuis la v0.2.0 (2026-08-30), la publication se fait en CLI plutôt que via
+le dashboard Supabase, avec la clé **`service_role`** (contourne toute RLS —
+différente de la clé anon utilisée partout ailleurs dans ce projet, qui elle
+reste committable). Elle vit dans `.env` à la racine, **gitignoré** (voir
+`.env.example` pour le template, jamais rempli avec la vraie valeur).
+
+Étapes pour publier une nouvelle version :
+
+1. Bump la version dans `package.json`, `src-tauri/Cargo.toml` et
+   `src-tauri/tauri.conf.json` (les trois, gardés synchronisés) — sans ça,
+   `check_for_update` compare deux versions identiques et ne détecte aucune
+   mise à jour même si le binaire a changé.
+2. `npm run tauri build` → récupère
+   `src-tauri/target/release/bundle/nsis/<nom>_<version>_x64-setup.exe`.
+3. Upload vers Supabase Storage (bucket public `releases`) avec la
+   `service_role` key :
+   `POST {SUPABASE_URL}/storage/v1/object/releases/<fichier>`,
+   headers `Authorization: Bearer <service_role>` + `apikey: <service_role>`,
+   corps = le fichier en binaire.
+4. Insère la ligne dans `app_releases` :
+   `POST {SUPABASE_URL}/rest/v1/app_releases` (mêmes headers,
+   `Content-Type: application/json`, `Prefer: return=minimal`) avec
+   `{"version", "download_url", "notes"}`.
+5. Vérifie avec la clé **anon** (celle que l'app/le site utilisent
+   réellement) que la ligne et le fichier sont bien lisibles publiquement —
+   ne jamais considérer une release publiée sans cette vérification côté
+   lecture publique.
+
+**Pourquoi cette clé est traitée différemment de l'anon key** : l'anon key
+est conçue pour être publique (protégée par RLS), donc committée sans
+souci dans `site/index.html` et `update.rs`. La `service_role` key
+contourne RLS entièrement — un mot de passe root sur tout le projet
+Supabase, pas juste cette table. D'où : `.env` gitignoré, jamais lue par
+l'app elle-même (aucun `SUPABASE_SERVICE_ROLE_KEY` dans le code Rust/TS —
+uniquement utilisée manuellement en CLI au moment de publier), et redemandée
+par Claude à chaque session plutôt que supposée disponible, sauf si
+l'utilisateur confirme qu'elle est bien dans `.env` local.
+
 ## Décisions techniques (le pourquoi)
 
 - **Supabase en lecture seule uniquement, via l'API REST publique (PostgREST),
