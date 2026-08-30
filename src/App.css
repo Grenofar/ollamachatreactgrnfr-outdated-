@@ -824,6 +824,54 @@ body {
   margin-top: 6px;
 }
 
+.update-toast {
+  position: fixed;
+  right: 20px;
+  bottom: 20px;
+  z-index: 30;
+  background: #1e1e1e;
+  border: 1px solid #3a3a3a;
+  border-radius: 12px;
+  padding: 14px 16px;
+  width: 300px;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.4);
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.update-toast-text {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  font-size: 13px;
+}
+
+.update-toast-text span {
+  color: #9a9a9a;
+  font-size: 12px;
+}
+
+.update-toast-error {
+  color: #e8a8a8 !important;
+}
+
+.update-toast-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+}
+
+.update-toast-actions button {
+  background: #2c2c2c;
+  color: #dddddd;
+  border: none;
+  border-radius: 8px;
+  padding: 6px 12px;
+  font-size: 12px;
+  cursor: pointer;
+}
+
 .update-available {
   display: flex;
   flex-direction: column;

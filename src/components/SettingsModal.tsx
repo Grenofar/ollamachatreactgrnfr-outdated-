@@ -1,7 +1,6 @@
 import { useEffect, useState } from "react";
 import { getVersion } from "@tauri-apps/api/app";
-import { check, type Update } from "@tauri-apps/plugin-updater";
-import { relaunch } from "@tauri-apps/plugin-process";
+import type { Update } from "@tauri-apps/plugin-updater";
 import { deleteModel } from "../api";
 import type { OllamaModel, Settings } from "../types";
 
@@ -19,21 +18,31 @@ export default function SettingsModal({
   onClose,
   onSave,
   onRefreshModels,
+  checkingUpdate,
+  upToDate,
+  updateError,
+  availableUpdate,
+  installingUpdate,
+  updateInstallPct,
+  onCheckUpdate,
+  onInstallUpdate,
 }: {
   settings: Settings;
   models: OllamaModel[];
   onClose: () => void;
   onSave: (settings: Settings) => void;
   onRefreshModels: () => void;
+  checkingUpdate: boolean;
+  upToDate: boolean;
+  updateError: string | null;
+  availableUpdate: Update | null;
+  installingUpdate: boolean;
+  updateInstallPct: number | null;
+  onCheckUpdate: () => void;
+  onInstallUpdate: () => void;
 }) {
   const [form, setForm] = useState<Settings>({ ...settings });
   const [appVersion, setAppVersion] = useState<string | null>(null);
-  const [checkingUpdate, setCheckingUpdate] = useState(false);
-  const [updateError, setUpdateError] = useState<string | null>(null);
-  const [upToDate, setUpToDate] = useState(false);
-  const [pendingUpdate, setPendingUpdate] = useState<Update | null>(null);
-  const [installing, setInstalling] = useState(false);
-  const [installPct, setInstallPct] = useState<number | null>(null);
   const [deletingModel, setDeletingModel] = useState<string | null>(null);
 
   useEffect(() => {
@@ -45,49 +54,6 @@ export default function SettingsModal({
   function handleSave() {
     onSave(form);
     onClose();
-  }
-
-  async function handleCheckUpdate() {
-    setCheckingUpdate(true);
-    setUpdateError(null);
-    setUpToDate(false);
-    setPendingUpdate(null);
-    try {
-      const update = await check();
-      if (update) {
-        setPendingUpdate(update);
-      } else {
-        setUpToDate(true);
-      }
-    } catch (e) {
-      setUpdateError(String(e));
-    } finally {
-      setCheckingUpdate(false);
-    }
-  }
-
-  // Downloads and installs in place, then restarts the app with the new
-  // build — no browser, no manually re-running a setup file.
-  async function handleInstallUpdate() {
-    if (!pendingUpdate) return;
-    setInstalling(true);
-    setUpdateError(null);
-    let downloaded = 0;
-    let total: number | undefined;
-    try {
-      await pendingUpdate.downloadAndInstall((event) => {
-        if (event.event === "Started") {
-          total = event.data.contentLength;
-        } else if (event.event === "Progress") {
-          downloaded += event.data.chunkLength;
-          setInstallPct(total ? Math.round((downloaded / total) * 100) : null);
-        }
-      });
-      await relaunch();
-    } catch (e) {
-      setInstalling(false);
-      setUpdateError(String(e));
-    }
   }
 
   async function handleDeleteModel(name: string) {
@@ -155,27 +121,27 @@ export default function SettingsModal({
 
         <label>Mises à jour</label>
         <div className="modal-hint">Version installée : {appVersion ?? "…"}</div>
-        <button onClick={handleCheckUpdate} disabled={checkingUpdate || installing}>
+        <button onClick={onCheckUpdate} disabled={checkingUpdate || installingUpdate}>
           {checkingUpdate ? "Vérification…" : "Vérifier les mises à jour"}
         </button>
         {updateError && <div className="install-error">{updateError}</div>}
         {upToDate && !updateError && <div className="install-success">À jour.</div>}
-        {pendingUpdate && !installing && (
+        {availableUpdate && !installingUpdate && (
           <div className="update-available">
-            <span>Nouvelle version disponible : {pendingUpdate.version}</span>
-            {pendingUpdate.body && <p className="modal-hint">{pendingUpdate.body}</p>}
-            <button className="primary-btn" onClick={handleInstallUpdate}>
+            <span>Nouvelle version disponible : {availableUpdate.version}</span>
+            {availableUpdate.body && <p className="modal-hint">{availableUpdate.body}</p>}
+            <button className="primary-btn" onClick={onInstallUpdate}>
               Installer et redémarrer
             </button>
           </div>
         )}
-        {installing && (
+        {installingUpdate && (
           <div className="install-progress">
             <div className="install-progress-bar">
-              <div className="install-progress-fill" style={{ width: `${installPct ?? 20}%` }} />
+              <div className="install-progress-fill" style={{ width: `${updateInstallPct ?? 20}%` }} />
             </div>
             <div className="install-status">
-              Téléchargement et installation…{installPct !== null ? ` ${installPct}%` : ""}
+              Téléchargement et installation…{updateInstallPct !== null ? ` ${updateInstallPct}%` : ""}
             </div>
           </div>
         )}

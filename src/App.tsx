@@ -1,4 +1,6 @@
 import { lazy, Suspense, useEffect, useRef, useState, type KeyboardEvent } from "react";
+import { check, type Update } from "@tauri-apps/plugin-updater";
+import { relaunch } from "@tauri-apps/plugin-process";
 import "./App.css";
 import Sidebar from "./components/Sidebar";
 import MessageBubble from "./components/MessageBubble";
@@ -32,6 +34,8 @@ import type { ChatMessage, Conversation, ConversationMeta, OllamaModel, Settings
 
 const NEW_CONV_TITLE = "Nouvelle discussion";
 const FREEZE_GRACE_SECS = 20;
+const UPDATE_CHECK_DELAY_MS = 5_000;
+const UPDATE_CHECK_INTERVAL_MS = 4 * 60 * 60 * 1000; // 4h — the app can now live a long time in the tray
 
 export default function App() {
   const [settings, setSettings] = useState<Settings | null>(null);
@@ -51,6 +55,13 @@ export default function App() {
   const [ramGb, setRamGb] = useState<number | null>(null);
   const [freezeWarning, setFreezeWarning] = useState<{ stalledSecs: number } | null>(null);
   const [graceRemaining, setGraceRemaining] = useState(FREEZE_GRACE_SECS);
+  const [availableUpdate, setAvailableUpdate] = useState<Update | null>(null);
+  const [dismissedUpdateVersion, setDismissedUpdateVersion] = useState<string | null>(null);
+  const [installingUpdate, setInstallingUpdate] = useState(false);
+  const [updateInstallPct, setUpdateInstallPct] = useState<number | null>(null);
+  const [updateError, setUpdateError] = useState<string | null>(null);
+  const [checkingUpdate, setCheckingUpdate] = useState(false);
+  const [upToDate, setUpToDate] = useState(false);
   const scrollRef = useRef<HTMLDivElement>(null);
   const stickToBottomRef = useRef(true);
   const graceTimeoutRef = useRef<number | null>(null);
@@ -188,6 +199,72 @@ export default function App() {
       scrollRef.current?.scrollTo({ top: scrollRef.current.scrollHeight });
     }
   }, [currentConv?.messages, streamingText]);
+
+  useEffect(() => {
+    let cancelled = false;
+    async function checkSilently() {
+      try {
+        const update = await check();
+        if (!cancelled && update) setAvailableUpdate(update);
+      } catch {
+        // Silent: this runs unprompted in the background, a failed check
+        // (offline, unreachable) shouldn't interrupt anyone with an error —
+        // the Réglages button still surfaces failures when checked by hand.
+      }
+    }
+    const initial = window.setTimeout(checkSilently, UPDATE_CHECK_DELAY_MS);
+    const interval = window.setInterval(checkSilently, UPDATE_CHECK_INTERVAL_MS);
+    return () => {
+      cancelled = true;
+      window.clearTimeout(initial);
+      window.clearInterval(interval);
+    };
+  }, []);
+
+  async function handleCheckUpdate() {
+    setCheckingUpdate(true);
+    setUpdateError(null);
+    setUpToDate(false);
+    try {
+      const update = await check();
+      if (update) {
+        setAvailableUpdate(update);
+        setDismissedUpdateVersion(null);
+      } else {
+        setUpToDate(true);
+      }
+    } catch (e) {
+      setUpdateError(String(e));
+    } finally {
+      setCheckingUpdate(false);
+    }
+  }
+
+  async function handleInstallUpdate() {
+    if (!availableUpdate) return;
+    setInstallingUpdate(true);
+    setUpdateError(null);
+    let downloaded = 0;
+    let total: number | undefined;
+    try {
+      await availableUpdate.downloadAndInstall((event) => {
+        if (event.event === "Started") {
+          total = event.data.contentLength;
+        } else if (event.event === "Progress") {
+          downloaded += event.data.chunkLength;
+          setUpdateInstallPct(total ? Math.round((downloaded / total) * 100) : null);
+        }
+      });
+      await relaunch();
+    } catch (e) {
+      setInstallingUpdate(false);
+      setUpdateError(String(e));
+    }
+  }
+
+  function handleDismissUpdate() {
+    if (availableUpdate) setDismissedUpdateVersion(availableUpdate.version);
+  }
 
   function handleChatScroll() {
     const el = scrollRef.current;
@@ -465,6 +542,14 @@ export default function App() {
           onClose={() => setShowSettings(false)}
           onSave={handleSaveSettings}
           onRefreshModels={() => refreshModels(settings.ollama_host)}
+          checkingUpdate={checkingUpdate}
+          upToDate={upToDate}
+          updateError={updateError}
+          availableUpdate={availableUpdate}
+          installingUpdate={installingUpdate}
+          updateInstallPct={updateInstallPct}
+          onCheckUpdate={handleCheckUpdate}
+          onInstallUpdate={handleInstallUpdate}
         />
       )}
 
@@ -475,6 +560,29 @@ export default function App() {
           onClose={() => setShowInstall(false)}
           onInstalled={() => refreshModels(settings.ollama_host)}
         />
+      )}
+
+      {availableUpdate && availableUpdate.version !== dismissedUpdateVersion && !showSettings && (
+        <div className="update-toast">
+          <div className="update-toast-text">
+            <strong>Nouvelle version disponible : {availableUpdate.version}</strong>
+            {installingUpdate ? (
+              <span>
+                Téléchargement et installation…{updateInstallPct !== null ? ` ${updateInstallPct}%` : ""}
+              </span>
+            ) : (
+              updateError && <span className="update-toast-error">{updateError}</span>
+            )}
+          </div>
+          {!installingUpdate && (
+            <div className="update-toast-actions">
+              <button onClick={handleDismissUpdate}>Plus tard</button>
+              <button className="primary-btn" onClick={handleInstallUpdate}>
+                Installer
+              </button>
+            </div>
+          )}
+        </div>
       )}
 
       {freezeWarning && (

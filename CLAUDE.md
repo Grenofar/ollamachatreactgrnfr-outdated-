@@ -52,7 +52,7 @@ pas devenir obsolète.
 - `src/components/Sidebar.tsx` : renommage par double-clic sur le titre (input inline, Entrée valide/Échap ou blur annule — même pattern que la création de fichier dans `FileTree`), recherche **serveur** (debounce 200ms) via `search_conversations` — cherche dans le titre ET le contenu des messages, pas juste le titre affiché (les titres sont auto-générés depuis les ~40 premiers caractères du premier message, donc une recherche titre-seul ratait la plupart d'une vieille conversation).
 - `App.tsx` : brouillon de message par conversation (`draftsRef`, une `Map<id, texte>` hors du state React — changer de conversation en cours de frappe sauvegarde/restaure le bon brouillon au lieu de partager un seul brouillon global). `handleRegenerate` utilise le modèle **actuellement sélectionné** dans `ModelSelect`, pas forcément celui de la conversation — change le modèle dans le menu puis clique "Régénérer" pour reformuler avec un autre modèle.
 - System tray (`lib.rs`, feature Cargo `tray-icon`) : fermer la fenêtre (X) la cache au lieu de quitter (`WindowEvent::CloseRequested` → `api.prevent_close()` + `window.hide()`) ; l'icône dans la zone de notification a un menu "Afficher"/"Quitter", et un clic gauche dessus réaffiche aussi la fenêtre. Quitter réellement passe par `app.exit(0)` (menu tray, ou `close_app` du watchdog).
-- `tauri-plugin-updater` + `tauri-plugin-process` : auto-update en continu, voir la section dédiée "Auto-update en continu" plus bas pour le détail complet (signature, endpoint RPC Supabase). Câblé uniquement dans `SettingsModal.tsx` (`check()`/`downloadAndInstall()`/`relaunch()` de `@tauri-apps/plugin-updater`/`plugin-process`) — pas de vérification silencieuse au démarrage, reste un bouton explicite.
+- `tauri-plugin-updater` + `tauri-plugin-process` : auto-update en continu, voir la section dédiée "Auto-update en continu" plus bas pour le détail complet (signature, endpoint RPC Supabase, en-têtes via le `Builder` Rust). État de vérif (`check()`/`downloadAndInstall()`/`relaunch()`) **lifté dans `App.tsx`**, pas dans `SettingsModal.tsx` — une seule source de vérité pour éviter deux `Update` indépendants qui se marcheraient dessus. Deux consommateurs de ce même état : (1) `SettingsModal` (bouton manuel "Vérifier les mises à jour", reçoit tout en props) et (2) un toast discret (`.update-toast`, coin bas-droit, pas une modale bloquante) déclenché par une vérif automatique au démarrage (`UPDATE_CHECK_DELAY_MS`, 5s après le lancement) puis périodique (`UPDATE_CHECK_INTERVAL_MS`, 4h — l'app peut maintenant vivre longtemps dans le tray). "Plus tard" sur le toast mémorise `dismissedUpdateVersion` (pas de nouvelle relance tant qu'aucune version plus récente n'est détectée, plutôt que de renaguer toutes les 4h pour la même version). Le toast se masque si Réglages est ouvert (évite le doublon d'UI).
 - `src-tauri/src/commands/hardware.rs` : `get_system_ram_gb`, RAM totale via une commande PowerShell one-shot (pas de crate `sysinfo` ajoutée pour ça) — volontairement pas de détection GPU/VRAM, peu fiable sous Windows (drivers rapportent souvent des valeurs plafonnées/fausses).
 - `src/components/ModelSelect.tsx` : menu déroulant de modèle (recherche, affiche parameter_size/quantization/taille), partagé entre le chat de base et Codex, remplace le `<select>` HTML natif. Prop `direction` (`"up"` par défaut pour la barre du bas du chat, `"down"` pour l'en-tête de Codex) — sans elle le panneau s'ouvre hors écran quand le déclencheur est en haut de page.
 - `src-tauri/src/commands/watchdog.rs` : système anti-gel, voir section dédiée plus bas.
@@ -233,14 +233,35 @@ colonne `signature` et une fonction `latest_release_manifest()` (SQL,
 `stable`, donc appelable en GET par PostgREST) qui reformate la dernière
 ligne dans la forme attendue. `tauri.conf.json` pointe
 `plugins.updater.endpoints` vers
-`{SUPABASE_URL}/rest/v1/rpc/latest_release_manifest`, avec la clé anon en
-en-têtes (`plugins.updater.headers`).
+`{SUPABASE_URL}/rest/v1/rpc/latest_release_manifest`.
+
+**Bug corrigé en v0.3.1** : `plugins.updater.headers` dans `tauri.conf.json`
+**n'est pas un champ que le plugin lit** (halluciné de mémoire, jamais
+vérifié contre le vrai schéma de config — `tauri-plugin-updater`'s
+`Config` ne supporte que `endpoints`/`pubkey`/`windows`/les 3 flags
+`dangerous*`, rien d'autre, voir son `config.rs`). Résultat : aucune clé
+`apikey`/`Authorization` n'était jamais envoyée, Supabase répondait 401
+("No API key found in request"), et le plugin traduisait ça en l'erreur
+générique "Could not fetch a valid release JSON from the remote" — signalée
+par l'utilisateur juste après avoir testé v0.3.0. La bonne API : le
+`Builder` **Rust** du plugin a un vrai `.header(k, v)` / `.headers(HeaderMap)`,
+donc les en-têtes se configurent dans `lib.rs` à l'enregistrement du plugin
+(`SUPABASE_ANON_KEY`, `apikey` + `Authorization: Bearer`), pas dans le JSON.
+Vérifié avec `curl` avant ET après le fix (sans `apikey` → 401 confirmé
+reproductible, ce qui a confirmé l'hypothèse avant de toucher au code).
+**Leçon** : comme pour `prevent_close` vs `prevent_default`, ne pas supposer
+qu'un champ de config existe parce qu'il "semble logique" qu'il existe —
+vérifier contre le code source du plugin (il est dans le cache cargo local,
+`~/.cargo/registry/src/.../tauri-plugin-updater-*/src/config.rs`) avant de
+l'utiliser, surtout pour un champ jamais testé en conditions réelles.
 
 **Transition ponctuelle** : les installs jusqu'à la v0.2.3 n'ont pas du tout
-le plugin updater — elles ne peuvent pas détecter automatiquement la v0.3.0.
-Un utilisateur doit récupérer celle-ci manuellement une fois (site ou lien
-Supabase Storage direct) ; à partir de là, les mises à jour suivantes se
-font vraiment en un clic depuis l'app.
+le plugin updater — elles ne peuvent pas détecter automatiquement une mise à
+jour. Un utilisateur doit récupérer une version ≥ 0.3.1 manuellement une
+fois (site ou lien Supabase Storage direct) ; à partir de là, les mises à
+jour suivantes se font vraiment en un clic depuis l'app — **v0.3.0 elle-même
+ne doit pas être considérée comme fonctionnelle** pour l'auto-update (voir
+bug ci-dessus), seulement à partir de v0.3.1.
 
 ## Publier une release
 

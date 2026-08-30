@@ -17,6 +17,15 @@ use tauri::menu::{Menu, MenuItem};
 use tauri::tray::{MouseButton, MouseButtonState, TrayIconBuilder, TrayIconEvent};
 use tauri::{Manager, WindowEvent};
 
+// Anon key: meant to be public (Supabase's own design, gated by Row Level
+// Security), same one committed in site/index.html and tauri.conf.json's
+// updater pubkey field is a different, unrelated key. `tauri.conf.json`'s
+// `plugins.updater` config has NO `headers` field (despite once assuming
+// otherwise) — Supabase's gateway rejects any request without an `apikey`
+// header (401) before it even reaches our RPC function, so these headers
+// have to be set here, on the plugin's Rust builder, not in JSON config.
+const SUPABASE_ANON_KEY: &str = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImNpaHV3dWl5emlhcm5naGV0aGJpIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODgwNjM3OTQsImV4cCI6MjEwMzYzOTc5NH0.AkAe00Vzu4506nHSjh2bl99x5hZUSejZRm3pJwVuGtI";
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
@@ -25,7 +34,14 @@ pub fn run() {
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_window_state::Builder::default().build())
         .plugin(tauri_plugin_process::init())
-        .plugin(tauri_plugin_updater::Builder::new().build())
+        .plugin(
+            tauri_plugin_updater::Builder::new()
+                .header("apikey", SUPABASE_ANON_KEY)
+                .expect("valid apikey header")
+                .header("Authorization", format!("Bearer {SUPABASE_ANON_KEY}"))
+                .expect("valid Authorization header")
+                .build(),
+        )
         .manage(CancelFlag(Arc::new(AtomicBool::new(false))))
         .manage(ShellCancelFlag(Arc::new(AtomicBool::new(false))))
         .manage(AgentCancelFlag(Arc::new(AtomicBool::new(false))))
