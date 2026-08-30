@@ -60,6 +60,66 @@
   .flow-item strong { color: var(--text); }
   .flow-item p { margin: 2px 0 0; font-size: 0.92rem; }
 
+  .pc-warning {
+    font-size: 0.85rem;
+    color: var(--warn);
+  }
+
+  .section-hint {
+    font-size: 0.85rem;
+    margin-top: -6px;
+  }
+
+  .calc {
+    display: flex;
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 10px;
+  }
+
+  .calc select {
+    background: var(--bg-raised);
+    color: var(--text);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 8px 10px;
+    font-size: 0.92rem;
+  }
+
+  .calc-checkbox {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    font-size: 0.88rem;
+    color: var(--text-dim);
+  }
+
+  .calc-result {
+    margin-top: 16px;
+    background: var(--bg-raised);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    padding: 14px 16px;
+    font-size: 0.88rem;
+  }
+
+  .calc-result h3 {
+    margin: 0 0 6px;
+    font-size: 0.95rem;
+    color: var(--text);
+  }
+
+  .calc-result .names {
+    font-family: Consolas, Menlo, monospace;
+    font-size: 0.85rem;
+    color: var(--accent);
+  }
+
+  .calc-result .consequences {
+    margin-top: 10px;
+    color: var(--text-dim);
+  }
+
   .note {
     background: var(--bg-raised);
     border: 1px solid var(--border);
@@ -128,6 +188,12 @@
         un modèle agit en agent sur vos fichiers. Tout tourne en local, rien
         n'est envoyé sur le web.
       </p>
+      <p class="pc-warning">
+        Pensé pour PC (Windows), pas pour du matériel limité : faire tourner un
+        LLM en local sollicite fortement le CPU/RAM (et le GPU si vous en avez
+        un). Le calculateur ci-dessous vous aide à choisir une taille de
+        modèle adaptée à votre config avant d'en installer un trop gros.
+      </p>
     </div>
 
     <section>
@@ -140,6 +206,30 @@
         <strong>Codex</strong>
         <p>Ouvrez un dossier, décrivez ce que vous voulez : le modèle lit, écrit et modifie des fichiers, exécute des commandes, et vous demande votre avis avant chaque action si vous êtes en mode Approbation.</p>
       </div>
+    </section>
+
+    <section>
+      <h2>Quel modèle pour ta config</h2>
+      <p class="section-hint">
+        Indique ta RAM, le calcul se fait dans ton navigateur (rien n'est
+        envoyé nulle part).
+      </p>
+      <div class="calc">
+        <label for="calc-ram">RAM installée</label>
+        <select id="calc-ram">
+          <option value="4">4 Go</option>
+          <option value="8" selected>8 Go</option>
+          <option value="16">16 Go</option>
+          <option value="32">32 Go</option>
+          <option value="64">64 Go ou plus</option>
+        </select>
+        <label class="calc-checkbox">
+          <input type="checkbox" id="calc-gpu" />
+          J'ai une carte graphique dédiée (NVIDIA/AMD)
+        </label>
+        <button type="button" class="btn btn-primary" id="calc-btn">Analyser ma config</button>
+      </div>
+      <div id="calc-result" class="calc-result" hidden></div>
     </section>
 
     <section>
@@ -200,6 +290,47 @@
     }
 
     loadLatestRelease();
+
+    // Simple deterministic rule-of-thumb calculator — no network call, no
+    // AI, just arithmetic on numbers the visitor types in themselves.
+    // Ratio consistent with the app's own in-app recommendation (RAM(Go) ×
+    // 1.75 for CPU-only, a bit more headroom when a dedicated GPU is ticked).
+    const TIERS = [
+      { max: 4, label: "jusqu'à ~3 milliards de paramètres", names: "llama3.2:3b, qwen2.5:3b, phi3:mini" },
+      { max: 9, label: "jusqu'à ~8 milliards de paramètres", names: "llama3.1:8b, qwen2.5:7b" },
+      { max: 16, label: "jusqu'à ~14 milliards de paramètres", names: "qwen2.5:14b, phi3:14b" },
+      { max: 35, label: "jusqu'à ~32 milliards de paramètres", names: "qwen2.5:32b" },
+      { max: Infinity, label: "70 milliards de paramètres et plus", names: "llama3.1:70b" },
+    ];
+
+    function pickTier(maxParamsB) {
+      return TIERS.find((t) => maxParamsB < t.max) ?? TIERS[TIERS.length - 1];
+    }
+
+    document.getElementById("calc-btn").addEventListener("click", () => {
+      const ramGb = Number(document.getElementById("calc-ram").value);
+      const hasGpu = document.getElementById("calc-gpu").checked;
+      const maxParamsB = ramGb * (hasGpu ? 2.2 : 1.75);
+      const tier = pickTier(maxParamsB);
+
+      const result = document.getElementById("calc-result");
+      result.hidden = false;
+      result.innerHTML = "";
+
+      const h3 = document.createElement("h3");
+      h3.textContent = `Avec ${ramGb} Go de RAM${hasGpu ? " + GPU dédié" : ""}, vise : ${tier.label}`;
+      const names = document.createElement("div");
+      names.className = "names";
+      names.textContent = tier.names;
+      const consequences = document.createElement("div");
+      consequences.className = "consequences";
+      consequences.textContent =
+        "Prendre un modèle plus gros que recommandé peut fortement ralentir les réponses (le système swap sur le disque), rendre le PC peu réactif pendant la génération, faire tourner les ventilateurs à fond, voire figer l'app ou Windows le temps que ça charge. Un modèle plus petit que la recommandation reste sûr, juste moins capable sur des tâches complexes.";
+
+      result.appendChild(h3);
+      result.appendChild(names);
+      result.appendChild(consequences);
+    });
   </script>
 </body>
 </html>
