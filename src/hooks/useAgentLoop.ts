@@ -65,38 +65,45 @@ function useResolvablePrompt<TPayload, TResult>() {
   return { pending, request, resolve };
 }
 
-function runCommandAndCollect(
+async function runCommandAndCollect(
   command: string,
   cwd: string | undefined,
   timeoutSecs: number | undefined,
   onLine?: (line: string) => void,
 ): Promise<string> {
-  return new Promise((resolvePromise) => {
-    const lines: string[] = [];
-    let settled = false;
-    const unlistens: Array<Promise<() => void>> = [];
-
-    const finish = (summary: string) => {
-      if (settled) return;
-      settled = true;
-      Promise.all(unlistens).then((fns) => fns.forEach((f) => f()));
-      const body = lines.length ? lines.join("\n") : "(aucune sortie)";
-      resolvePromise(`${summary}\n${body}`);
-    };
-
-    unlistens.push(
-      onShellOutput((p) => {
-        const formatted = `[${p.stream}] ${p.line}`;
-        lines.push(formatted);
-        onLine?.(formatted);
-      }),
-    );
-    unlistens.push(onShellDone((code) => finish(`Commande terminée (code de sortie ${code ?? "inconnu"})`)));
-    unlistens.push(onShellError((message) => finish(`Erreur : ${message}`)));
-    unlistens.push(onShellTimeout((message) => finish(message)));
-
-    runPowershellCommand(command, cwd, timeoutSecs).catch((e) => finish(`Erreur de lancement : ${String(e)}`));
+  const lines: string[] = [];
+  let settled = false;
+  let resolvePromise!: (value: string) => void;
+  const result = new Promise<string>((resolve) => {
+    resolvePromise = resolve;
   });
+
+  const finish = (summary: string) => {
+    if (settled) return;
+    settled = true;
+    Promise.all(unlistens).then((fns) => fns.forEach((f) => f()));
+    const body = lines.length ? lines.join("\n") : "(aucune sortie)";
+    resolvePromise(`${summary}\n${body}`);
+  };
+
+  // Registration itself is async IPC to the Rust side, so all four listeners
+  // must be confirmed attached before the command is launched — otherwise a
+  // command that completes very fast could emit shell-done before the
+  // listener exists, silently hanging this promise forever.
+  const unlistens = await Promise.all([
+    onShellOutput((p) => {
+      const formatted = `[${p.stream}] ${p.line}`;
+      lines.push(formatted);
+      onLine?.(formatted);
+    }),
+    onShellDone((code) => finish(`Commande terminée (code de sortie ${code ?? "inconnu"})`)),
+    onShellError((message) => finish(`Erreur : ${message}`)),
+    onShellTimeout((message) => finish(message)),
+  ]);
+
+  runPowershellCommand(command, cwd, timeoutSecs).catch((e) => finish(`Erreur de lancement : ${String(e)}`));
+
+  return result;
 }
 
 export function useAgentLoop(opts: {

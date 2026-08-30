@@ -41,6 +41,7 @@ pas devenir obsolète.
 - [FAIT] Régénérer une réponse avec un modèle différent (utilise le modèle actuellement sélectionné dans le menu, pas forcément celui de la conversation)
 - [FAIT] Icône dans la zone de notification (system tray) : fermer la fenêtre (X) minimise au lieu de quitter ; quitter réellement se fait depuis le menu de l'icône
 - [FAIT] v0.3.2 : correctif du freeze de ~5s au démarrage (timeout manquant sur la vérif de mise à jour + `get_system_ram_gb` synchrone/bloquant, voir "Freeze au démarrage" plus bas) + refonte de l'affichage Codex façon Claude Code dans VS Code (texte en direct, statut d'outil visible, sortie de commande live, approbation inline au lieu d'une modale plein écran qui masquait le chat, fichier édité auto-ouvert) — voir "Streaming visuel dans Codex" dans Architecture
+- [FAIT] v0.3.3 : correctif "l'IA ne sait pas/ne peut pas lancer de commande" dans Codex — system prompt renforcé (accès réel explicite, interdiction de répondre "je ne peux pas" au lieu d'appeler l'outil) + race condition réelle corrigée dans `runCommandAndCollect` (listeners d'événements shell pas attendus avant le lancement de la commande, pouvait bloquer indéfiniment) — voir "L'IA ne sait pas/ne peut pas lancer de commande" dans Architecture
 
 ## Architecture
 
@@ -111,6 +112,39 @@ Claude Code dans VS Code :
   systématiquement l'onglet et le rend actif après un `write_file`/`edit_file`
   réussi — preuve visuelle directe que la modification a eu lieu, plutôt que
   seulement une ligne de texte dans le panneau transcript de 380px.
+
+### "L'IA ne sait pas/ne peut pas lancer de commande" (v0.3.3)
+
+Retour utilisateur après v0.3.2, avec qwen2.5-coder sélectionné dans Codex.
+Le backend (`shell.rs`) était déjà correct (thread dédié, pas de blocage du
+runtime async — voir "Freeze au démarrage" pour le pattern à éviter). Deux
+causes distinctes trouvées côté frontend/prompt :
+
+1. **Le system prompt ne rassurait pas assez le modèle sur son accès réel**.
+   `CODEX_SYSTEM_PROMPT` mentionnait bien `run_powershell_command`, mais un
+   modèle peut rester hésitant/refuser d'agir ("je ne peux pas exécuter de
+   commandes, voici ce que tu peux taper toi-même") si le prompt ne dit pas
+   explicitement qu'il a un accès **réel et direct** (pas simulé) et qu'il
+   **doit** appeler l'outil plutôt que le décrire. Renforcé dans
+   `agentTools.ts` : accès réel explicite, approbation gérée automatiquement
+   hors de la conversation (pas à demander lui-même), et interdiction
+   explicite de répondre "je ne peux pas" au lieu d'appeler l'outil.
+2. **Race condition réelle dans `runCommandAndCollect`** (`useAgentLoop.ts`) :
+   les quatre `listen()` (`onShellOutput`/`onShellDone`/`onShellError`/
+   `onShellTimeout`) sont eux-mêmes de l'IPC async (enregistrement
+   asynchrone côté Rust), mais `runPowershellCommand(...)` était appelée
+   juste après sans attendre que ces registrations soient confirmées. Une
+   commande qui se termine très vite pouvait en théorie émettre
+   `shell-done` avant que le listener ne soit effectivement attaché,
+   laissant la promesse du tool call bloquée **indéfiniment** — l'agent
+   restait planté sur "En cours…" sans jamais recevoir de résultat, ce qui
+   du point de vue utilisateur ressemble exactement à "l'IA ne peut pas
+   lancer de commande". Corrigé en `await Promise.all([...])` sur les
+   quatre `listen()` avant d'invoquer la commande. Peu probable comme cause
+   dominante en pratique (le démarrage de `powershell.exe` prend
+   généralement plus longtemps que l'enregistrement d'un listener), mais
+   un vrai bug latent éliminé par précaution plutôt que juste rendu moins
+   probable.
 
 ### Les 6 outils de l'agent
 1. `read_file` — lecture texte (limite 5 Mo), chemin absolu
@@ -601,6 +635,20 @@ l'utilisateur confirme qu'elle est bien dans `.env` local.
   clé **anon** (fichier : 200 OK, 6 631 889 octets ; `latest_release_manifest` :
   renvoie bien la v0.3.2 avec signature et URL) avant d'annoncer la release
   terminée.
+- **2026-08-30** — v0.3.3 : retour utilisateur "fais en sorte qu'il peut
+  lancer des commande powershell, et que l'ia elle meme le sache" (modèle
+  qwen2.5-coder dans Codex). Deux causes trouvées, voir "L'IA ne sait
+  pas/ne peut pas lancer de commande" dans Architecture pour le détail
+  complet : (1) `CODEX_SYSTEM_PROMPT` renforcé pour dire explicitement au
+  modèle qu'il a un accès réel (pas simulé) et lui interdire de répondre
+  "je ne peux pas" au lieu d'appeler l'outil ; (2) race condition réelle
+  corrigée dans `runCommandAndCollect` — les listeners d'événements shell
+  n'étaient pas attendus avant de lancer la commande, ce qui pouvait
+  bloquer indéfiniment un tool call sur une commande très rapide. Build
+  signé, uploadé dans le bucket Storage `releases`, ligne insérée dans
+  `app_releases`, et vérifié via la clé **anon** (fichier : 200 OK,
+  6 640 157 octets ; `latest_release_manifest` : renvoie bien la v0.3.3
+  avec signature et URL) avant d'annoncer la release terminée.
 
 ## Prochaines étapes (dans l'ordre du fichier de passation d'origine)
 
