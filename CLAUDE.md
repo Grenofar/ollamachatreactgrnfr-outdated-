@@ -67,9 +67,14 @@ le seul filet de sécurité de l'application — voir Limites connues ci-dessous
 - **Exécution PowerShell autorisée** sans sandbox. Même choix explicite.
 - **Installeur non signé** : Windows SmartScreen affiche un avertissement
   "Éditeur inconnu" au premier lancement (constaté par l'utilisateur avec la
-  v0.1.0). Seule une signature de code (certificat payant) fait disparaître
-  cet avertissement — non fait pour l'instant. Le site documente comment
-  passer outre (`Informations complémentaires` → `Exécuter quand même`).
+  v0.1.0). Seule une signature de code (certificat payant, OV ou EV) ou une
+  distribution via le Microsoft Store (MSIX) fait disparaître cet
+  avertissement — **décision explicite de l'utilisateur le 2026-08-30 de ne
+  rien faire pour l'instant** (options présentées : certificat OV, certificat
+  EV, Microsoft Store MSIX, ne rien faire — l'utilisateur a choisi la
+  dernière). Ne relance pas cette question sans qu'on te le redemande. Le
+  site documente comment passer outre l'avertissement
+  (`Informations complémentaires` → `Exécuter quand même`).
   Metadata Cargo.toml/tauri.conf.json (description, publisher) corrigées le
   2026-08-30 par bonne pratique, mais ça ne change rien à SmartScreen.
 - Le mode Approbation est le seul garde-fou : ne l'affaiblis pas (l'assouplir,
