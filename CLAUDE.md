@@ -46,6 +46,7 @@ pas devenir obsolète.
 - [FAIT, première version] **Control Me** : nouvel espace dans l'app (bouton Sidebar, comme Codex) où une IA (Gemini, modèle choisi par l'utilisateur — 3.5 Flash-Lite/3.5 Flash/3.6 Flash/3.7 Flash, voir v0.4.2 — via l'Interactions API de Google + son outil intégré `computer_use`) contrôle **de façon autonome** la souris et le clavier de l'utilisateur à partir de captures d'écran, avec un bouton Stop comme seul garde-fou (+ le `safety_decision` de Gemini lui-même, respecté). Rompt délibérément "rien ne sort de l'app" (captures d'écran envoyées à Google) — voir "Control Me" dans Architecture et la section Confidentialité réseau mise à jour. Clé API Gemini propre à l'utilisateur (Réglages), jamais fournie par l'app. Pas encore testé en conditions réelles (nécessite la clé de l'utilisateur) ; l'overlay séparé + raccourci global F5 du plan initial n'est pas encore construit, cette version vit dans la fenêtre principale comme Codex.
 - [FAIT] v0.4.1 : Control Me signalé "trop long" par l'utilisateur après premier test (captures d'écran + réflexion Gemini) — captures redimensionnées et compressées en JPEG (au lieu de PNG pleine résolution), `thinking_level: "low"`, délai de stabilisation réduit — voir "Optimisation vitesse (v0.4.1)" dans Architecture > Control Me.
 - [FAIT] v0.4.2 : sélecteur de modèle Gemini dans Control Me (3.5 Flash-Lite/3.5 Flash/3.6 Flash/3.7 Flash), persisté dans les réglages — voir "Sélecteur de modèle (v0.4.2)" dans Architecture > Control Me. Note : 3.6 Flash n'est pas documenté par Google comme compatible avec `computer_use`, laissé sélectionnable quand même (demandé explicitement) mais signalé dans le menu.
+- [FAIT] v0.4.3 : Control Me encore jugé "un peu long" après v0.4.1/v0.4.2 — deuxième passe d'optimisation, plus agressive (image encore réduite/compressée, `thinking_level: "minimal"`) — voir "Optimisation vitesse, deuxième passe (v0.4.3)" dans Architecture > Control Me, avec le compromis précision/vitesse assumé explicitement documenté.
 
 ## Architecture
 
@@ -305,6 +306,26 @@ n'apparaît PAS dans la liste des modèles compatibles avec l'outil
 laissé sélectionnable quand même puisque demandé explicitement, mais avec
 un libellé "(compatibilité non confirmée)" dans le menu pour que ça ne
 soit pas un mystère si une session échoue avec ce modèle.
+
+**Optimisation vitesse, deuxième passe (v0.4.3)** : "c'est encore un peu
+long" après v0.4.1/v0.4.2. Les deux leviers les plus significatifs
+poussés plus loin dans `controlme.rs` :
+- `SCREENSHOT_MAX_WIDTH` 1280 → 1024, `SCREENSHOT_JPEG_QUALITY` 80 → 65 :
+  image encore plus petite à encoder/uploader/analyser.
+- `thinking_level` "low" → **"minimal"** (le palier le plus bas
+  documenté) : le modèle réfléchit encore moins avant de décider d'une
+  action.
+Compromis explicite assumé, pas gratuit : moins de réflexion et une image
+plus compressée augmentent le risque de clics imprécis/d'erreurs qui
+forceraient un tour supplémentaire pour se corriger — ce qui mangerait une
+partie du temps gagné. Si la précision se dégrade visiblement après ce
+changement, `thinking_level: "low"` (v0.4.1) est le premier réglage à
+restaurer avant de toucher à la taille/qualité d'image. Le délai de
+stabilisation (120ms) n'a pas été réduit davantage : c'est déjà proche du
+plancher où l'écran a eu le temps de refléter l'action, la latence
+dominante restant l'appel Gemini lui-même — pas quelque chose que ce
+projet peut réduire davantage sans dégrader la précision ou changer de
+palier de service (`service_tier`, payant, pas activé).
 
 ### Les 6 outils de l'agent
 1. `read_file` — lecture texte (limite 5 Mo), chemin absolu
@@ -900,6 +921,14 @@ l'utilisateur confirme qu'elle est bien dans `.env` local.
   `app_releases`, et vérifié via la clé **anon** (fichier : 200 OK,
   6 704 875 octets ; `latest_release_manifest` : renvoie bien la v0.4.2
   avec signature et URL) avant d'annoncer la release terminée.
+- **2026-08-30** — v0.4.3 : retour utilisateur "c'est encore un peu long"
+  après v0.4.1/v0.4.2. Deuxième passe, plus agressive sur les deux mêmes
+  leviers — voir "Optimisation vitesse, deuxième passe (v0.4.3)" dans
+  Architecture > Control Me : image encore réduite (1280→1024px) et
+  compressée (JPEG 80→65), `thinking_level` "low"→"minimal". Compromis
+  précision/vitesse assumé et documenté explicitement, avec la marche
+  arrière recommandée (revenir à "low" en premier) si la précision se
+  dégrade trop après ce changement.
 
 ## Prochaines étapes (dans l'ordre du fichier de passation d'origine)
 

@@ -31,8 +31,8 @@ const CANCELLED_MESSAGE: &str = "Annulé par l'utilisateur.";
 // doesn't hurt click accuracy but meaningfully cuts encoding time, upload
 // size, and Gemini's per-step vision latency — this was the main source of
 // the per-step slowness reported after the first version.
-const SCREENSHOT_MAX_WIDTH: u32 = 1280;
-const SCREENSHOT_JPEG_QUALITY: u8 = 80;
+const SCREENSHOT_MAX_WIDTH: u32 = 1024;
+const SCREENSHOT_JPEG_QUALITY: u8 = 65;
 
 // Same polling pattern as agent.rs's wait_for_cancel: the only await points
 // here (the Gemini HTTP call) are short-lived enough that ~60ms of added
@@ -254,10 +254,13 @@ pub async fn run_control_me(
         "enable_prompt_injection_detection": true,
     }]);
 
-    // thinking_level "low" trades some reasoning depth for much faster
-    // per-step responses — appropriate for a tight screenshot/act loop
-    // rather than a one-shot hard problem.
-    let generation_config = json!({ "thinking_level": "low" });
+    // "minimal" (lowest tier) after "low" still wasn't fast enough for the
+    // user — trading more reasoning depth for speed, appropriate for a
+    // tight screenshot/act loop rather than a one-shot hard problem. Real
+    // risk: less careful reasoning can mean more misclicks/retries, which
+    // would eat back some of the time saved — worth reverting to "low" if
+    // accuracy visibly suffers.
+    let generation_config = json!({ "thinking_level": "minimal" });
 
     let mut body = json!({
         "model": model,
