@@ -92,6 +92,29 @@ pub fn run() {
                         let _ = window_to_hide.hide();
                     }
                 });
+
+                // WebView2 intercepts Ctrl+S (and Ctrl+P/F/O/U, F5, F12, etc.)
+                // as native "browser accelerator keys" by default, before the
+                // keypress ever reaches the page's JS — so Monaco's own Ctrl+S
+                // command (EditorPane.tsx) never fired and nothing was ever
+                // saved. Disabling this at the WebView2 settings level (no
+                // first-class Tauri config for it, has to go through the raw
+                // COM controller) is required to make in-app keyboard
+                // shortcuts work at all.
+                #[cfg(windows)]
+                {
+                    use webview2_com::Microsoft::Web::WebView2::Win32::ICoreWebView2Settings3;
+                    use windows::core::Interface;
+                    let _ = window.with_webview(|webview| unsafe {
+                        if let Ok(core) = webview.controller().CoreWebView2() {
+                            if let Ok(settings) = core.Settings() {
+                                if let Ok(settings3) = settings.cast::<ICoreWebView2Settings3>() {
+                                    let _ = settings3.SetAreBrowserAcceleratorKeysEnabled(false);
+                                }
+                            }
+                        }
+                    });
+                }
             }
 
             Ok(())

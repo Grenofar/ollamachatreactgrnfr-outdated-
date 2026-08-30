@@ -45,6 +45,19 @@ export interface ContinueRequest {
 
 const CANCELLED_MESSAGE = "Annulé par l'utilisateur.";
 
+// Fallback for models that, despite the system prompt, sometimes write a
+// command as a plain markdown code block instead of issuing a real
+// run_powershell_command tool call. Only a small allowlist of shell-ish
+// fence languages qualifies, so an illustrative Python/JS/Rust snippet in
+// an explanation is never mistaken for an intended command.
+const SHELL_FENCE_RE = /```(?:powershell|ps1|pwsh|cmd|bash|shell|sh)\s*\n([\s\S]*?)```/i;
+
+function extractFallbackCommand(content: string): string | null {
+  const match = content.match(SHELL_FENCE_RE);
+  const command = match?.[1]?.trim();
+  return command ? command : null;
+}
+
 function useResolvablePrompt<TPayload, TResult>() {
   const resolverRef = useRef<((v: TResult) => void) | null>(null);
   const [pending, setPending] = useState<TPayload | null>(null);
@@ -227,15 +240,24 @@ export function useAgentLoop(opts: {
     try {
       const resp = await agentChat(optsRef.current.host, optsRef.current.model, msgs, AGENT_TOOLS);
       setStreamingText("");
+
+      let toolCalls = resp.tool_calls;
+      if (toolCalls.length === 0) {
+        const fallbackCommand = extractFallbackCommand(resp.content);
+        if (fallbackCommand) {
+          toolCalls = [{ id: "fallback_1", name: "run_powershell_command", arguments: { command: fallbackCommand } }];
+        }
+      }
+
       const assistantMsg: AgentMessage = {
         role: "assistant",
         content: resp.content,
-        tool_calls: resp.tool_calls.length ? resp.tool_calls : undefined,
+        tool_calls: toolCalls.length ? toolCalls : undefined,
       };
       msgs = [...msgs, assistantMsg];
       setMessages(msgs);
 
-      if (resp.tool_calls.length === 0) {
+      if (toolCalls.length === 0) {
         setStatus("idle");
         iterationRef.current = 0;
         return;
@@ -253,7 +275,7 @@ export function useAgentLoop(opts: {
         iterationRef.current = 0;
       }
 
-      for (const tc of resp.tool_calls) {
+      for (const tc of toolCalls) {
         setRunningToolId(tc.id);
         setRunningOutput("");
         setStatus(

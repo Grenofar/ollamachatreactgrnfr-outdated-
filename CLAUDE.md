@@ -42,6 +42,7 @@ pas devenir obsolète.
 - [FAIT] Icône dans la zone de notification (system tray) : fermer la fenêtre (X) minimise au lieu de quitter ; quitter réellement se fait depuis le menu de l'icône
 - [FAIT] v0.3.2 : correctif du freeze de ~5s au démarrage (timeout manquant sur la vérif de mise à jour + `get_system_ram_gb` synchrone/bloquant, voir "Freeze au démarrage" plus bas) + refonte de l'affichage Codex façon Claude Code dans VS Code (texte en direct, statut d'outil visible, sortie de commande live, approbation inline au lieu d'une modale plein écran qui masquait le chat, fichier édité auto-ouvert) — voir "Streaming visuel dans Codex" dans Architecture
 - [FAIT] v0.3.3 : correctif "l'IA ne sait pas/ne peut pas lancer de commande" dans Codex — system prompt renforcé (accès réel explicite, interdiction de répondre "je ne peux pas" au lieu d'appeler l'outil) + race condition réelle corrigée dans `runCommandAndCollect` (listeners d'événements shell pas attendus avant le lancement de la commande, pouvait bloquer indéfiniment) — voir "L'IA ne sait pas/ne peut pas lancer de commande" dans Architecture
+- [FAIT] v0.3.4 : fallback markdown pour l'exécution de commande (le modèle écrit parfois la commande dans un bloc ```powershell au lieu d'un vrai tool_call — maintenant détecté et exécuté comme un vrai outil, boucle continue automatiquement) + system prompt généralisé à tous les outils (pas juste les commandes) + Ctrl+S corrigé (WebView2 interceptait le raccourci nativement avant que la page ne le reçoive, rien n'était jamais sauvegardé) — voir "Toujours un souci l'IA ne peut pas + Ctrl+S cassé" dans Architecture
 
 ## Architecture
 
@@ -145,6 +146,48 @@ causes distinctes trouvées côté frontend/prompt :
    généralement plus longtemps que l'enregistrement d'un listener), mais
    un vrai bug latent éliminé par précaution plutôt que juste rendu moins
    probable.
+
+### Toujours un souci "l'IA ne peut pas" + Ctrl+S cassé (v0.3.4)
+
+Trois correctifs supplémentaires après retour utilisateur :
+
+1. **Fallback markdown pour les commandes** (`useAgentLoop.ts`,
+   `extractFallbackCommand`) : même avec le prompt renforcé (v0.3.3), un
+   modèle peut encore écrire une commande dans un bloc de code markdown
+   (```` ```powershell ... ``` ````) au lieu d'un vrai tool_call. Avant,
+   ce texte s'affichait tel quel et rien ne s'exécutait — le tour se
+   terminait, donnant l'impression que l'IA "ne fait rien". Maintenant,
+   si `resp.tool_calls` est vide mais que la réponse contient un bloc
+   ```` ```powershell/ps1/pwsh/cmd/bash/shell/sh ```` (liste stricte pour
+   ne jamais confondre un exemple de code Python/JS illustratif avec une
+   commande à lancer), un tool_call synthétique `run_powershell_command`
+   est construit et exécuté **via le même chemin que les vrais tool_calls**
+   — même approbation en mode Approbation, même carte d'outil, et la
+   boucle continue automatiquement après (`await runTurn(msgs)`) au lieu
+   de s'arrêter, pour que l'IA reçoive la sortie et poursuive.
+2. **System prompt généralisé** à tous les outils (pas seulement les
+   commandes) : "pour toute action possible avec un outil... appelle
+   TOUJOURS l'outil correspondant" — corrige aussi le cas "lis X.txt et
+   dis-moi son contenu" répondu sans avoir vraiment appelé `read_file`.
+3. **Ctrl+S ne sauvegardait rien, pas même dans le fichier lui-même** — bug
+   réel trouvé en lisant le code source de `wry` (le wrapper WebView2 de
+   Tauri) : `browser_accelerator_keys: true` est le comportement **par
+   défaut** de WebView2, qui intercepte Ctrl+S (et Ctrl+P/F/O/U, F5, F12,
+   Alt+Flèches...) comme raccourcis natifs du navigateur **avant même que
+   la page web ne reçoive l'événement clavier** — donc la commande Ctrl+S
+   de Monaco (`EditorPane.tsx`) ne se déclenchait jamais. Pas de champ de
+   config Tauri de premier niveau pour ça (vérifié dans `tauri-utils`) ; la
+   seule solution passe par l'API bas niveau `window.with_webview(...)`
+   (`lib.rs`) donnant un accès direct au COM `ICoreWebView2Controller` de
+   WebView2, pour appeler `SetAreBrowserAcceleratorKeysEnabled(false)` —
+   même pattern que `wry` utilise en interne (vérifié dans son code source
+   avant d'écrire le nôtre). Nécessite les crates `webview2-com`/`windows`
+   en dépendances directes, **aux mêmes versions exactes** que celles déjà
+   résolues pour `wry` dans `Cargo.lock` (0.38/0.61) — sinon les types COM
+   ne correspondraient pas entre les deux résolutions de crate. Sans
+   rapport avec Ctrl+C/V/X/Z/A (copier/coller/annuler/tout sélectionner),
+   qui restent gérés par le contrôle d'édition sous-jacent, pas par ce
+   réglage WebView2.
 
 ### Les 6 outils de l'agent
 1. `read_file` — lecture texte (limite 5 Mo), chemin absolu
@@ -649,6 +692,22 @@ l'utilisateur confirme qu'elle est bien dans `.env` local.
   `app_releases`, et vérifié via la clé **anon** (fichier : 200 OK,
   6 640 157 octets ; `latest_release_manifest` : renvoie bien la v0.3.3
   avec signature et URL) avant d'annoncer la release terminée.
+- **2026-08-30** — v0.3.4 : toujours des retours sur le même sujet + un bug
+  distinct signalé dans la même conversation. Voir "Toujours un souci l'IA
+  ne peut pas + Ctrl+S cassé" dans Architecture pour le détail complet.
+  (1) Fallback markdown : un modèle peut encore écrire une commande en
+  bloc de code au lieu d'un vrai tool_call malgré le prompt renforcé de
+  v0.3.3 — détecté et exécuté maintenant comme un vrai outil (même
+  approbation, même carte), boucle continue automatiquement ensuite.
+  (2) System prompt généralisé à tous les outils, pas seulement les
+  commandes (cas "lis gg.txt et dis-moi son contenu"). (3) Ctrl+S ne
+  sauvegardait rien — WebView2 interceptait le raccourci comme accélérateur
+  natif de navigateur avant que Monaco ne le reçoive ; corrigé via l'API
+  bas niveau `window.with_webview` + COM `ICoreWebView2Settings3`. Build
+  signé, uploadé dans le bucket Storage `releases`, ligne insérée dans
+  `app_releases`, et vérifié via la clé **anon** (fichier : 200 OK,
+  6 636 755 octets ; `latest_release_manifest` : renvoie bien la v0.3.4
+  avec signature et URL) avant d'annoncer la release terminée.
 
 ## Prochaines étapes (dans l'ordre du fichier de passation d'origine)
 
@@ -676,6 +735,39 @@ précédente sans accès `git push`) pour le détail d'origine.
    au premier lancement (voir Limites connues). Nécessite l'achat d'un
    certificat — décision à prendre par l'utilisateur, pas de blocage
    fonctionnel en attendant.
+7. **[À FAIRE] Control Me** : nouvelle fonctionnalité demandée le
+   2026-08-30, plan détaillé validé par l'utilisateur (via plan mode) mais
+   **implémentation pas encore commencée** — l'utilisateur a explicitement
+   dit d'attendre son feu vert avant de coder. Vue d'ensemble : overlay
+   chatbot toujours au-dessus, invoqué par un raccourci global F5 (fonctionne
+   même quand une autre appli a le focus), pas de croix pour fermer (F5
+   uniquement, ou "Arrêter Control Me" depuis le menu de l'icône dans la
+   zone de notification). Un modèle **Gemini 3.7 Flash** (`gemini-3.7-flash`
+   — sorti le 2026-08-13, confirmé par recherche web, n'existait pas encore
+   à la date de coupure de connaissance de Claude) contrôle **de façon
+   totalement autonome** (aucune approbation par action, contrairement à
+   Codex) la souris et le clavier de l'utilisateur via `enigo`, en se basant
+   sur des captures d'écran (`xcap`) envoyées à l'API Gemini à chaque étape
+   — seul garde-fou : un bouton Stop dans l'overlay et un plafond
+   d'itérations (même logique que `MAX_AGENT_ITERATIONS` de Codex). **Clé
+   API Gemini propre à l'utilisateur, jamais fournie/partagée par l'app**
+   (champ dans Réglages, comme `ollama_host`) — si elle manque au moment
+   d'ouvrir l'overlay (F5), l'overlay doit le dire clairement et rediriger
+   vers Réglages plutôt que d'essayer silencieusement d'appeler l'API sans
+   clé. Rompt
+   délibérément la garantie "rien ne sort de l'app" (voir Confidentialité
+   réseau) : les captures d'écran partent vers Google dès que Control Me est
+   actif — à documenter en toutes lettres dans cette même section une fois
+   construit. Plan complet (architecture précise, fichiers concernés,
+   dépendances Rust à ajouter, risques explicites) sauvegardé dans
+   `C:\Users\userAsus\.claude\plans\memoized-jingling-platypus.md`.
+   **Idée notée pour plus tard, explicitement mise en pause par
+   l'utilisateur ("pas tout de suite")** : un système de mémoire locale
+   (JSON, même convention que `settings.json`/les conversations) où l'IA de
+   Control Me enregistrerait ce qu'elle apprend sur l'utilisateur au fil des
+   sessions (son rôle, ses habitudes, les logiciels qu'il utilise) pour ne
+   pas repartir de zéro à chaque fois — ne pas construire sans qu'on te le
+   redemande explicitement.
 
 ## Ce qu'il faut demander à l'utilisateur avant d'agir
 
