@@ -1,5 +1,6 @@
 import { useState } from "react";
-import type { Settings } from "../types";
+import { checkForUpdate, openExternalUrl } from "../api";
+import type { Settings, UpdateStatus } from "../types";
 
 export default function SettingsModal({
   settings,
@@ -13,10 +14,21 @@ export default function SettingsModal({
   onRefreshModels: () => void;
 }) {
   const [form, setForm] = useState<Settings>({ ...settings });
+  const [updateStatus, setUpdateStatus] = useState<UpdateStatus | null>(null);
+  const [checkingUpdate, setCheckingUpdate] = useState(false);
 
   function handleSave() {
     onSave(form);
     onClose();
+  }
+
+  async function handleCheckUpdate() {
+    setCheckingUpdate(true);
+    try {
+      setUpdateStatus(await checkForUpdate());
+    } finally {
+      setCheckingUpdate(false);
+    }
   }
 
   return (
@@ -47,6 +59,34 @@ export default function SettingsModal({
           value={form.system_prompt}
           onChange={(e) => setForm({ ...form, system_prompt: e.target.value })}
         />
+
+        <label>Mises à jour</label>
+        <button onClick={handleCheckUpdate} disabled={checkingUpdate}>
+          {checkingUpdate ? "Vérification…" : "Vérifier les mises à jour"}
+        </button>
+        {updateStatus && (
+          <div className="update-status">
+            <div className="modal-hint">Version installée : {updateStatus.current_version}</div>
+            {updateStatus.error && <div className="install-error">{updateStatus.error}</div>}
+            {!updateStatus.error && !updateStatus.update_available && (
+              <div className="install-success">À jour.</div>
+            )}
+            {!updateStatus.error && updateStatus.update_available && updateStatus.latest && (
+              <div className="update-available">
+                <span>Nouvelle version disponible : {updateStatus.latest.version}</span>
+                {updateStatus.latest.notes && <p className="modal-hint">{updateStatus.latest.notes}</p>}
+                {updateStatus.latest.download_url && (
+                  <button
+                    className="primary-btn"
+                    onClick={() => openExternalUrl(updateStatus.latest!.download_url!)}
+                  >
+                    Télécharger
+                  </button>
+                )}
+              </div>
+            )}
+          </div>
+        )}
 
         <div className="modal-actions">
           <button onClick={onClose}>Annuler</button>

@@ -66,6 +66,15 @@
     box-shadow: 0 0 0 3px rgba(110,168,254,0.15);
   }
 
+  .cta-link {
+    text-decoration: none;
+    color: #ffffff;
+    background: var(--accent);
+    border-color: transparent;
+    cursor: pointer;
+    font-weight: 600;
+  }
+
   section.features {
     padding: 40px 0 96px;
     display: grid;
@@ -128,7 +137,7 @@
         il lit, écrit et modifie des fichiers, exécute des commandes, et vous
         demande votre avis quand il le faut.
       </p>
-      <div class="cta">
+      <div class="cta" id="cta">
         <span class="dot"></span>
         Téléchargement bientôt disponible
       </div>
@@ -154,5 +163,35 @@
     <div class="wrap">Ollama Chat React — projet personnel</div>
   </footer>
 
+  <script>
+    // Anon key: meant to be public (Supabase's own design, gated by Row
+    // Level Security — this table only grants SELECT to the anon role).
+    const SUPABASE_URL = "https://cihuwuiyziarnghethbi.supabase.co";
+    const SUPABASE_ANON_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImNpaHV3dWl5emlhcm5naGV0aGJpIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODgwNjM3OTQsImV4cCI6MjEwMzYzOTc5NH0.AkAe00Vzu4506nHSjh2bl99x5hZUSejZRm3pJwVuGtI";
+
+    async function loadLatestRelease() {
+      const cta = document.getElementById("cta");
+      try {
+        const res = await fetch(
+          `${SUPABASE_URL}/rest/v1/app_releases?select=version,download_url,notes,published_at&order=published_at.desc&limit=1`,
+          { headers: { apikey: SUPABASE_ANON_KEY, Authorization: `Bearer ${SUPABASE_ANON_KEY}` } },
+        );
+        if (!res.ok) return; // keep the static "bientôt disponible" message
+        const rows = await res.json();
+        const latest = rows[0];
+        if (!latest || !/^https?:\/\//i.test(String(latest.download_url))) return;
+
+        const link = document.createElement("a");
+        link.className = "cta cta-link";
+        link.href = latest.download_url;
+        link.textContent = `Télécharger — v${latest.version}`;
+        cta.replaceWith(link);
+      } catch {
+        // offline or unreachable: leave the static message, no error shown
+      }
+    }
+
+    loadLatestRelease();
+  </script>
 </body>
 </html>

@@ -475,6 +475,19 @@ body {
   font-size: 13px;
 }
 
+.update-status {
+  margin-top: 6px;
+}
+
+.update-available {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 6px;
+  font-size: 13px;
+  color: #8fc4ff;
+}
+
 .install-log {
   background: #141414;
   border-radius: 8px;

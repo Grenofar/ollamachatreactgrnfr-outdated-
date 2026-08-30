@@ -5,6 +5,7 @@ pub mod fsops;
 pub mod huggingface;
 pub mod settings;
 pub mod shell;
+pub mod update;
 
 use tauri::{AppHandle, Manager};
 

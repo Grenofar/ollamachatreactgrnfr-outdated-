@@ -7,6 +7,7 @@ use commands::fsops::{edit_file_text, list_dir, read_file_text, write_file_text}
 use commands::huggingface::search_hf_models;
 use commands::settings::{load_settings, save_settings};
 use commands::shell::{cancel_shell_command, run_powershell_command, ShellCancelFlag};
+use commands::update::check_for_update;
 use std::sync::atomic::AtomicBool;
 use std::sync::Arc;
 
@@ -39,6 +40,7 @@ pub fn run() {
             agent_chat,
             cancel_agent_chat,
             search_hf_models,
+            check_for_update,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
