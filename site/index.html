@@ -4,17 +4,19 @@
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1" />
 <title>Ollama Chat React</title>
-<meta name="description" content="Client de chat pour Ollama en local, avec un éditeur de code agentique (Codex)." />
+<meta name="description" content="Client de chat pour Ollama en local, avec un éditeur de code agentique (Codex). Application de bureau Windows à installer, pas une version web." />
 <style>
   :root {
     color-scheme: dark;
     --bg: #0b0d10;
     --bg-raised: #14171b;
+    --bg-raised-2: #1a1e24;
     --border: #23272e;
     --text: #e8eaed;
     --text-dim: #9aa0a6;
     --accent: #6ea8fe;
-    --accent-dim: #3a5a8c;
+    --accent-strong: #4c86e0;
+    --good: #7bc98d;
   }
   * { box-sizing: border-box; }
   body {
@@ -25,58 +27,97 @@
     line-height: 1.5;
   }
   a { color: var(--accent); }
-  .wrap { max-width: 880px; margin: 0 auto; padding: 0 24px; }
+  .wrap { max-width: 920px; margin: 0 auto; padding: 0 24px; }
 
   header.top {
     padding: 20px 0;
     border-bottom: 1px solid var(--border);
+    position: sticky;
+    top: 0;
+    background: var(--bg);
+    background: color-mix(in srgb, var(--bg) 92%, transparent);
+    backdrop-filter: blur(6px);
+    z-index: 10;
   }
   header.top .wrap { display: flex; align-items: center; justify-content: space-between; }
   .brand { font-weight: 600; letter-spacing: 0.2px; }
   .brand span { color: var(--text-dim); font-weight: 400; }
+  .top-nav { display: flex; gap: 20px; font-size: 0.85rem; }
+  .top-nav a { color: var(--text-dim); text-decoration: none; }
+  .top-nav a:hover { color: var(--text); }
 
-  .hero { padding: 96px 0 64px; text-align: center; }
+  .hero { padding: 88px 0 56px; text-align: center; }
+  .badge {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    padding: 6px 14px;
+    border-radius: 999px;
+    border: 1px solid var(--border);
+    background: var(--bg-raised);
+    color: var(--text-dim);
+    font-size: 0.8rem;
+    margin-bottom: 22px;
+  }
+  .badge .dot {
+    width: 6px; height: 6px; border-radius: 50%;
+    background: var(--good);
+  }
   .hero h1 {
-    font-size: clamp(2rem, 5vw, 3.2rem);
+    font-size: clamp(2rem, 5vw, 3.1rem);
     margin: 0 0 16px;
     letter-spacing: -0.02em;
   }
   .hero p.tagline {
     color: var(--text-dim);
-    font-size: 1.15rem;
-    max-width: 560px;
+    font-size: 1.1rem;
+    max-width: 580px;
     margin: 0 auto 36px;
   }
 
-  .cta {
+  .btn {
     display: inline-flex;
     align-items: center;
     gap: 10px;
-    padding: 14px 26px;
+    padding: 14px 28px;
     border-radius: 10px;
     border: 1px solid var(--border);
     background: var(--bg-raised);
     color: var(--text-dim);
     font-size: 0.95rem;
+    text-decoration: none;
     cursor: default;
   }
-  .cta .dot {
-    width: 8px; height: 8px; border-radius: 50%;
-    background: var(--accent);
-    box-shadow: 0 0 0 3px rgba(110,168,254,0.15);
-  }
-
-  .cta-link {
-    text-decoration: none;
+  .btn-primary {
     color: #ffffff;
-    background: var(--accent);
+    background: var(--accent-strong);
     border-color: transparent;
-    cursor: pointer;
     font-weight: 600;
+    cursor: pointer;
+  }
+  .btn-primary:hover { background: var(--accent); }
+
+  .hero-note {
+    margin-top: 16px;
+    font-size: 0.82rem;
+    color: var(--text-dim);
   }
 
-  section.features {
-    padding: 40px 0 96px;
+  section { padding: 56px 0; }
+  section h2 {
+    font-size: 1.5rem;
+    margin: 0 0 8px;
+    text-align: center;
+  }
+  section > .wrap > p.section-sub {
+    text-align: center;
+    color: var(--text-dim);
+    max-width: 560px;
+    margin: 0 auto 36px;
+    font-size: 0.95rem;
+  }
+
+  .features {
     display: grid;
     grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
     gap: 20px;
@@ -90,11 +131,44 @@
   .card h3 { margin: 0 0 8px; font-size: 1.05rem; }
   .card p { margin: 0; color: var(--text-dim); font-size: 0.92rem; }
 
-  footer {
+  .install {
+    background: var(--bg-raised);
     border-top: 1px solid var(--border);
-    padding: 28px 0 48px;
+    border-bottom: 1px solid var(--border);
+  }
+  .steps {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+    gap: 24px;
+    margin-bottom: 40px;
+  }
+  .step { text-align: center; }
+  .step-num {
+    width: 34px; height: 34px;
+    border-radius: 50%;
+    background: var(--bg-raised-2);
+    border: 1px solid var(--border);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    margin: 0 auto 14px;
+    font-weight: 600;
+    color: var(--accent);
+  }
+  .step h4 { margin: 0 0 6px; font-size: 0.95rem; }
+  .step p { margin: 0; color: var(--text-dim); font-size: 0.85rem; }
+
+  .install-cta { text-align: center; }
+  .requirements {
+    margin-top: 22px;
+    font-size: 0.82rem;
     color: var(--text-dim);
-    font-size: 0.85rem;
+  }
+
+  footer {
+    padding: 32px 0 48px;
+    color: var(--text-dim);
+    font-size: 0.82rem;
     text-align: center;
   }
 
@@ -102,20 +176,25 @@
     :root:not([data-theme="dark"]) {
       --bg: #f7f8fa;
       --bg-raised: #ffffff;
+      --bg-raised-2: #eef0f3;
       --border: #e2e5e9;
       --text: #1c1e21;
       --text-dim: #5f6570;
       --accent: #2f6fed;
-      --accent-dim: #dbe6fb;
+      --accent-strong: #2857c4;
+      --good: #2f9e52;
     }
   }
   :root[data-theme="dark"] {
     --bg: #0b0d10;
     --bg-raised: #14171b;
+    --bg-raised-2: #1a1e24;
     --border: #23272e;
     --text: #e8eaed;
     --text-dim: #9aa0a6;
     --accent: #6ea8fe;
+    --accent-strong: #4c86e0;
+    --good: #7bc98d;
   }
 </style>
 </head>
@@ -124,40 +203,79 @@
   <header class="top">
     <div class="wrap">
       <div class="brand">Ollama Chat React <span>· Codex</span></div>
-      <div style="color: var(--text-dim); font-size: 0.85rem;">App bureau</div>
+      <nav class="top-nav">
+        <a href="#fonctionnalites">Fonctionnalités</a>
+        <a href="#installation">Installation</a>
+      </nav>
     </div>
   </header>
 
   <div class="wrap">
     <section class="hero">
+      <span class="badge"><span class="dot"></span>Application de bureau Windows — pas de version web</span>
       <h1>Chattez avec Ollama.<br>Codez avec un agent local.</h1>
       <p class="tagline">
-        Une app bureau (Windows) qui combine un client de chat pour Ollama et
-        un éditeur de code façon VS Code où un modèle local agit en agent :
-        il lit, écrit et modifie des fichiers, exécute des commandes, et vous
-        demande votre avis quand il le faut.
+        Un client de chat pour Ollama qui tourne entièrement sur votre PC, avec
+        en plus un éditeur de code façon VS Code où un modèle local agit en
+        agent : il lit, écrit et modifie des fichiers, exécute des commandes,
+        et vous demande votre avis quand il le faut. Rien de tout ça ne
+        s'exécute dans un navigateur — c'est une vraie application installée.
       </p>
-      <div class="cta" id="cta">
-        <span class="dot"></span>
-        Téléchargement bientôt disponible
-      </div>
+      <a class="btn js-cta">Vérification…</a>
+      <div class="hero-note">Windows 10/11 · installation locale, aucune donnée envoyée sur le web</div>
     </section>
 
-    <section class="features">
-      <div class="card">
-        <h3>Chat Ollama</h3>
-        <p>Conversations, réglages, installation de modèles et recherche de modèles GGUF sur Hugging Face, le tout en local.</p>
-      </div>
-      <div class="card">
-        <h3>Éditeur Codex agentique</h3>
-        <p>Le modèle lit et modifie des fichiers, liste des dossiers, exécute des commandes PowerShell et pose des questions quand une décision vous revient.</p>
-      </div>
-      <div class="card">
-        <h3>Auto / Approbation</h3>
-        <p>Comme le mode d'édition de Claude Code : chaque action qui modifie quelque chose peut être validée via un diff avant d'être appliquée.</p>
+    <section id="fonctionnalites">
+      <h2>Ce que ça fait</h2>
+      <p class="section-sub">Deux outils dans une seule application, tous les deux 100% locaux.</p>
+      <div class="features">
+        <div class="card">
+          <h3>Chat Ollama</h3>
+          <p>Conversations, réglages, installation de modèles et recherche de modèles GGUF sur Hugging Face — tout passe par votre serveur Ollama local, rien n'est envoyé ailleurs.</p>
+        </div>
+        <div class="card">
+          <h3>Éditeur Codex agentique</h3>
+          <p>Un modèle Ollama lit et modifie des fichiers sur votre PC, liste des dossiers, exécute des commandes PowerShell et vous pose une question quand une décision vous revient.</p>
+        </div>
+        <div class="card">
+          <h3>Auto / Approbation</h3>
+          <p>Comme le mode d'édition de Claude Code : chaque action qui modifie quelque chose peut être validée via un diff avant d'être appliquée, ou passer en automatique si vous préférez.</p>
+        </div>
       </div>
     </section>
   </div>
+
+  <section class="install" id="installation">
+    <div class="wrap">
+      <h2>Installer l'application</h2>
+      <p class="section-sub">Un seul fichier à lancer, l'assistant s'occupe du reste.</p>
+
+      <div class="steps">
+        <div class="step">
+          <div class="step-num">1</div>
+          <h4>Installer</h4>
+          <p>Cliquez sur le bouton ci-dessous pour récupérer le setup.</p>
+        </div>
+        <div class="step">
+          <div class="step-num">2</div>
+          <h4>Lancer le fichier</h4>
+          <p>Ouvrez le fichier téléchargé depuis votre dossier Téléchargements.</p>
+        </div>
+        <div class="step">
+          <div class="step-num">3</div>
+          <h4>Suivre l'assistant</h4>
+          <p>L'installation se termine en quelques secondes, aucune configuration requise.</p>
+        </div>
+      </div>
+
+      <div class="install-cta">
+        <a class="btn btn-primary js-cta">Vérification…</a>
+        <div class="requirements">
+          Nécessite <a href="https://ollama.com" target="_blank" rel="noopener">Ollama</a> installé et lancé sur le même PC pour discuter avec un modèle.
+        </div>
+      </div>
+    </div>
+  </section>
 
   <footer>
     <div class="wrap">Ollama Chat React — projet personnel</div>
@@ -169,25 +287,39 @@
     const SUPABASE_URL = "https://cihuwuiyziarnghethbi.supabase.co";
     const SUPABASE_ANON_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImNpaHV3dWl5emlhcm5naGV0aGJpIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODgwNjM3OTQsImV4cCI6MjEwMzYzOTc5NH0.AkAe00Vzu4506nHSjh2bl99x5hZUSejZRm3pJwVuGtI";
 
+    function renderComingSoon(el) {
+      el.className = "btn js-cta";
+      el.href = "#installation";
+      el.textContent = "Bientôt disponible";
+    }
+
+    function renderInstall(el, release) {
+      el.className = "btn btn-primary js-cta";
+      el.href = release.download_url;
+      el.textContent = `Installer — v${release.version}`;
+    }
+
     async function loadLatestRelease() {
-      const cta = document.getElementById("cta");
+      const buttons = document.querySelectorAll(".js-cta");
       try {
         const res = await fetch(
           `${SUPABASE_URL}/rest/v1/app_releases?select=version,download_url,notes,published_at&order=published_at.desc&limit=1`,
           { headers: { apikey: SUPABASE_ANON_KEY, Authorization: `Bearer ${SUPABASE_ANON_KEY}` } },
         );
-        if (!res.ok) return; // keep the static "bientôt disponible" message
+        if (!res.ok) throw new Error("bad status");
         const rows = await res.json();
         const latest = rows[0];
-        if (!latest || !/^https?:\/\//i.test(String(latest.download_url))) return;
 
-        const link = document.createElement("a");
-        link.className = "cta cta-link";
-        link.href = latest.download_url;
-        link.textContent = `Télécharger — v${latest.version}`;
-        cta.replaceWith(link);
+        buttons.forEach((el) => {
+          if (latest && /^https?:\/\//i.test(String(latest.download_url))) {
+            renderInstall(el, latest);
+          } else {
+            renderComingSoon(el);
+          }
+        });
       } catch {
-        // offline or unreachable: leave the static message, no error shown
+        // offline, unreachable, or table not created yet: fall back quietly
+        buttons.forEach(renderComingSoon);
       }
     }
 
