@@ -22,6 +22,7 @@ pas devenir obsolète.
 - [FAIT] Supabase en lecture seule branché ET table `app_releases` créée + peuplée (site : fetch client-side ; app : voir auto-update ci-dessous)
 - [FAIT] Premier installeur construit (`npm run tauri build`, NSIS+MSI) et publié : v0.1.0 hébergée sur Supabase Storage (bucket public `releases`), lien de téléchargement fonctionnel de bout en bout
 - [FAIT] **Auto-update en continu** (`tauri-plugin-updater`) — depuis v0.3.0, "Vérifier les mises à jour" télécharge, installe et redémarre l'app toute seule, sans navigateur ni Supabase ouvert manuellement. Voir section dédiée plus bas pour le détail (signature cryptographique, endpoint RPC Supabase, `.env`).
+- [FAIT] v0.3.1 : correctif du bug d'en-têtes Supabase (v0.3.0 était cassée pour l'auto-update, voir "Bug corrigé en v0.3.1" plus bas) + notification automatique (toast, coin bas-droit) quand une mise à jour est disponible, sans avoir besoin d'ouvrir Réglages — publiée et vérifiée de bout en bout via la clé anon (fichier + endpoint RPC).
 - [À FAIRE] Signature de code (SmartScreen affiche "Éditeur inconnu" tant que ce n'est pas fait — décision explicite de l'utilisateur le 2026-08-30 de ne rien faire pour l'instant, voir Décisions techniques)
 - [FAIT] Rendu Markdown réel dans le chat (`marked` + `DOMPurify`), avec coloration/copie de bloc de code préservées
 - [FAIT] Éditer un message envoyé (tronque et renvoie) et régénérer la dernière réponse
@@ -261,7 +262,9 @@ jour. Un utilisateur doit récupérer une version ≥ 0.3.1 manuellement une
 fois (site ou lien Supabase Storage direct) ; à partir de là, les mises à
 jour suivantes se font vraiment en un clic depuis l'app — **v0.3.0 elle-même
 ne doit pas être considérée comme fonctionnelle** pour l'auto-update (voir
-bug ci-dessus), seulement à partir de v0.3.1.
+bug ci-dessus), seulement à partir de v0.3.1. v0.3.1 est publiée et vérifiée
+(anon key) depuis le 2026-08-30 — c'est la première version où l'auto-update
+fonctionne réellement de bout en bout.
 
 ## Publier une release
 
@@ -479,6 +482,24 @@ l'utilisateur confirme qu'elle est bien dans `.env` local.
   dans `SettingsModal`. Publié en suivant le nouveau processus de "Publier
   une release" (avec signature) ; vérifié via la clé anon que le fichier ET
   le nouvel endpoint RPC répondent correctement avant d'annoncer la release
+  terminée.
+- **2026-08-30** — v0.3.1 : deux changements sur demande explicite de
+  l'utilisateur. (1) Correctif du bug qui rendait l'auto-update de v0.3.0
+  silencieusement cassée ("Could not fetch a valid release JSON from the
+  remote", signalé par l'utilisateur juste après avoir testé v0.3.0) — voir
+  "Bug corrigé en v0.3.1" dans la section "Auto-update en continu" pour le
+  détail complet (en-têtes `apikey`/`Authorization` jamais envoyés car
+  `plugins.updater.headers` n'existe pas dans le schéma du plugin, corrigé
+  en les configurant via le `Builder` Rust dans `lib.rs`). (2) Notification
+  proactive : état de vérif d'update (`check`/`downloadAndInstall`/
+  `relaunch`) lifté de `SettingsModal` vers `App.tsx`, avec une vérif
+  silencieuse automatique 5s après le lancement puis toutes les 4h, affichée
+  dans un toast non-bloquant (coin bas-droit) plutôt qu'une modale — "Plus
+  tard" mémorise la version pour ne pas re-harceler pour la même version.
+  Build signé, uploadé dans le bucket Storage `releases`, ligne insérée dans
+  `app_releases` (avec la signature `.sig`), et vérifié via la clé **anon**
+  (fichier : 200 OK, 6 618 789 octets ; `latest_release_manifest` : renvoie
+  bien la v0.3.1 avec signature et URL) avant d'annoncer la release
   terminée.
 
 ## Prochaines étapes (dans l'ordre du fichier de passation d'origine)
