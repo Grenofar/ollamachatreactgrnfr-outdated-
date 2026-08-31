@@ -48,6 +48,7 @@ pas devenir obsolète.
 - [FAIT] v0.4.2 : sélecteur de modèle Gemini dans Control Me (3.5 Flash-Lite/3.5 Flash/3.6 Flash/3.7 Flash), persisté dans les réglages — voir "Sélecteur de modèle (v0.4.2)" dans Architecture > Control Me. Note : 3.6 Flash n'est pas documenté par Google comme compatible avec `computer_use`, laissé sélectionnable quand même (demandé explicitement) mais signalé dans le menu.
 - [FAIT] v0.5.0 : Control Me installable **séparément** de l'app de chat, même mécanisme de mise à jour/setup, bouton dédié sur le site, doc autonome `CONTROLME.md` — voir "Control Me : produit installable séparément (v0.5.0)" dans Architecture > Control Me pour le détail complet (config Tauri alternative fusionnée par-dessus la config de base, pas de duplication de code, colonne `product` sur `app_releases`). **Migration SQL à exécuter par l'utilisateur avant de considérer le site à jour** — sans elle, le bouton de téléchargement existant de l'app de chat casse aussi.
 - [FAIT] v0.5.1 : Control Me — confirmation `require_confirmation` désormais inline (reprend la session en place au lieu de tout arrêter), mémoire IA type RAG simplifiée où **l'IA décide elle-même** quoi retenir sur l'utilisateur via un outil `remember_fact` (panneau "Mémoire" pour voir/tout effacer), lancement au démarrage de Windows (build standalone) — voir "Confirmation inline, mémoire IA, lancement au démarrage" dans Architecture > Control Me.
+- [FAIT] v0.5.2 : correctif critique Supabase (`latest_release_manifest` ambigu après la migration `product`, cassait l'auto-update de l'app de chat pour de vrai — `drop function` manquant, voir journal 2026-08-31) + modèle Gemini recommandé par défaut changé vers `gemini-3.5-flash-lite` (contredit la recommandation de Google, assumé et documenté).
 
 ## Architecture
 
@@ -1138,6 +1139,44 @@ l'utilisateur confirme qu'elle est bien dans `.env` local.
   son endpoint de mise à jour (`?p_product=controlme`) échouerait proprement
   (fonction `latest_release_manifest` sans paramètre encore déployée), pas
   de risque de servir le mauvais manifeste entre-temps.
+- **2026-08-31** — Publication du Control Me standalone découverte
+  **risquée après coup** : insérer sa ligne `app_releases` sans le champ
+  `product` (comme prévu en fallback si la migration n'était pas encore
+  appliquée) aurait rendu cette ligne "la plus récente" pour **tout le
+  monde** interrogeant l'endpoint non filtré — y compris l'auto-updater
+  de l'app de chat principale elle-même, qui se serait vu proposer
+  l'installeur de Control Me à la place du sien. Détecté avant d'exécuter
+  l'insertion (pas après), installeur Control Me buildé et uploadé dans
+  le Storage mais **ligne `app_releases` volontairement pas insérée** en
+  attendant la migration — bien vérifié via la clé anon que l'endpoint
+  principal continuait de renvoyer la bonne release entre-temps. Une fois
+  la migration appliquée par l'utilisateur, **nouveau bug découvert en
+  vérifiant** : `create or replace function` n'avait pas remplacé
+  l'ancienne fonction sans paramètre (signature différente = surcharge
+  distincte en Postgres, pas un remplacement) — `latest_release_manifest`
+  sans argument devenait ambigu entre les deux surcharges (erreur
+  PostgREST `PGRST203`), cassant l'auto-update de l'app de chat
+  principale pour de vrai cette fois (tout le monde, pas juste un
+  risque). Corrigé en ajoutant `drop function if exists
+  public.latest_release_manifest();` avant le `create or replace` dans
+  `supabase/controlme_product_migration.sql` (fichier ré-exécutable sans
+  risque, redocumenté comme tel) ; l'utilisateur a réexécuté le fichier,
+  revérifié en direct que les deux endpoints (avec et sans `p_product`)
+  fonctionnent indépendamment avant de continuer. **Leçon** : pour toute
+  future migration touchant une fonction déjà utilisée par de vrais
+  clients (l'auto-updater ici), vérifier explicitement qu'un changement
+  de signature ne crée pas une surcharge fantôme au lieu d'un vrai
+  remplacement — `create or replace` ne le fait QUE si la liste de
+  paramètres est identique.
+- **2026-08-31** — Modèle recommandé changé vers `gemini-3.5-flash-lite`
+  (demandé explicitement, contredit la propre recommandation de Google
+  pour `computer_use` — documenté comme tel dans `CLAUDE.md`/
+  `CONTROLME.md`, pas caché). v0.5.2 buildée et publiée pour les deux
+  produits (app de chat : ce correctif Supabase + le changement de modèle
+  n'affecte que Control Me mais partage le même binaire/version ; Control
+  Me : le changement de modèle par défaut). Les deux vérifiées
+  indépendamment via la clé anon (`latest_release_manifest` sans
+  paramètre et avec `?p_product=controlme`) après publication.
 
 ## Prochaines étapes (dans l'ordre du fichier de passation d'origine)
 
