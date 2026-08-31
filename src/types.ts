@@ -33,6 +33,7 @@ export interface Settings {
   gemini_api_key?: string | null;
   gemini_model: string;
   remote_code?: string | null;
+  control_me_perception_mode: "capture" | "windows_ui";
 }
 
 export interface DirEntry {

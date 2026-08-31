@@ -53,7 +53,7 @@ pas devenir obsolète.
 - [FAIT] v0.5.4 : recherche dans l'historique Control Me (titre + contenu, `search_control_me_sessions`), renommage d'une session (double-clic, comme la Sidebar du chat), et navigation simplifiée — plus de bouton dédié "← Chat" dans Codex/Control Me, cliquer un élément de la Sidebar (nouvelle conversation ou conversation existante) y ramène directement — voir "Recherche/renommage de session, retrait du bouton retour (v0.5.4)" dans Architecture > Control Me.
 - [FAIT] v0.5.5 : passe d'animations sur toute l'app (CSS uniquement, aucune dépendance ajoutée) — micro-interactions de boutons, halo de focus sur les champs, entrée en fondu/décalage des bulles de chat et cartes d'outils avec effet cascade, indicateur de frappe animé + curseur clignotant pendant le streaming, transition de vue chat/Codex/Control Me, ouverture animée des modales/dropdowns/panneaux, toast de mise à jour avec rebond, accent visuel sur la conversation/section active dans la Sidebar, scrollbar personnalisée — respecte `prefers-reduced-motion`. Voir "Animations et micro-interactions (v0.5.5)" dans Architecture.
 - [FAIT] v0.5.6 : Control Me plus rapide et plus fiable — attente adaptative après chaque action (remplace le délai fixe de 120ms par une détection locale de stabilisation de l'écran) et nouvel outil `read_ui_elements` (Gemini peut lire l'arbre d'accessibilité Windows de la fenêtre au premier plan — type/libellé/état/position des contrôles — sans capture d'écran, en complément de `computer_use`) — voir "Attente adaptative et lecture de l'arbre d'accessibilité (v0.5.6)" dans Architecture > Control Me.
-- [FAIT] v0.5.7 : Control Me pilotable **à distance depuis le site** (`site/controlremote.html`, lien depuis la landing) — code de jumelage à 12 chiffres généré dans l'app, écran live + chat + mémoire + bouton Arrêter côté navigateur, tout via Supabase **Realtime** (Broadcast + Presence, aucune table Postgres, client WebSocket écrit à la main côté Rust) — voir "Control Me à distance depuis le site (v0.5.7)" et "Mémoire visible depuis le site distant (v0.5.7)" dans Architecture > Control Me, y compris le modèle de sécurité (code = mot de passe partagé, protection anti-brute-force côté navigateur assumée comme non absolue). Réglages **entièrement refaits en page pleine** à sections (Général/Modèles + Installer un modèle/Control Me/Mises à jour), `SettingsModal.tsx` supprimé au profit de `SettingsView.tsx`, bouton "Installer un modèle" déplacé de la Sidebar vers Réglages — voir "Réglages en page pleine (v0.5.7)". Deux correctifs Control Me au passage : `key_down` qui ne faisait rien (bug réel d'enigo, `release_keys_when_dropped`) et `read_ui_elements` qui n'apportait plus son gain de vitesse (capturait quand même un screenshot inutile) — voir "Correctifs de vitesse et de fiabilité (v0.5.7)".
+- [FAIT] v0.5.7 : Control Me pilotable **à distance depuis le site** (`site/controlremote.html`, lien depuis la landing) — code de jumelage à 12 chiffres généré dans l'app, écran live + chat + mémoire + bouton Arrêter côté navigateur, tout via Supabase **Realtime** (Broadcast + Presence, aucune table Postgres, client WebSocket écrit à la main côté Rust) — voir "Control Me à distance depuis le site (v0.5.7)" et "Mémoire visible depuis le site distant (v0.5.7)" dans Architecture > Control Me, y compris le modèle de sécurité (code = mot de passe partagé, protection anti-brute-force côté navigateur assumée comme non absolue). Réglages **entièrement refaits en page pleine** à sections (Général/Modèles + Installer un modèle/Control Me/Mises à jour), `SettingsModal.tsx` supprimé au profit de `SettingsView.tsx`, bouton "Installer un modèle" déplacé de la Sidebar vers Réglages — voir "Réglages en page pleine (v0.5.7)". Deux correctifs Control Me au passage : `key_down` qui ne faisait rien (bug réel d'enigo, `release_keys_when_dropped`) et `read_ui_elements` qui n'apportait plus son gain de vitesse (capturait quand même un screenshot inutile) — voir "Correctifs de vitesse et de fiabilité (v0.5.7)". Nouveau **mode de perception "Windows UI"** (toggle Réglages > Control Me, `capture` vs `windows_ui`) : `computer_use` entièrement retiré et remplacé par des outils `function` personnalisés reproduisant le même jeu d'actions — plus aucune capture d'écran envoyée, juste du texte d'accessibilité, mais perte du garde-fou `require_confirmation` (propre au protocole `computer_use`) — voir "Mode de perception Windows UI (v0.5.7)".
 
 ## Architecture
 
@@ -1035,6 +1035,65 @@ avec ui automation et tout".
   comme un simple complément optionnel — pure ingénierie de prompt, aucune
   garantie de comportement (reste à la discrétion du modèle).
 
+### Mode de perception "Windows UI" (v0.5.7)
+
+Demandé explicitement, dans la continuité directe du point précédent :
+un vrai bouton pour basculer **entre** captures d'écran et UI Automation,
+plutôt que les deux qui coexistent seulement comme aujourd'hui. Nouveau
+réglage `Settings.control_me_perception_mode` (`"capture"` par défaut, ou
+`"windows_ui"`), toggle dans Réglages > Control Me (même composant visuel
+`.mode-toggle` que le bascule Auto/Approbation de Codex).
+
+- **`computer_use` est fondamentalement un outil piloté par capture
+  d'écran** — son protocole attend une image à chaque tour, il n'a pas de
+  mode "texte seul". En mode `windows_ui`, il est donc **entièrement
+  retiré** du tableau `tools`, remplacé par des **outils `function`
+  personnalisés** qui reproduisent un par un le jeu d'actions déjà
+  implémenté dans `execute_action` (click/double_click/triple_click/
+  middle_click/right_click/mouse_down/mouse_up/move/type/drag_and_drop/
+  wait/press_key/key_down/key_up/hotkey/scroll) — **mêmes noms de
+  paramètres exacts**, donc `execute_action`/`dispatch_action` n'ont besoin
+  d'aucune modification pour gérer les deux modes : seul le tableau
+  `tools` construit en amont change (`build_capture_tools()` vs
+  `build_windows_ui_tools()`, `controlme.rs`). Les coordonnées restent
+  dans le même repère normalisé 0-999 que `read_ui_elements` renvoie déjà
+  — une position lue peut être réutilisée directement pour cliquer, sans
+  conversion.
+- **Aucune capture d'écran n'est jamais prise dans ce mode**, ni comme
+  observation initiale ni après une action : `read_foreground_ui_elements`
+  fournit le texte à la place. Nouveau helper `primary_screen_size()`
+  (juste `monitor.width()`/`.height()` de `xcap`, sans capturer le moindre
+  pixel — vérifié que ces accesseurs existent et sont bon marché avant de
+  les utiliser) pour la normalisation des coordonnées, sans avoir besoin
+  d'un screenshot juste pour connaître la résolution. `primary_monitor()`
+  extrait en fonction partagée (`capture_screenshot_base64`,
+  `capture_grayscale_thumb`, et ce nouveau helper l'utilisent tous les
+  trois — déduplication au passage, pas de changement de comportement).
+- **Attente post-action différente** : pas d'attente adaptative par
+  diff de pixels (`wait_for_settle`, ça n'a pas de sens sans écran à
+  comparer) — un délai fixe court (`UI_MODE_SETTLE_MS`, 150ms, pas testé
+  visuellement) avant de relire l'arbre d'accessibilité, sauf après un
+  `read_ui_elements` explicite (déjà à jour, pas de double lecture).
+- **Contrepartie réelle, assumée et affichée dans l'UI** : le signal de
+  sécurité `safety_decision: require_confirmation` de Gemini fait partie
+  du protocole propre à `computer_use` — un outil `function` personnalisé
+  n'a pas d'équivalent. Ce garde-fou **n'existe pas** en mode
+  `windows_ui`. C'est pour ça que `"capture"` reste le mode par défaut
+  (bascule explicite requise, jamais une surprise) et que l'avertissement
+  est visible directement sous le bouton dans Réglages, pas seulement
+  documenté ici.
+- Bénéfice non demandé mais réel, à noter : en mode `windows_ui`, **aucune
+  image n'est jamais envoyée à Google**, seulement du texte (libellés de
+  contrôles, jamais le contenu visuel de l'écran) — réduit nettement ce
+  qui transite par rapport à l'exception réseau déjà documentée pour
+  Control Me (captures d'écran complètes à chaque étape en mode
+  `"capture"`).
+- `cargo check` et `npx tsc --noEmit` passés à 0 erreur ni avertissement.
+  **Pas de vérification visuelle possible dans cet environnement** — en
+  particulier, aucun moyen de confirmer ici que Gemini se comporte bien
+  avec un tableau `tools` sans `computer_use` (jamais documenté par
+  Google comme combinaison testée) ; à valider par l'utilisateur.
+
 ### Les 6 outils de l'agent
 1. `read_file` — lecture texte (limite 5 Mo), chemin absolu
 2. `list_dir` — listing un niveau, chemin absolu
@@ -1835,10 +1894,22 @@ l'utilisateur confirme qu'elle est bien dans `.env` local.
   d'enigo trouvé en lisant son code source — `release_keys_when_dropped`)
   et `read_ui_elements` qui capturait quand même un screenshot inutile
   après coup, annulant son propre gain de vitesse — voir "Correctifs de
-  vitesse et de fiabilité (v0.5.7)". **Aucune vérification de bout en
-  bout possible dans cet environnement** (nécessite l'app lancée ET un
-  navigateur sur le site déployé en même temps) — à tester explicitement
-  par l'utilisateur après build et déploiement Vercel du site.
+  vitesse et de fiabilité (v0.5.7)". Demande de suivi immédiate, dans le
+  prolongement direct : un vrai bouton pour basculer entre captures
+  d'écran et UI Automation plutôt que les deux qui coexistent seulement
+  — nouveau mode `windows_ui` retirant entièrement `computer_use` au
+  profit d'outils `function` personnalisés reproduisant le même jeu
+  d'actions (mêmes noms de paramètres qu'`execute_action`, aucun
+  changement nécessaire côté exécution), avec la contrepartie affichée
+  explicitement dans l'UI (perte du garde-fou `require_confirmation`,
+  propre au protocole `computer_use`) — voir "Mode de perception Windows
+  UI (v0.5.7)". `cargo check`/`npx tsc --noEmit` passés à 0 erreur ni
+  avertissement. **Aucune vérification de bout en bout possible dans cet
+  environnement** (nécessite l'app lancée ET un navigateur sur le site
+  déployé en même temps, et pour ce dernier ajout, aucun moyen de
+  confirmer que Gemini se comporte bien sans `computer_use` — combinaison
+  jamais documentée par Google) — à tester explicitement par
+  l'utilisateur après build et déploiement Vercel du site.
 
 ## Prochaines étapes (dans l'ordre du fichier de passation d'origine)
 

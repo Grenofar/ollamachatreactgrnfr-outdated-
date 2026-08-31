@@ -226,6 +226,36 @@ export default function SettingsView({
               Ta propre clé, jamais fournie par l'app — nécessaire pour utiliser Control Me.
             </div>
 
+            <label>Comment l'IA perçoit ton écran</label>
+            <div className="mode-toggle">
+              <button
+                className={form.control_me_perception_mode === "capture" ? "mode-toggle-active" : ""}
+                onClick={() => setForm({ ...form, control_me_perception_mode: "capture" })}
+              >
+                Capture d'écran
+              </button>
+              <button
+                className={form.control_me_perception_mode === "windows_ui" ? "mode-toggle-active" : ""}
+                onClick={() => setForm({ ...form, control_me_perception_mode: "windows_ui" })}
+              >
+                Windows UI
+              </button>
+            </div>
+            <div className="modal-hint">
+              {form.control_me_perception_mode === "windows_ui" ? (
+                <>
+                  Aucune capture d'écran envoyée — l'IA lit uniquement la structure d'accessibilité
+                  Windows (texte). Plus rapide et plus privé, mais ne fonctionne pas pour une
+                  interface dessinée directement (jeu, canvas), et perd le signal de sécurité
+                  intégré de Gemini pour les actions sensibles (propre à l'outil de capture
+                  d'écran).
+                </>
+              ) : (
+                "Comportement actuel : captures d'écran envoyées à Gemini à chaque étape, comme aujourd'hui."
+              )}
+              {" "}Enregistre pour appliquer.
+            </div>
+
             <label>Contrôle à distance depuis le site</label>
             <div className="remote-pairing">
               {settings.remote_code ? (

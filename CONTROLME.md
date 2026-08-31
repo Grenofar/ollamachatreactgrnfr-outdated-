@@ -31,6 +31,17 @@ chaque action, l'app attend que l'écran ait fini de bouger avant de
 recapturer (au lieu d'un délai fixe) — plus rapide quand l'interface a déjà
 réagi, plus fiable quand elle met plus de temps.
 
+**Deux modes de perception**, dans Réglages → Control Me : **Capture
+d'écran** (par défaut, décrit ci-dessus) ou **Windows UI**. En mode
+Windows UI, aucune capture d'écran n'est jamais envoyée — Gemini travaille
+uniquement à partir du texte de l'interface (boutons, champs, libellés),
+ce qui est plus rapide et envoie beaucoup moins de données à Google. Deux
+limites à connaître avant de basculer : ça ne fonctionne pas pour une
+interface dessinée directement (jeu, éditeur graphique, canvas), et le
+garde-fou de sécurité intégré de Gemini (la pause automatique sur une
+action jugée sensible) n'existe que pour le mode Capture d'écran — il
+disparaît en mode Windows UI.
+
 ## Ce qu'il faut savoir avant d'installer
 
 - **Contrôle autonome, sans confirmation par action.** Contrairement à un

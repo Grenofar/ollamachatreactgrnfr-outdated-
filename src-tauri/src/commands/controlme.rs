@@ -11,6 +11,7 @@
 // respect even though the user chose fully-autonomous mode — that flag is
 // the model's own judgment call, not a general per-action approval gate.
 use super::data_dir;
+use super::settings::load_settings;
 use super::ui_automation::read_foreground_ui_elements;
 use base64::{engine::general_purpose::STANDARD, Engine as _};
 use enigo::{Axis, Button, Coordinate, Direction, Enigo, Key, Keyboard, Mouse, Settings as EnigoSettings};
@@ -66,6 +67,11 @@ const SETTLE_DIFF_THRESHOLD: f64 = 3.0;
 // Tools that never touch the screen — no settle wait, no screenshot
 // attached to their result (see the main loop below).
 const NO_VISUAL_EFFECT_TOOLS: [&str; 2] = ["read_ui_elements", "remember_fact"];
+// Fixed settle delay used in "windows_ui" perception mode instead of the
+// adaptive pixel-diff wait above — there's no screen to diff against, just
+// a short buffer so a UI has time to actually update before the
+// accessibility tree is re-read.
+const UI_MODE_SETTLE_MS: u64 = 150;
 
 // Same polling pattern as agent.rs's wait_for_cancel: the only await points
 // here (the Gemini HTTP call) are short-lived enough that ~60ms of added
@@ -79,17 +85,29 @@ async fn wait_for_cancel(flag: Arc<AtomicBool>) {
     }
 }
 
+fn primary_monitor() -> Result<Monitor, String> {
+    let monitors = Monitor::all().map_err(|e| e.to_string())?;
+    monitors
+        .iter()
+        .find(|m| m.is_primary().unwrap_or(false))
+        .or_else(|| monitors.first())
+        .cloned()
+        .ok_or_else(|| "Aucun écran détecté".to_string())
+}
+
+// Screen dimensions only, no pixel capture — used by "windows_ui"
+// perception mode, which never needs an actual screenshot.
+fn primary_screen_size() -> Result<(u32, u32), String> {
+    let monitor = primary_monitor()?;
+    Ok((monitor.width().map_err(|e| e.to_string())?, monitor.height().map_err(|e| e.to_string())?))
+}
+
 // Cheap capture for settle-comparison only — a tiny grayscale downscale,
 // nowhere near the quality/size needed for the real screenshot sent to
 // Gemini (capture_screenshot_base64 handles that once the screen has
 // settled).
 fn capture_grayscale_thumb() -> Result<Vec<u8>, String> {
-    let monitors = Monitor::all().map_err(|e| e.to_string())?;
-    let monitor = monitors
-        .iter()
-        .find(|m| m.is_primary().unwrap_or(false))
-        .or_else(|| monitors.first())
-        .ok_or_else(|| "Aucun écran détecté".to_string())?;
+    let monitor = primary_monitor()?;
     let image = monitor.capture_image().map_err(|e| e.to_string())?;
     let width = image.width();
     let scaled_height = if width > SETTLE_THUMB_WIDTH {
@@ -254,12 +272,7 @@ fn dispatch_action(app: &AppHandle, name: &str, args: &Value, width: u32, height
 // dimensions (not the downscaled ones) are what denormalize() uses, since a
 // 0-999 coordinate is the same fraction of the screen either way.
 pub(crate) fn capture_screenshot_base64() -> Result<(String, u32, u32), String> {
-    let monitors = Monitor::all().map_err(|e| e.to_string())?;
-    let monitor = monitors
-        .iter()
-        .find(|m| m.is_primary().unwrap_or(false))
-        .or_else(|| monitors.first())
-        .ok_or_else(|| "Aucun écran détecté".to_string())?;
+    let monitor = primary_monitor()?;
     let image = monitor.capture_image().map_err(|e| e.to_string())?;
     let (width, height) = (image.width(), image.height());
 
@@ -440,6 +453,190 @@ fn execute_action(name: &str, args: &Value, width: u32, height: u32) -> Result<S
     }
 }
 
+fn remember_fact_tool() -> Value {
+    json!({
+        "type": "function",
+        "name": "remember_fact",
+        "description": "Enregistre un fait durable appris sur l'utilisateur (son rôle, ses habitudes, les logiciels qu'il utilise...) pour s'en souvenir lors de futures sessions. Uniquement pour de l'information utile sur le long terme, pas des détails ponctuels sans intérêt futur.",
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "fact": { "type": "string", "description": "Le fait à retenir, formulé clairement et de façon autonome" },
+                "category": { "type": "string", "description": "Catégorie optionnelle (ex: rôle, logiciel, habitude)" }
+            },
+            "required": ["fact"]
+        }
+    })
+}
+
+fn read_ui_elements_tool(preferred: bool) -> Value {
+    let description = if preferred {
+        "Lit la structure d'accessibilité de la fenêtre actuellement au premier plan (titre + liste des contrôles visibles avec leur type, leur libellé exact, leur état activé/désactivé, et leur position déjà normalisée 0-999 — le même repère que les coordonnées des autres outils). En mode Windows UI, c'est déjà rafraîchi automatiquement après chaque action — appelle-le toi-même seulement si tu veux revérifier sans agir. Ne fonctionne pas pour une interface dessinée directement (jeu, canvas, éditeur graphique)."
+    } else {
+        "Lit la structure d'accessibilité de la fenêtre actuellement au premier plan (titre + liste des contrôles visibles avec leur type, leur libellé exact, leur état activé/désactivé, et leur position déjà normalisée 0-999 — le même repère que les coordonnées de clic) sans prendre de capture d'écran, donc nettement plus rapide qu'une capture (pas d'analyse visuelle à faire, réponse quasi instantanée). PRÉFÈRE cet outil à computer_use dès que tu dois localiser ou vérifier un élément précis (bouton, champ, libellé exact) dans une fenêtre standard — appelle-le d'abord plutôt que de deviner une position sur une capture d'écran. Limite réelle à connaître : ne fonctionne pas pour une interface dessinée directement (jeu, canvas, éditeur graphique) qui n'expose rien à l'accessibilité — dans ce cas seulement, reviens à computer_use."
+    };
+    json!({
+        "type": "function",
+        "name": "read_ui_elements",
+        "description": description,
+        "parameters": { "type": "object", "properties": {} }
+    })
+}
+
+fn build_capture_tools() -> Value {
+    json!([
+        {
+            "type": "computer_use",
+            "environment": "desktop",
+            "enable_prompt_injection_detection": true,
+        },
+        remember_fact_tool(),
+        read_ui_elements_tool(false),
+    ])
+}
+
+// "windows_ui" mode drops computer_use entirely (it's fundamentally a
+// screenshot-driven tool — sending it a text-only observation isn't a
+// supported combination) and exposes the same actions execute_action()
+// already implements as plain custom function tools instead, using the
+// exact same parameter names so dispatch_action/execute_action need zero
+// changes to handle either mode. Coordinates use the same 0-999 space
+// read_ui_elements already reports, so an element's reported position is
+// directly usable here without conversion.
+//
+// Real trade-off, not hidden: Gemini's require_confirmation safety signal
+// is part of computer_use's own protocol specifically — a custom function
+// tool has no equivalent, so that safety net does not exist in this mode.
+fn build_windows_ui_tools() -> Value {
+    let xy_params = |extra: Value| {
+        let mut props = json!({
+            "x": { "type": "number", "description": "Position X normalisée 0-999" },
+            "y": { "type": "number", "description": "Position Y normalisée 0-999" }
+        });
+        if let (Some(props_obj), Some(extra_obj)) = (props.as_object_mut(), extra.as_object()) {
+            for (k, v) in extra_obj {
+                props_obj.insert(k.clone(), v.clone());
+            }
+        }
+        json!({ "type": "object", "properties": props, "required": ["x", "y"] })
+    };
+    let click_tool = |name: &str, label: &str| {
+        json!({
+            "type": "function",
+            "name": name,
+            "description": format!("{label}, à la position normalisée 0-999 donnée (même repère que read_ui_elements)."),
+            "parameters": xy_params(json!({}))
+        })
+    };
+
+    json!([
+        click_tool("click", "Clic gauche"),
+        click_tool("double_click", "Double-clic gauche"),
+        click_tool("triple_click", "Triple-clic gauche"),
+        click_tool("middle_click", "Clic molette"),
+        click_tool("right_click", "Clic droit"),
+        click_tool("mouse_down", "Enfonce le bouton gauche de la souris (sans le relâcher)"),
+        {
+            "type": "function",
+            "name": "mouse_up",
+            "description": "Relâche le bouton gauche de la souris précédemment enfoncé avec mouse_down.",
+            "parameters": { "type": "object", "properties": {} }
+        },
+        click_tool("move", "Déplace la souris (sans cliquer)"),
+        {
+            "type": "function",
+            "name": "type",
+            "description": "Tape du texte à l'endroit où se trouve le curseur/focus actuel.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "text": { "type": "string", "description": "Le texte à taper" },
+                    "press_enter": { "type": "boolean", "description": "Appuyer sur Entrée après avoir tapé le texte" }
+                },
+                "required": ["text"]
+            }
+        },
+        {
+            "type": "function",
+            "name": "drag_and_drop",
+            "description": "Glisse-dépose depuis une position normalisée 0-999 vers une autre.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "start_x": { "type": "number" }, "start_y": { "type": "number" },
+                    "end_x": { "type": "number" }, "end_y": { "type": "number" }
+                },
+                "required": ["start_x", "start_y", "end_x", "end_y"]
+            }
+        },
+        {
+            "type": "function",
+            "name": "wait",
+            "description": "Attend un court instant (ex. le temps qu'une interface charge) avant de continuer.",
+            "parameters": {
+                "type": "object",
+                "properties": { "seconds": { "type": "number", "description": "Durée en secondes (max 10)" } },
+                "required": ["seconds"]
+            }
+        },
+        {
+            "type": "function",
+            "name": "press_key",
+            "description": "Appuie puis relâche une touche du clavier (ex. \"enter\", \"tab\", \"escape\", une lettre...).",
+            "parameters": {
+                "type": "object",
+                "properties": { "key": { "type": "string" } },
+                "required": ["key"]
+            }
+        },
+        {
+            "type": "function",
+            "name": "key_down",
+            "description": "Maintient une touche enfoncée (à relâcher plus tard avec key_up) — utile pour maintenir Shift/Ctrl pendant une autre action.",
+            "parameters": {
+                "type": "object",
+                "properties": { "key": { "type": "string" } },
+                "required": ["key"]
+            }
+        },
+        {
+            "type": "function",
+            "name": "key_up",
+            "description": "Relâche une touche précédemment maintenue avec key_down.",
+            "parameters": {
+                "type": "object",
+                "properties": { "key": { "type": "string" } },
+                "required": ["key"]
+            }
+        },
+        {
+            "type": "function",
+            "name": "hotkey",
+            "description": "Appuie sur une combinaison de touches simultanément (ex. [\"ctrl\", \"c\"]) puis les relâche dans l'ordre inverse.",
+            "parameters": {
+                "type": "object",
+                "properties": { "keys": { "type": "array", "items": { "type": "string" } } },
+                "required": ["keys"]
+            }
+        },
+        {
+            "type": "function",
+            "name": "scroll",
+            "description": "Fait défiler la fenêtre au premier plan.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "direction": { "type": "string", "enum": ["up", "down", "left", "right"] },
+                    "magnitude_in_pixels": { "type": "number" }
+                },
+                "required": ["direction"]
+            }
+        },
+        remember_fact_tool(),
+        read_ui_elements_tool(true),
+    ])
+}
+
 #[tauri::command]
 pub async fn run_control_me(
     cancel: State<'_, ControlMeCancelFlag>,
@@ -478,33 +675,26 @@ pub async fn run_control_me_core(
     let flag = cancel_flag;
     let client = reqwest::Client::new();
 
-    let (initial_screenshot, width, height) = capture_screenshot_base64()?;
-    let tools = json!([
-        {
-            "type": "computer_use",
-            "environment": "desktop",
-            "enable_prompt_injection_detection": true,
-        },
-        {
-            "type": "function",
-            "name": "remember_fact",
-            "description": "Enregistre un fait durable appris sur l'utilisateur (son rôle, ses habitudes, les logiciels qu'il utilise...) pour s'en souvenir lors de futures sessions. Uniquement pour de l'information utile sur le long terme, pas des détails ponctuels sans intérêt futur.",
-            "parameters": {
-                "type": "object",
-                "properties": {
-                    "fact": { "type": "string", "description": "Le fait à retenir, formulé clairement et de façon autonome" },
-                    "category": { "type": "string", "description": "Catégorie optionnelle (ex: rôle, logiciel, habitude)" }
-                },
-                "required": ["fact"]
-            }
-        },
-        {
-            "type": "function",
-            "name": "read_ui_elements",
-            "description": "Lit la structure d'accessibilité de la fenêtre actuellement au premier plan (titre + liste des contrôles visibles avec leur type, leur libellé exact, leur état activé/désactivé, et leur position déjà normalisée 0-999 — le même repère que les coordonnées de clic) sans prendre de capture d'écran, donc nettement plus rapide qu'une capture (pas d'analyse visuelle à faire, réponse quasi instantanée). PRÉFÈRE cet outil à computer_use dès que tu dois localiser ou vérifier un élément précis (bouton, champ, libellé exact) dans une fenêtre standard — appelle-le d'abord plutôt que de deviner une position sur une capture d'écran. Limite réelle à connaître : ne fonctionne pas pour une interface dessinée directement (jeu, canvas, éditeur graphique) qui n'expose rien à l'accessibilité — dans ce cas seulement, reviens à computer_use.",
-            "parameters": { "type": "object", "properties": {} }
-        }
-    ]);
+    // "capture" (default) sends screenshots through computer_use, same as
+    // always. "windows_ui" sends no screenshots at all — only the
+    // accessibility tree as text, via custom function tools mirroring
+    // execute_action's existing action set. Loaded from settings rather
+    // than passed as a parameter so neither call site (the Tauri command
+    // above, remote.rs) needs to change its own signature for this.
+    let use_ui_mode = load_settings(app.clone())
+        .map(|s| s.control_me_perception_mode == "windows_ui")
+        .unwrap_or(false);
+
+    let (width, height, initial_observation) = if use_ui_mode {
+        let (w, h) = primary_screen_size()?;
+        let text = read_foreground_ui_elements(w, h)
+            .unwrap_or_else(|e| format!("Erreur de lecture de l'interface : {e}"));
+        (w, h, json!({ "type": "text", "text": text }))
+    } else {
+        let (screenshot, w, h) = capture_screenshot_base64()?;
+        (w, h, json!({ "type": "image", "data": screenshot, "mime_type": "image/jpeg" }))
+    };
+    let tools = if use_ui_mode { build_windows_ui_tools() } else { build_capture_tools() };
 
     // thinking_level "low" trades some reasoning depth for much faster
     // per-step responses — appropriate for a tight screenshot/act loop
@@ -532,7 +722,7 @@ pub async fn run_control_me_core(
         "model": model,
         "input": [
             { "type": "text", "text": instruction_with_memory },
-            { "type": "image", "data": initial_screenshot, "mime_type": "image/jpeg" },
+            initial_observation,
         ],
         "tools": tools,
         "generation_config": generation_config,
@@ -660,20 +850,39 @@ pub async fn run_control_me_core(
             return Err(CANCELLED_MESSAGE.to_string());
         }
 
-        let mut result_parts = vec![json!({ "type": "text", "text": error_text.unwrap_or(result_text) })];
+        let mut result_parts = vec![json!({ "type": "text", "text": error_text.clone().unwrap_or_else(|| result_text.clone()) })];
 
-        // read_ui_elements and remember_fact never touch the screen — the
-        // whole point of read_ui_elements is to be a fast, screenshot-free
-        // alternative to computer_use. Waiting to "settle" and attaching a
-        // full screenshot after one anyway would silently cancel out that
-        // speed gain for no reason (nothing visual changed to wait for or
-        // show). Skipped only for these two; every action that can
-        // actually affect the screen still gets the settle wait + a fresh
-        // screenshot, unchanged.
-        if !NO_VISUAL_EFFECT_TOOLS.contains(&action_name.as_str()) {
-            // Adaptive settle wait (see wait_for_settle) instead of a fixed
-            // delay, so the next screenshot reflects the action's actual
-            // visual effect without waiting longer than necessary.
+        if use_ui_mode {
+            // No screenshots at all in this mode — the observation is
+            // always the accessibility tree as text. read_ui_elements
+            // already returned it as result_text above, no need to read
+            // it again; every other action gets a short fixed settle
+            // delay (no pixels to diff against, unlike wait_for_settle)
+            // then a fresh read.
+            if action_name != "read_ui_elements" {
+                tokio::time::sleep(Duration::from_millis(UI_MODE_SETTLE_MS)).await;
+                if flag.load(Ordering::SeqCst) {
+                    let _ = app.emit("control-me-cancelled", ());
+                    return Err(CANCELLED_MESSAGE.to_string());
+                }
+                let refreshed = read_foreground_ui_elements(width, height)
+                    .unwrap_or_else(|e| format!("Erreur de lecture de l'interface : {e}"));
+                result_parts.push(json!({ "type": "text", "text": refreshed }));
+            }
+        } else if !NO_VISUAL_EFFECT_TOOLS.contains(&action_name.as_str()) {
+            // read_ui_elements and remember_fact never touch the screen —
+            // the whole point of read_ui_elements is to be a fast,
+            // screenshot-free alternative to computer_use. Waiting to
+            // "settle" and attaching a full screenshot after one anyway
+            // would silently cancel out that speed gain for no reason
+            // (nothing visual changed to wait for or show). Skipped only
+            // for these two; every action that can actually affect the
+            // screen still gets the settle wait + a fresh screenshot,
+            // unchanged.
+            //
+            // Adaptive settle wait (see wait_for_settle) instead of a
+            // fixed delay, so the next screenshot reflects the action's
+            // actual visual effect without waiting longer than necessary.
             wait_for_settle(flag.clone()).await;
             if flag.load(Ordering::SeqCst) {
                 let _ = app.emit("control-me-cancelled", ());

@@ -18,6 +18,8 @@ pub struct Settings {
     pub gemini_model: String,
     #[serde(default)]
     pub remote_code: Option<String>,
+    #[serde(default = "default_control_me_perception_mode")]
+    pub control_me_perception_mode: String,
 }
 
 fn default_codex_mode() -> String {
@@ -26,6 +28,16 @@ fn default_codex_mode() -> String {
 
 fn default_gemini_model() -> String {
     "gemini-3.5-flash-lite".to_string()
+}
+
+// "capture" (screenshots via computer_use, current default) or
+// "windows_ui" (Windows UI Automation only, no screenshots at all — see
+// controlme.rs). Defaults to "capture": it's the only mode where Gemini's
+// own require_confirmation safety signal exists at all (it's part of
+// computer_use's own protocol, not something a custom tool carries), so
+// switching to "windows_ui" should be an explicit opt-in, not a surprise.
+fn default_control_me_perception_mode() -> String {
+    "capture".to_string()
 }
 
 fn default_settings() -> Settings {
@@ -42,6 +54,7 @@ fn default_settings() -> Settings {
         gemini_api_key: None,
         gemini_model: default_gemini_model(),
         remote_code: None,
+        control_me_perception_mode: default_control_me_perception_mode(),
     }
 }
 
