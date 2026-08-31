@@ -306,13 +306,24 @@ l'en-tête de `ControlMeView.tsx`, persisté dans `Settings.gemini_model`
 (même pattern que `codex_mode`/`codex_last_folder` : prop
 `onPersistModel` → `handlePersistControlMeModel` dans `App.tsx` →
 `saveSettings`). `run_control_me` accepte maintenant un paramètre `model`
-côté Rust (retombe sur `gemini-3.7-flash` si vide). **Point important
-vérifié par recherche web avant d'ajouter l'option** : `gemini-3.6-flash`
-n'apparaît PAS dans la liste des modèles compatibles avec l'outil
-`computer_use` documentée par Google (contrairement aux trois autres) —
-laissé sélectionnable quand même puisque demandé explicitement, mais avec
-un libellé "(compatibilité non confirmée)" dans le menu pour que ça ne
-soit pas un mystère si une session échoue avec ce modèle.
+côté Rust. **Point important vérifié par recherche web avant d'ajouter
+l'option** : `gemini-3.6-flash` n'apparaît PAS dans la liste des modèles
+compatibles avec l'outil `computer_use` documentée par Google
+(contrairement aux trois autres) — laissé sélectionnable quand même
+puisque demandé explicitement, mais avec un libellé "(compatibilité non
+confirmée)" dans le menu pour que ça ne soit pas un mystère si une
+session échoue avec ce modèle.
+
+**Modèle recommandé par défaut (v0.5.1bis)** : demandé explicitement —
+`gemini-3.5-flash-lite` plutôt que `gemini-3.7-flash`, dans les trois
+endroits où un défaut existe (`GEMINI_MODELS` de `ControlMeView.tsx`,
+son fallback `useState`, `GEMINI_MODEL` de `controlme.rs`, et
+`default_gemini_model()` de `settings.rs`). **À noter, documenté dans
+`CONTROLME.md`** : Google appelle explicitement `gemini-3.7-flash` "le
+modèle recommandé pour le contrôle d'ordinateur" — ce choix de
+recommandation par défaut dans l'app est une préférence assumée de
+l'utilisateur (rapidité/coût), pas la recommandation de Google, signalé
+comme tel plutôt que présenté comme si Google le recommandait.
 
 ### Control Me : produit installable séparément (v0.5.0)
 

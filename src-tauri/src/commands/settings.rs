@@ -23,7 +23,7 @@ fn default_codex_mode() -> String {
 }
 
 fn default_gemini_model() -> String {
-    "gemini-3.7-flash".to_string()
+    "gemini-3.5-flash-lite".to_string()
 }
 
 fn default_settings() -> Settings {

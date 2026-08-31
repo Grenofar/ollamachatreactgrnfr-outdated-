@@ -38,7 +38,9 @@ pub struct MemoryEntry {
 }
 
 const MAX_CONTROL_ME_ITERATIONS: u32 = 40;
-const GEMINI_MODEL: &str = "gemini-3.7-flash";
+// Fallback only (used if the frontend somehow sends an empty model string)
+// — the real default lives in settings.rs's default_gemini_model().
+const GEMINI_MODEL: &str = "gemini-3.5-flash-lite";
 const GEMINI_ENDPOINT: &str = "https://generativelanguage.googleapis.com/v1beta/interactions";
 const CANCELLED_MESSAGE: &str = "Annulé par l'utilisateur.";
 // Normalized 0-999 coordinates map to a fraction of the screenshot

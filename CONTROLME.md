@@ -84,8 +84,11 @@ installation.
 
 ## Modèle Gemini utilisé
 
-Choix dans le menu déroulant en haut de l'app : Gemini 3.5 Flash-Lite, 3.5
-Flash, 3.6 Flash, ou 3.7 Flash (recommandé — c'est le seul explicitement
-optimisé par Google pour le contrôle d'ordinateur). 3.6 Flash n'est pas
+Choix dans le menu déroulant en haut de l'app : Gemini 3.5 Flash-Lite
+(recommandé par défaut ici), 3.7 Flash, 3.5 Flash, ou 3.6 Flash. À noter :
+Google documente 3.7 Flash comme "le modèle recommandé pour le contrôle
+d'ordinateur" spécifiquement — le choix de 3.5 Flash-Lite comme
+recommandation par défaut dans cette app est une préférence assumée
+(rapidité/coût), pas la recommandation de Google. 3.6 Flash n'est pas
 documenté par Google comme compatible avec cette fonctionnalité ; il reste
 sélectionnable, mais une session pourrait échouer avec ce modèle.

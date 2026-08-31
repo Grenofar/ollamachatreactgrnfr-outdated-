@@ -25,11 +25,14 @@ interface TranscriptEntry {
 // gemini-3.6-flash isn't in Google's documented list of computer_use-compatible
 // models (verified 2026-08-30) — kept selectable since it was explicitly
 // requested, but flagged so a failed run isn't a mystery.
+// Note: Google's own docs call gemini-3.7-flash "the recommended model for
+// computer use" specifically — marking 3.5 Flash-Lite as recommended here
+// is a deliberate user choice, not Google's guidance.
 const GEMINI_MODELS = [
-  { id: "gemini-3.7-flash", label: "Gemini 3.7 Flash (recommandé)" },
+  { id: "gemini-3.5-flash-lite", label: "Gemini 3.5 Flash-Lite (recommandé)" },
+  { id: "gemini-3.7-flash", label: "Gemini 3.7 Flash" },
   { id: "gemini-3.6-flash", label: "Gemini 3.6 Flash (compatibilité non confirmée)" },
   { id: "gemini-3.5-flash", label: "Gemini 3.5 Flash" },
-  { id: "gemini-3.5-flash-lite", label: "Gemini 3.5 Flash-Lite (rapide, économique)" },
 ];
 
 export default function ControlMeView({
@@ -44,7 +47,7 @@ export default function ControlMeView({
   const [instruction, setInstruction] = useState("");
   const [entries, setEntries] = useState<TranscriptEntry[]>([]);
   const [running, setRunning] = useState(false);
-  const [model, setModel] = useState(settings.gemini_model || "gemini-3.7-flash");
+  const [model, setModel] = useState(settings.gemini_model || "gemini-3.5-flash-lite");
   const [pendingConfirmation, setPendingConfirmation] = useState<{ action: string; explanation: string } | null>(
     null,
   );

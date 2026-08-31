@@ -7,6 +7,18 @@
 alter table public.app_releases
   add column if not exists product text not null default 'ollamachat';
 
+-- IMPORTANT: `create or replace function` only replaces a function with the
+-- EXACT SAME parameter list. Since the old latest_release_manifest() had no
+-- parameters and this one takes p_product, Postgres kept BOTH as separate
+-- overloads instead of replacing — which breaks PostgREST for a no-argument
+-- call (it can't decide between them: "Could not choose the best candidate
+-- function... latest_release_manifest(), latest_release_manifest(p_product
+-- => text)", error PGRST203). The old zero-argument overload must be
+-- dropped explicitly. If you already ran an earlier version of this file
+-- without the DROP FUNCTION line below, run this file again — it's safe to
+-- re-run.
+drop function if exists public.latest_release_manifest();
+
 -- Replaces latest_release_manifest() with a parameterized version.
 -- Backward compatible by construction: existing rows default to
 -- product = 'ollamachat', and p_product defaults to 'ollamachat' too, so
@@ -42,4 +54,4 @@ grant execute on function public.latest_release_manifest(text) to anon;
 --   -H "apikey: <anon key>"
 -- curl "https://cihuwuiyziarnghethbi.supabase.co/rest/v1/rpc/latest_release_manifest?p_product=controlme" \
 --   -H "apikey: <anon key>"
--- The second call returns null until a Control Me release is actually published.
+-- Both should return valid manifest JSON, not a PGRST203 error.
