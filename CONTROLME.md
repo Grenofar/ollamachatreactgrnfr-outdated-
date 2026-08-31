@@ -69,7 +69,9 @@ Tes sessions (tes instructions et ce que l'IA a fait) sont sauvegardées
 automatiquement sur ton PC — elles ne disparaissent plus en fermant l'app.
 Le bouton **Historique** en haut te permet de relire une ancienne session
 ou de la supprimer. Le bouton **Nouvelle session** démarre une conversation
-vide sans perdre celle en cours (elle reste dans l'historique).
+vide sans perdre celle en cours (elle reste dans l'historique). Un champ de
+recherche dans le panneau Historique filtre par titre ou par contenu, et un
+double-clic sur le titre d'une session permet de la renommer.
 
 ## Lancement au démarrage de Windows
 

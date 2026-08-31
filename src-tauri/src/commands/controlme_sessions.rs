@@ -58,6 +58,25 @@ pub fn list_control_me_sessions(app: AppHandle) -> Result<Vec<ControlMeSessionMe
     Ok(items)
 }
 
+// Searches title AND entry content (unlike list above) — same rationale as
+// conversations.rs's search_conversations: titles are auto-generated from
+// the first message, so a title-only search misses most of an older
+// session's actual content.
+#[tauri::command]
+pub fn search_control_me_sessions(app: AppHandle, query: String) -> Result<Vec<ControlMeSessionMeta>, String> {
+    let dir = control_me_sessions_dir(&app)?;
+    let q = query.to_lowercase();
+    let mut items: Vec<ControlMeSessionMeta> = read_all_sessions(&dir)?
+        .iter()
+        .filter(|s| {
+            s.title.to_lowercase().contains(&q) || s.entries.iter().any(|e| e.content.to_lowercase().contains(&q))
+        })
+        .map(|s| ControlMeSessionMeta { id: s.id.clone(), title: s.title.clone(), created_at: s.created_at })
+        .collect();
+    items.sort_by(|a, b| b.created_at.partial_cmp(&a.created_at).unwrap());
+    Ok(items)
+}
+
 #[tauri::command]
 pub fn load_control_me_session(app: AppHandle, id: String) -> Result<ControlMeSession, String> {
     let path = control_me_sessions_dir(&app)?.join(format!("{}.json", id));

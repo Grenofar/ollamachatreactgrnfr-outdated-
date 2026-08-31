@@ -293,6 +293,7 @@ export default function App() {
       created_at: Date.now() / 1000,
       messages: [],
     });
+    setView("chat");
   }
 
   async function handleSelectConversation(id: string) {
@@ -300,6 +301,7 @@ export default function App() {
     switchDraft(id);
     setCurrentConv(conv);
     if (models.some((m) => m.name === conv.model)) setSelectedModel(conv.model);
+    setView("chat");
   }
 
   async function handleDeleteConversation(id: string) {
@@ -463,14 +465,12 @@ export default function App() {
             settings={settings}
             models={models}
             onPersistCodexPrefs={handlePersistCodexPrefs}
-            onBack={() => setView("chat")}
           />
         </Suspense>
       ) : view === "controlme" && settings ? (
         <Suspense fallback={<div className="codex-editor-empty">Chargement…</div>}>
           <ControlMeView
             settings={settings}
-            onBack={() => setView("chat")}
             onPersistModel={handlePersistControlMeModel}
           />
         </Suspense>

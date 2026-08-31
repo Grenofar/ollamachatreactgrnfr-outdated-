@@ -178,6 +178,8 @@ export const listControlMeMemory = () => invoke<ControlMeMemoryEntry[]>("list_co
 export const clearControlMeMemory = () => invoke<void>("clear_control_me_memory");
 
 export const listControlMeSessions = () => invoke<ControlMeSessionMeta[]>("list_control_me_sessions");
+export const searchControlMeSessions = (query: string) =>
+  invoke<ControlMeSessionMeta[]>("search_control_me_sessions", { query });
 export const loadControlMeSession = (id: string) => invoke<ControlMeSession>("load_control_me_session", { id });
 export const saveControlMeSession = (session: ControlMeSession) =>
   invoke<void>("save_control_me_session", { session });

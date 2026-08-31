@@ -1056,10 +1056,38 @@ body {
   margin-top: 8px;
 }
 
+.controlme-session-search {
+  width: 100%;
+  box-sizing: border-box;
+  margin-bottom: 8px;
+  background: #232323;
+  border: 1px solid #3a3a3a;
+  border-radius: 8px;
+  color: #eaeaea;
+  padding: 6px 10px;
+  font-size: 12px;
+  outline: none;
+}
+
+.controlme-session-search:focus {
+  border-color: #3d6dd8;
+}
+
 .controlme-session-entry {
   display: flex;
   align-items: center;
   gap: 6px;
+}
+
+.controlme-session-rename {
+  flex: 1;
+  background: #1c1c1c;
+  border: 1px solid #3d6dd8;
+  border-radius: 8px;
+  color: #eaeaea;
+  padding: 6px 10px;
+  font-size: 12px;
+  outline: none;
 }
 
 .controlme-session-title {

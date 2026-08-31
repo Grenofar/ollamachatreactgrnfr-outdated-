@@ -50,6 +50,7 @@ pas devenir obsolète.
 - [FAIT] v0.5.1 : Control Me — confirmation `require_confirmation` désormais inline (reprend la session en place au lieu de tout arrêter), mémoire IA type RAG simplifiée où **l'IA décide elle-même** quoi retenir sur l'utilisateur via un outil `remember_fact` (panneau "Mémoire" pour voir/tout effacer), lancement au démarrage de Windows (build standalone) — voir "Confirmation inline, mémoire IA, lancement au démarrage" dans Architecture > Control Me.
 - [FAIT] v0.5.2 : correctif critique Supabase (`latest_release_manifest` ambigu après la migration `product`, cassait l'auto-update de l'app de chat pour de vrai — `drop function` manquant, voir journal 2026-08-31) + modèle Gemini recommandé par défaut changé vers `gemini-3.5-flash-lite` (contredit la recommandation de Google, assumé et documenté).
 - [FAIT] v0.5.3 : historique des sessions Control Me — les conversations ne disparaissent plus à la fermeture, sauvegardées automatiquement (même pattern que les conversations du chat), boutons "Nouvelle session"/"Historique" pour relire ou supprimer une ancienne session — voir "Historique des sessions Control Me (v0.5.3)" dans Architecture > Control Me.
+- [FAIT] v0.5.4 : recherche dans l'historique Control Me (titre + contenu, `search_control_me_sessions`), renommage d'une session (double-clic, comme la Sidebar du chat), et navigation simplifiée — plus de bouton dédié "← Chat" dans Codex/Control Me, cliquer un élément de la Sidebar (nouvelle conversation ou conversation existante) y ramène directement — voir "Recherche/renommage de session, retrait du bouton retour (v0.5.4)" dans Architecture > Control Me.
 
 ## Architecture
 
@@ -513,6 +514,54 @@ de les relire." Implémentation qui **calque exactement** le pattern déjà
   standalone, sans code supplémentaire — `ControlMeView.tsx` est
   entièrement partagé entre les deux (voir "Control Me : produit
   installable séparément" plus haut).
+
+### Recherche/renommage de session, retrait du bouton retour (v0.5.4)
+
+Trois demandes explicites groupées dans la même session de travail.
+
+- **Recherche dans l'historique** : `search_control_me_sessions` (Rust,
+  `controlme_sessions.rs`) — même principe que `search_conversations`,
+  cherche dans le titre ET le contenu de chaque `entry`, pas juste le
+  titre affiché (même raison que pour le chat : les titres sont
+  auto-générés depuis les 40 premiers caractères du premier message).
+  Côté `ControlMeView.tsx` : un `useEffect` sur `[historyQuery,
+  showHistory]` — requête vide → `listControlMeSessions()` immédiat
+  (pas de debounce, l'ouverture du panneau ne doit pas attendre) ; requête
+  non vide → `searchControlMeSessions(query)` après 200ms (même debounce
+  que la recherche de conversation dans `Sidebar.tsx`). Un champ
+  `<input>` ajouté en haut du panneau "Historique" (`.controlme-session-search`).
+- **Renommer une session** : double-clic sur le titre dans le panneau
+  Historique, même pattern exact que `Sidebar.tsx` (input inline,
+  Entrée valide, Échap/blur annule — `renamingSessionId`/
+  `renameSessionText`, nouvelle classe `.controlme-session-rename`). Deux
+  cas distincts selon que la session renommée est celle actuellement
+  affichée ou non :
+  - **Session active** : passe par un nouvel état `customTitle` plutôt que
+    de sauvegarder directement — l'effet de sauvegarde automatique
+    (`useEffect` sur `entries`) recalculait jusqu'ici le titre depuis le
+    premier message à *chaque* nouvelle entrée, ce qui écrasait
+    silencieusement un renommage manuel dès le message suivant. Le titre
+    utilisé est maintenant `customTitle ?? titre-calculé`, et `customTitle`
+    est aussi dans les dépendances de l'effet pour déclencher une
+    sauvegarde immédiate au renommage. Remis à `null` sur "Nouvelle
+    session" ; réhydraté depuis `session.title` au chargement d'une
+    session existante (comportement inchangé pour une session jamais
+    renommée : le titre recalculé est de toute façon identique, puisque le
+    premier message d'une session ne change jamais après coup).
+  - **Session non active** (une autre session dans la liste, pas celle en
+    cours) : ne passe pas par `entries`/`customTitle` — charge la session
+    complète (`loadControlMeSession`), patch son titre, la resauvegarde
+    directement. La liste affichée est mise à jour de façon optimiste
+    (`setSessions`) avant même que la sauvegarde ne réponde.
+- **Retrait du bouton "← Chat"** : sur demande explicite ("plus de bouton
+  retourner au chat, cliquer sur la sidebar suffit") — `onBack` retiré
+  entièrement de `CodexView.tsx` et `ControlMeView.tsx` (prop, type, JSX).
+  La Sidebar reste **toujours visible**, quelle que soit la vue active
+  (`view` dans `App.tsx`), donc cliquer "Nouvelle conversation" ou une
+  conversation existante suffit à revenir au chat — `setView("chat")`
+  ajouté dans `handleNewConversation` et `handleSelectConversation`
+  (`App.tsx`), les deux seuls points d'entrée qui déclenchent
+  `onNew`/`onSelect` de la Sidebar.
 
 ### Les 6 outils de l'agent
 1. `read_file` — lecture texte (limite 5 Mo), chemin absolu
@@ -1234,6 +1283,17 @@ l'utilisateur confirme qu'elle est bien dans `.env` local.
   `latest_release_manifest?p_product=controlme` : renvoie bien la v0.5.3)
   — les deux endpoints confirmés indépendants l'un de l'autre après
   publication des deux, cohérent avec le correctif de la v0.5.2.
+- **2026-08-31** — v0.5.4 : trois demandes explicites groupées — recherche
+  dans l'historique Control Me (titre + contenu, `search_control_me_sessions`),
+  renommage d'une session par double-clic (même pattern que la Sidebar du
+  chat), et retrait du bouton "← Chat" dédié dans Codex/Control Me au
+  profit d'un simple clic sur la Sidebar (toujours visible) pour revenir
+  au chat — voir "Recherche/renommage de session, retrait du bouton retour
+  (v0.5.4)" dans Architecture > Control Me pour le détail complet, y
+  compris le piège évité (`customTitle` pour empêcher l'effet de
+  sauvegarde automatique d'écraser un renommage manuel au message
+  suivant). `npx tsc --noEmit` et `cargo check` passés à 0 erreur avant
+  publication.
 
 ## Prochaines étapes (dans l'ordre du fichier de passation d'origine)
 

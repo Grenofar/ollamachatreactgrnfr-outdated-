@@ -8,6 +8,7 @@ use commands::controlme::{
 };
 use commands::controlme_sessions::{
     delete_control_me_session, list_control_me_sessions, load_control_me_session, save_control_me_session,
+    search_control_me_sessions,
 };
 use commands::conversations::{
     delete_conversation, list_conversations, load_conversation, save_conversation, search_conversations,
@@ -162,6 +163,7 @@ pub fn run() {
             list_control_me_memory,
             clear_control_me_memory,
             list_control_me_sessions,
+            search_control_me_sessions,
             load_control_me_session,
             save_control_me_session,
             delete_control_me_session,

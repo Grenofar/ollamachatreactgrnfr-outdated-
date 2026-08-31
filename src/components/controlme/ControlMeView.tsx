@@ -18,6 +18,7 @@ import {
   resolveControlMeConfirmation,
   runControlMe,
   saveControlMeSession,
+  searchControlMeSessions,
 } from "../../api";
 import type { ControlMeMemoryEntry, ControlMeSessionMeta, Settings } from "../../types";
 
@@ -43,11 +44,9 @@ const NEW_SESSION_TITLE = "Nouvelle session";
 
 export default function ControlMeView({
   settings,
-  onBack,
   onPersistModel,
 }: {
   settings: Settings;
-  onBack?: () => void;
   onPersistModel: (model: string) => void;
 }) {
   const [instruction, setInstruction] = useState("");
@@ -63,6 +62,10 @@ export default function ControlMeView({
   const [sessionCreatedAt, setSessionCreatedAt] = useState(() => Date.now() / 1000);
   const [showHistory, setShowHistory] = useState(false);
   const [sessions, setSessions] = useState<ControlMeSessionMeta[] | null>(null);
+  const [historyQuery, setHistoryQuery] = useState("");
+  const [customTitle, setCustomTitle] = useState<string | null>(null);
+  const [renamingSessionId, setRenamingSessionId] = useState<string | null>(null);
+  const [renameSessionText, setRenameSessionText] = useState("");
   const scrollRef = useRef<HTMLDivElement>(null);
 
   const apiKey = settings.gemini_api_key?.trim() ?? "";
@@ -79,13 +82,36 @@ export default function ControlMeView({
   // Persists the whole running transcript under one session id, the same
   // "save on every change" pattern App.tsx uses for chat conversations —
   // so a Control Me session survives closing the app instead of vanishing.
+  // customTitle overrides the auto-computed title once the session has been
+  // renamed — without it, this effect re-firing on every new entry would
+  // silently stomp a manual rename back to the auto-generated one.
   useEffect(() => {
     if (entries.length === 0) return;
     const firstUser = entries.find((e) => e.role === "user");
-    const title = firstUser ? firstUser.content.slice(0, 40) : NEW_SESSION_TITLE;
+    const title = customTitle ?? (firstUser ? firstUser.content.slice(0, 40) : NEW_SESSION_TITLE);
     saveControlMeSession({ id: sessionId, title, created_at: sessionCreatedAt, entries }).catch(() => {});
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [entries]);
+  }, [entries, customTitle]);
+
+  // Debounced history search — mirrors Sidebar.tsx's conversation search:
+  // an empty query loads the plain list immediately, a typed query waits
+  // 200ms before hitting search_control_me_sessions (title + entry content).
+  useEffect(() => {
+    if (!showHistory) return;
+    const query = historyQuery.trim();
+    if (!query) {
+      listControlMeSessions()
+        .then(setSessions)
+        .catch(() => setSessions([]));
+      return;
+    }
+    const handle = window.setTimeout(() => {
+      searchControlMeSessions(query)
+        .then(setSessions)
+        .catch(() => setSessions([]));
+    }, 200);
+    return () => window.clearTimeout(handle);
+  }, [historyQuery, showHistory]);
 
   useEffect(() => {
     const unlistens = [
@@ -180,16 +206,16 @@ export default function ControlMeView({
       setShowHistory(false);
       return;
     }
+    setSessions(null);
+    setHistoryQuery("");
     setShowHistory(true);
-    listControlMeSessions()
-      .then(setSessions)
-      .catch(() => setSessions([]));
   }
 
   function handleNewSession() {
     setEntries([]);
     setSessionId(crypto.randomUUID());
     setSessionCreatedAt(Date.now() / 1000);
+    setCustomTitle(null);
     setShowHistory(false);
   }
 
@@ -199,6 +225,7 @@ export default function ControlMeView({
         setEntries(session.entries as TranscriptEntry[]);
         setSessionId(session.id);
         setSessionCreatedAt(session.created_at);
+        setCustomTitle(session.title);
         setShowHistory(false);
       })
       .catch(() => {});
@@ -208,9 +235,39 @@ export default function ControlMeView({
     deleteControlMeSession(id)
       .then(() => {
         setSessions((prev) => prev?.filter((s) => s.id !== id) ?? null);
+        if (renamingSessionId === id) cancelRenameSession();
         if (id === sessionId) handleNewSession();
       })
       .catch(() => {});
+  }
+
+  function startRenameSession(session: ControlMeSessionMeta) {
+    setRenamingSessionId(session.id);
+    setRenameSessionText(session.title);
+  }
+
+  function cancelRenameSession() {
+    setRenamingSessionId(null);
+    setRenameSessionText("");
+  }
+
+  // Renaming the currently-active session just updates customTitle — the
+  // auto-save effect above picks it up and persists it. Renaming a
+  // different, non-active session has to load it, patch its title, and
+  // save it back directly, since it's not reflected in `entries`.
+  function confirmRenameSession() {
+    const title = renameSessionText.trim();
+    const id = renamingSessionId;
+    cancelRenameSession();
+    if (!id || !title) return;
+    setSessions((prev) => prev?.map((s) => (s.id === id ? { ...s, title } : s)) ?? null);
+    if (id === sessionId) {
+      setCustomTitle(title);
+    } else {
+      loadControlMeSession(id)
+        .then((session) => saveControlMeSession({ ...session, title }))
+        .catch(() => {});
+    }
   }
 
   function handleKeyDown(e: KeyboardEvent<HTMLTextAreaElement>) {
@@ -223,7 +280,6 @@ export default function ControlMeView({
   return (
     <div className="controlme">
       <div className="controlme-header">
-        {onBack && <button onClick={onBack}>← Chat</button>}
         <span className="controlme-header-title">Control Me</span>
         <div className="controlme-header-spacer" />
         <button onClick={handleNewSession}>Nouvelle session</button>
@@ -251,6 +307,13 @@ export default function ControlMeView({
 
       {showHistory && (
         <div className="controlme-memory-panel">
+          <input
+            className="controlme-session-search"
+            type="text"
+            placeholder="Rechercher dans l'historique…"
+            value={historyQuery}
+            onChange={(e) => setHistoryQuery(e.target.value)}
+          />
           {sessions === null ? (
             <div className="controlme-memory-empty">Chargement…</div>
           ) : sessions.length === 0 ? (
@@ -259,12 +322,28 @@ export default function ControlMeView({
             <div className="controlme-memory-list">
               {sessions.map((s) => (
                 <div key={s.id} className="controlme-session-entry">
-                  <button
-                    className={`controlme-session-title ${s.id === sessionId ? "controlme-session-active" : ""}`}
-                    onClick={() => handleLoadSession(s.id)}
-                  >
-                    {s.title}
-                  </button>
+                  {renamingSessionId === s.id ? (
+                    <input
+                      autoFocus
+                      className="controlme-session-rename"
+                      value={renameSessionText}
+                      onChange={(e) => setRenameSessionText(e.target.value)}
+                      onKeyDown={(e) => {
+                        if (e.key === "Enter") confirmRenameSession();
+                        else if (e.key === "Escape") cancelRenameSession();
+                      }}
+                      onBlur={cancelRenameSession}
+                    />
+                  ) : (
+                    <button
+                      className={`controlme-session-title ${s.id === sessionId ? "controlme-session-active" : ""}`}
+                      onClick={() => handleLoadSession(s.id)}
+                      onDoubleClick={() => startRenameSession(s)}
+                      title="Double-clic pour renommer"
+                    >
+                      {s.title}
+                    </button>
+                  )}
                   <button className="controlme-session-delete" onClick={() => handleDeleteSession(s.id)}>
                     ✕
                   </button>

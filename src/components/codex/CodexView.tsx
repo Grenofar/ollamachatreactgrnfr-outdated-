@@ -24,12 +24,10 @@ export default function CodexView({
   settings,
   models,
   onPersistCodexPrefs,
-  onBack,
 }: {
   settings: Settings;
   models: OllamaModel[];
   onPersistCodexPrefs: (mode: "auto" | "approve", lastFolder: string) => void;
-  onBack: () => void;
 }) {
   const [rootFolder, setRootFolder] = useState<string | null>(settings.codex_last_folder ?? null);
   const [mode, setMode] = useState<"auto" | "approve">(settings.codex_mode);
@@ -156,7 +154,6 @@ export default function CodexView({
     <div className="codex">
       <div className="codex-main">
         <div className="codex-header">
-          <button onClick={onBack}>← Chat</button>
           <button onClick={handlePickFolder}>{rootFolder ? "Changer de dossier" : "Choisir un dossier"}</button>
           {rootFolder && <span className="codex-header-title">{rootFolder}</span>}
           <div className="codex-header-spacer" />
