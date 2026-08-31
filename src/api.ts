@@ -6,6 +6,8 @@ import type {
   AgentMessage,
   ChatMessage,
   ControlMeMemoryEntry,
+  ControlMeSession,
+  ControlMeSessionMeta,
   ControlMeStep,
   Conversation,
   ConversationMeta,
@@ -174,3 +176,9 @@ export const resolveControlMeConfirmation = (accept: boolean) =>
 export const listControlMeMemory = () => invoke<ControlMeMemoryEntry[]>("list_control_me_memory");
 
 export const clearControlMeMemory = () => invoke<void>("clear_control_me_memory");
+
+export const listControlMeSessions = () => invoke<ControlMeSessionMeta[]>("list_control_me_sessions");
+export const loadControlMeSession = (id: string) => invoke<ControlMeSession>("load_control_me_session", { id });
+export const saveControlMeSession = (session: ControlMeSession) =>
+  invoke<void>("save_control_me_session", { session });
+export const deleteControlMeSession = (id: string) => invoke<void>("delete_control_me_session", { id });

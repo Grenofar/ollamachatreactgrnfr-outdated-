@@ -99,3 +99,21 @@ export interface ControlMeMemoryEntry {
   created_at: number;
 }
 
+export interface ControlMeSessionEntry {
+  role: string;
+  content: string;
+}
+
+export interface ControlMeSession {
+  id: string;
+  title: string;
+  created_at: number;
+  entries: ControlMeSessionEntry[];
+}
+
+export interface ControlMeSessionMeta {
+  id: string;
+  title: string;
+  created_at: number;
+}
+

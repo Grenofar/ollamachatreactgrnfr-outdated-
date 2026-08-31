@@ -63,6 +63,14 @@ tout effacer d'un coup. Ces faits restent uniquement sur ton PC (fichier
 local) ; ils sont réinjectés dans le contexte au début de chaque nouvelle
 instruction pour que Gemini en tienne compte.
 
+## Historique des sessions
+
+Tes sessions (tes instructions et ce que l'IA a fait) sont sauvegardées
+automatiquement sur ton PC — elles ne disparaissent plus en fermant l'app.
+Le bouton **Historique** en haut te permet de relire une ancienne session
+ou de la supprimer. Le bouton **Nouvelle session** démarre une conversation
+vide sans perdre celle en cours (elle reste dans l'historique).
+
 ## Lancement au démarrage de Windows
 
 Une case à cocher en haut de l'app active/désactive le lancement

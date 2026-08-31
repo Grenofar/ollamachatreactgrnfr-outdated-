@@ -49,6 +49,7 @@ pas devenir obsolète.
 - [FAIT] v0.5.0 : Control Me installable **séparément** de l'app de chat, même mécanisme de mise à jour/setup, bouton dédié sur le site, doc autonome `CONTROLME.md` — voir "Control Me : produit installable séparément (v0.5.0)" dans Architecture > Control Me pour le détail complet (config Tauri alternative fusionnée par-dessus la config de base, pas de duplication de code, colonne `product` sur `app_releases`). **Migration SQL à exécuter par l'utilisateur avant de considérer le site à jour** — sans elle, le bouton de téléchargement existant de l'app de chat casse aussi.
 - [FAIT] v0.5.1 : Control Me — confirmation `require_confirmation` désormais inline (reprend la session en place au lieu de tout arrêter), mémoire IA type RAG simplifiée où **l'IA décide elle-même** quoi retenir sur l'utilisateur via un outil `remember_fact` (panneau "Mémoire" pour voir/tout effacer), lancement au démarrage de Windows (build standalone) — voir "Confirmation inline, mémoire IA, lancement au démarrage" dans Architecture > Control Me.
 - [FAIT] v0.5.2 : correctif critique Supabase (`latest_release_manifest` ambigu après la migration `product`, cassait l'auto-update de l'app de chat pour de vrai — `drop function` manquant, voir journal 2026-08-31) + modèle Gemini recommandé par défaut changé vers `gemini-3.5-flash-lite` (contredit la recommandation de Google, assumé et documenté).
+- [FAIT] v0.5.3 : historique des sessions Control Me — les conversations ne disparaissent plus à la fermeture, sauvegardées automatiquement (même pattern que les conversations du chat), boutons "Nouvelle session"/"Historique" pour relire ou supprimer une ancienne session — voir "Historique des sessions Control Me (v0.5.3)" dans Architecture > Control Me.
 
 ## Architecture
 
@@ -474,6 +475,44 @@ par Google : un outil `yield_to_user` personnalisé aux côtés de
   `enable`/`disable`/`isEnabled`) — scopé au build standalone comme
   demandé ; l'app de chat principale n'a pas ce contrôle dans son
   interface, même si le plugin est enregistré pour les deux (même crate).
+
+### Historique des sessions Control Me (v0.5.3)
+
+Demandé explicitement : "les conversations Control Me disparaissent à la
+fermeture ; les sauvegarder comme le fait déjà l'app de chat permettrait
+de les relire." Implémentation qui **calque exactement** le pattern déjà
+établi pour les conversations de chat plutôt que d'inventer autre chose :
+
+- `src-tauri/src/commands/controlme_sessions.rs` (nouveau) — même forme
+  que `conversations.rs` trait pour trait : `ControlMeSession`
+  (id/title/created_at/entries) pour le contenu complet,
+  `ControlMeSessionMeta` (sans `entries`) pour la liste, un fichier JSON
+  par session dans `{data_dir}/controlme_sessions/` (nouveau helper
+  `control_me_sessions_dir` dans `mod.rs`, copie de `conversations_dir`).
+  `list_control_me_sessions`/`load_control_me_session`/
+  `save_control_me_session`/`delete_control_me_session` — pas de
+  recherche par contenu comme `search_conversations`, pas demandé pour
+  l'instant.
+- **Sauvegarde automatique**, même déclencheur que le chat (App.tsx) :
+  `useEffect` sur `entries` dans `ControlMeView.tsx`, sauvegarde à chaque
+  changement tant qu'il y a au moins une entrée. Le titre se déduit du
+  premier message utilisateur tronqué à 40 caractères (même règle que
+  `NEW_CONV_TITLE` du chat), "Nouvelle session" sinon.
+- `sessionId`/`sessionCreatedAt` générés côté frontend
+  (`crypto.randomUUID()`/`Date.now() / 1000`), même pattern que
+  `handleNewConversation` dans `App.tsx` — pas générés côté Rust.
+- UI : boutons "Nouvelle session" et "Historique" dans l'en-tête de
+  `ControlMeView.tsx`, panneau de liste réutilisant le style visuel du
+  panneau "Mémoire" existant (même classes `.controlme-memory-panel`/
+  `.controlme-memory-list`, nouvelles classes seulement pour la ligne
+  session elle-même avec son bouton supprimer). Cliquer une session la
+  charge (remplace `entries` courant) ; supprimer la session actuellement
+  affichée démarre automatiquement une nouvelle session vide plutôt que
+  de laisser un état incohérent.
+- Disponible à la fois dans Control Me embarqué et dans le build
+  standalone, sans code supplémentaire — `ControlMeView.tsx` est
+  entièrement partagé entre les deux (voir "Control Me : produit
+  installable séparément" plus haut).
 
 ### Les 6 outils de l'agent
 1. `read_file` — lecture texte (limite 5 Mo), chemin absolu

@@ -4,7 +4,10 @@ import SendButton from "../SendButton";
 import {
   cancelControlMe,
   clearControlMeMemory,
+  deleteControlMeSession,
   listControlMeMemory,
+  listControlMeSessions,
+  loadControlMeSession,
   onControlMeCancelled,
   onControlMeConfirmationRequired,
   onControlMeDone,
@@ -14,8 +17,9 @@ import {
   onControlMeStep,
   resolveControlMeConfirmation,
   runControlMe,
+  saveControlMeSession,
 } from "../../api";
-import type { ControlMeMemoryEntry, Settings } from "../../types";
+import type { ControlMeMemoryEntry, ControlMeSessionMeta, Settings } from "../../types";
 
 interface TranscriptEntry {
   role: "user" | "assistant" | "system";
@@ -35,6 +39,8 @@ const GEMINI_MODELS = [
   { id: "gemini-3.5-flash", label: "Gemini 3.5 Flash" },
 ];
 
+const NEW_SESSION_TITLE = "Nouvelle session";
+
 export default function ControlMeView({
   settings,
   onBack,
@@ -53,6 +59,10 @@ export default function ControlMeView({
   );
   const [showMemory, setShowMemory] = useState(false);
   const [memory, setMemory] = useState<ControlMeMemoryEntry[] | null>(null);
+  const [sessionId, setSessionId] = useState<string>(() => crypto.randomUUID());
+  const [sessionCreatedAt, setSessionCreatedAt] = useState(() => Date.now() / 1000);
+  const [showHistory, setShowHistory] = useState(false);
+  const [sessions, setSessions] = useState<ControlMeSessionMeta[] | null>(null);
   const scrollRef = useRef<HTMLDivElement>(null);
 
   const apiKey = settings.gemini_api_key?.trim() ?? "";
@@ -64,6 +74,17 @@ export default function ControlMeView({
 
   useEffect(() => {
     scrollRef.current?.scrollTo({ top: scrollRef.current.scrollHeight });
+  }, [entries]);
+
+  // Persists the whole running transcript under one session id, the same
+  // "save on every change" pattern App.tsx uses for chat conversations —
+  // so a Control Me session survives closing the app instead of vanishing.
+  useEffect(() => {
+    if (entries.length === 0) return;
+    const firstUser = entries.find((e) => e.role === "user");
+    const title = firstUser ? firstUser.content.slice(0, 40) : NEW_SESSION_TITLE;
+    saveControlMeSession({ id: sessionId, title, created_at: sessionCreatedAt, entries }).catch(() => {});
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [entries]);
 
   useEffect(() => {
@@ -154,6 +175,44 @@ export default function ControlMeView({
       .catch(() => {});
   }
 
+  function toggleHistory() {
+    if (showHistory) {
+      setShowHistory(false);
+      return;
+    }
+    setShowHistory(true);
+    listControlMeSessions()
+      .then(setSessions)
+      .catch(() => setSessions([]));
+  }
+
+  function handleNewSession() {
+    setEntries([]);
+    setSessionId(crypto.randomUUID());
+    setSessionCreatedAt(Date.now() / 1000);
+    setShowHistory(false);
+  }
+
+  function handleLoadSession(id: string) {
+    loadControlMeSession(id)
+      .then((session) => {
+        setEntries(session.entries as TranscriptEntry[]);
+        setSessionId(session.id);
+        setSessionCreatedAt(session.created_at);
+        setShowHistory(false);
+      })
+      .catch(() => {});
+  }
+
+  function handleDeleteSession(id: string) {
+    deleteControlMeSession(id)
+      .then(() => {
+        setSessions((prev) => prev?.filter((s) => s.id !== id) ?? null);
+        if (id === sessionId) handleNewSession();
+      })
+      .catch(() => {});
+  }
+
   function handleKeyDown(e: KeyboardEvent<HTMLTextAreaElement>) {
     if (e.key === "Enter" && !e.shiftKey) {
       e.preventDefault();
@@ -167,6 +226,8 @@ export default function ControlMeView({
         {onBack && <button onClick={onBack}>← Chat</button>}
         <span className="controlme-header-title">Control Me</span>
         <div className="controlme-header-spacer" />
+        <button onClick={handleNewSession}>Nouvelle session</button>
+        <button onClick={toggleHistory}>Historique</button>
         <button onClick={toggleMemory}>Mémoire</button>
         <select
           className="controlme-model-select"
@@ -185,6 +246,32 @@ export default function ControlMeView({
       {!apiKey && (
         <div className="banner banner-error">
           Aucune clé API Gemini configurée. Ajoute-la dans Réglages pour utiliser Control Me.
+        </div>
+      )}
+
+      {showHistory && (
+        <div className="controlme-memory-panel">
+          {sessions === null ? (
+            <div className="controlme-memory-empty">Chargement…</div>
+          ) : sessions.length === 0 ? (
+            <div className="controlme-memory-empty">Aucune session enregistrée pour l'instant.</div>
+          ) : (
+            <div className="controlme-memory-list">
+              {sessions.map((s) => (
+                <div key={s.id} className="controlme-session-entry">
+                  <button
+                    className={`controlme-session-title ${s.id === sessionId ? "controlme-session-active" : ""}`}
+                    onClick={() => handleLoadSession(s.id)}
+                  >
+                    {s.title}
+                  </button>
+                  <button className="controlme-session-delete" onClick={() => handleDeleteSession(s.id)}>
+                    ✕
+                  </button>
+                </div>
+              ))}
+            </div>
+          )}
         </div>
       )}
 

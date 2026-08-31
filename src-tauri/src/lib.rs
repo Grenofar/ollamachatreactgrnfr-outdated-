@@ -6,6 +6,9 @@ use commands::controlme::{
     cancel_control_me, clear_control_me_memory, list_control_me_memory, resolve_control_me_confirmation,
     run_control_me, ControlMeCancelFlag, ControlMeConfirmation,
 };
+use commands::controlme_sessions::{
+    delete_control_me_session, list_control_me_sessions, load_control_me_session, save_control_me_session,
+};
 use commands::conversations::{
     delete_conversation, list_conversations, load_conversation, save_conversation, search_conversations,
 };
@@ -158,6 +161,10 @@ pub fn run() {
             resolve_control_me_confirmation,
             list_control_me_memory,
             clear_control_me_memory,
+            list_control_me_sessions,
+            load_control_me_session,
+            save_control_me_session,
+            delete_control_me_session,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
