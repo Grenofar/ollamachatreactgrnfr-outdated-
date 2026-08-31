@@ -88,6 +88,31 @@ Une case à cocher en haut de l'app active/désactive le lancement
 automatique au démarrage de Windows — pratique pour un outil censé être
 disponible à tout moment.
 
+## Contrôle à distance depuis le site
+
+Tu peux aussi piloter Control Me depuis un navigateur, sur la page
+`/controlremote` du site (lien depuis la page d'accueil) — pratique pour
+lancer une instruction depuis ton téléphone pendant que ton PC tourne.
+Dans Réglages → Control Me, génère un **code à 12 chiffres**,
+saisis-le une fois sur le site : il se reconnecte automatiquement à chaque
+visite ensuite (bouton **Se déconnecter** pour jumeler un autre code). Une
+fois connecté, le site affiche ton écran en direct, une zone de chat pour
+donner des instructions, et un bouton **Arrêter**.
+
+**Traite ce code comme un mot de passe** : toute personne qui le connaît
+peut voir ton écran et contrôler ton PC depuis n'importe où. Le site
+bloque un navigateur après 5 codes invalides essayés (protection
+locale au navigateur, pas infaillible — voir `CLAUDE.md` pour le détail).
+Régénère le code si tu penses qu'il a pu fuiter.
+
+**Limite actuelle** : le bouton pour générer un code vit dans les Réglages
+de l'**application de chat principale** (page pleine, section Control Me) —
+pas encore exposé dans la barre du haut minimale du build Control Me
+**standalone**, même si le fonctionnement à distance lui-même marche pour
+les deux (même code Rust). Si tu utilises uniquement Control Me standalone,
+génère le code une fois depuis l'app de chat principale si tu l'as aussi
+installée ; sinon cette fonctionnalité n'est pas encore accessible pour toi.
+
 ## Installation
 
 Tu as besoin de ta propre clé API Gemini (obtenue sur Google AI Studio) —

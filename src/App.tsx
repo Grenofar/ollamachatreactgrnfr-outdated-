@@ -4,13 +4,13 @@ import { relaunch } from "@tauri-apps/plugin-process";
 import "./App.css";
 import Sidebar from "./components/Sidebar";
 import MessageBubble from "./components/MessageBubble";
-import SettingsModal from "./components/SettingsModal";
 import HuggingFaceBrowser from "./components/codex/HuggingFaceBrowser";
 import SendButton from "./components/SendButton";
 import ModelSelect from "./components/ModelSelect";
 
 const CodexView = lazy(() => import("./components/codex/CodexView"));
 const ControlMeView = lazy(() => import("./components/controlme/ControlMeView"));
+const SettingsView = lazy(() => import("./components/SettingsView"));
 import {
   listModels,
   listConversations,
@@ -29,6 +29,7 @@ import {
   onChatError,
   onFreezeWarning,
   onFreezeResolved,
+  onRemoteViewerChanged,
 } from "./api";
 import { estimateTokens, trimMessagesToBudget } from "./memory";
 import type { ChatMessage, Conversation, ConversationMeta, OllamaModel, Settings, StoredMessage } from "./types";
@@ -49,9 +50,9 @@ export default function App() {
   const [sending, setSending] = useState(false);
   const [streamingText, setStreamingText] = useState("");
   const [connError, setConnError] = useState<string | null>(null);
-  const [showSettings, setShowSettings] = useState(false);
   const [showInstall, setShowInstall] = useState(false);
-  const [view, setView] = useState<"chat" | "codex" | "controlme">("chat");
+  const [view, setView] = useState<"chat" | "codex" | "controlme" | "settings">("chat");
+  const [remoteConnected, setRemoteConnected] = useState(false);
   const [editingIndex, setEditingIndex] = useState<number | null>(null);
   const [editText, setEditText] = useState("");
   const [ramGb, setRamGb] = useState<number | null>(null);
@@ -156,6 +157,13 @@ export default function App() {
     saveConversation(currentConv).then(refreshConversations);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [currentConv]);
+
+  useEffect(() => {
+    const unlisten = onRemoteViewerChanged(setRemoteConnected);
+    return () => {
+      unlisten.then((f) => f());
+    };
+  }, []);
 
   function clearFreezeTimers() {
     if (graceTimeoutRef.current !== null) {
@@ -434,6 +442,13 @@ export default function App() {
     });
   }
 
+  // generate_remote_code/clear_remote_code already persist settings.json on
+  // the Rust side (see remote.rs) — this just syncs the already-saved
+  // value into React state, no second saveSettings call needed.
+  function handleRemoteCodeChanged(code: string | null) {
+    setSettings((prev) => (prev ? { ...prev, remote_code: code } : prev));
+  }
+
   const messages = currentConv?.messages ?? [];
   const conversationTokens = messages.reduce((sum, m) => sum + (m.tokens ?? estimateTokens(m.content)), 0);
   const contextTokens = settings
@@ -454,7 +469,7 @@ export default function App() {
         onSelect={handleSelectConversation}
         onDelete={handleDeleteConversation}
         onRename={handleRenameConversation}
-        onOpenSettings={() => setShowSettings(true)}
+        onOpenSettings={() => setView("settings")}
         onOpenInstall={() => setShowInstall(true)}
         onOpenCodex={() => setView("codex")}
         onOpenControlMe={() => setView("controlme")}
@@ -473,6 +488,26 @@ export default function App() {
           <ControlMeView
             settings={settings}
             onPersistModel={handlePersistControlMeModel}
+          />
+        </Suspense>
+      ) : view === "settings" && settings ? (
+        <Suspense fallback={<div className="codex-editor-empty">Chargement…</div>}>
+          <SettingsView
+            settings={settings}
+            models={models}
+            remoteConnected={remoteConnected}
+            onSave={handleSaveSettings}
+            onRefreshModels={() => refreshModels(settings.ollama_host)}
+            onPersistModel={handlePersistControlMeModel}
+            onRemoteCodeChanged={handleRemoteCodeChanged}
+            checkingUpdate={checkingUpdate}
+            upToDate={upToDate}
+            updateError={updateError}
+            availableUpdate={availableUpdate}
+            installingUpdate={installingUpdate}
+            updateInstallPct={updateInstallPct}
+            onCheckUpdate={handleCheckUpdate}
+            onInstallUpdate={handleInstallUpdate}
           />
         </Suspense>
       ) : (
@@ -560,24 +595,6 @@ export default function App() {
       </div>
       )}
 
-      {showSettings && settings && (
-        <SettingsModal
-          settings={settings}
-          models={models}
-          onClose={() => setShowSettings(false)}
-          onSave={handleSaveSettings}
-          onRefreshModels={() => refreshModels(settings.ollama_host)}
-          checkingUpdate={checkingUpdate}
-          upToDate={upToDate}
-          updateError={updateError}
-          availableUpdate={availableUpdate}
-          installingUpdate={installingUpdate}
-          updateInstallPct={updateInstallPct}
-          onCheckUpdate={handleCheckUpdate}
-          onInstallUpdate={handleInstallUpdate}
-        />
-      )}
-
       {showInstall && settings && (
         <HuggingFaceBrowser
           host={settings.ollama_host}
@@ -587,7 +604,7 @@ export default function App() {
         />
       )}
 
-      {availableUpdate && availableUpdate.version !== dismissedUpdateVersion && !showSettings && (
+      {availableUpdate && availableUpdate.version !== dismissedUpdateVersion && view !== "settings" && (
         <div className="update-toast">
           <div className="update-toast-text">
             <strong>Nouvelle version disponible : {availableUpdate.version}</strong>

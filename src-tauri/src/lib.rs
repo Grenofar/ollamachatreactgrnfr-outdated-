@@ -16,23 +16,22 @@ use commands::conversations::{
 use commands::fsops::{edit_file_text, list_dir, read_file_text, write_file_text};
 use commands::hardware::get_system_ram_gb;
 use commands::huggingface::search_hf_models;
+use commands::remote::{clear_remote_code, generate_remote_code, resume_remote_on_startup, RemoteState};
 use commands::settings::{load_settings, save_settings};
 use commands::shell::{cancel_shell_command, run_powershell_command, ShellCancelFlag};
 use commands::watchdog::{close_app, spawn_watchdog_thread, Watchdog};
+use commands::SUPABASE_ANON_KEY;
 use std::sync::atomic::AtomicBool;
 use std::sync::Arc;
 use tauri::menu::{Menu, MenuItem};
 use tauri::tray::{MouseButton, MouseButtonState, TrayIconBuilder, TrayIconEvent};
 use tauri::{Manager, WindowEvent};
 
-// Anon key: meant to be public (Supabase's own design, gated by Row Level
-// Security), same one committed in site/index.html and tauri.conf.json's
-// updater pubkey field is a different, unrelated key. `tauri.conf.json`'s
-// `plugins.updater` config has NO `headers` field (despite once assuming
-// otherwise) — Supabase's gateway rejects any request without an `apikey`
-// header (401) before it even reaches our RPC function, so these headers
-// have to be set here, on the plugin's Rust builder, not in JSON config.
-const SUPABASE_ANON_KEY: &str = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImNpaHV3dWl5emlhcm5naGV0aGJpIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODgwNjM3OTQsImV4cCI6MjEwMzYzOTc5NH0.AkAe00Vzu4506nHSjh2bl99x5hZUSejZRm3pJwVuGtI";
+// `tauri.conf.json`'s `plugins.updater` config has NO `headers` field
+// (despite once assuming otherwise) — Supabase's gateway rejects any
+// request without an `apikey` header (401) before it even reaches our RPC
+// function, so these headers have to be set here, on the plugin's Rust
+// builder, not in JSON config.
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
@@ -60,9 +59,16 @@ pub fn run() {
         .manage(ControlMeCancelFlag(Arc::new(AtomicBool::new(false))))
         .manage(ControlMeConfirmation(Arc::new(std::sync::Mutex::new(None))))
         .manage(Watchdog::new())
+        .manage(RemoteState::new())
         .setup(|app| {
             let watchdog = app.state::<Watchdog>().0.clone();
             spawn_watchdog_thread(app.handle().clone(), watchdog);
+
+            // If a remote pairing code was already set from a previous
+            // session, start listening again right away — the whole point
+            // of persisting it is that the site reconnects on its own,
+            // which only works if the app is also already listening.
+            resume_remote_on_startup(app.handle().clone());
 
             // Minimize-to-tray: closing the window (the X button) hides it
             // instead of quitting, since this is meant to stay open in the
@@ -167,6 +173,8 @@ pub fn run() {
             load_control_me_session,
             save_control_me_session,
             delete_control_me_session,
+            generate_remote_code,
+            clear_remote_code,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

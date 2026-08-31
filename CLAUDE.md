@@ -53,6 +53,7 @@ pas devenir obsolète.
 - [FAIT] v0.5.4 : recherche dans l'historique Control Me (titre + contenu, `search_control_me_sessions`), renommage d'une session (double-clic, comme la Sidebar du chat), et navigation simplifiée — plus de bouton dédié "← Chat" dans Codex/Control Me, cliquer un élément de la Sidebar (nouvelle conversation ou conversation existante) y ramène directement — voir "Recherche/renommage de session, retrait du bouton retour (v0.5.4)" dans Architecture > Control Me.
 - [FAIT] v0.5.5 : passe d'animations sur toute l'app (CSS uniquement, aucune dépendance ajoutée) — micro-interactions de boutons, halo de focus sur les champs, entrée en fondu/décalage des bulles de chat et cartes d'outils avec effet cascade, indicateur de frappe animé + curseur clignotant pendant le streaming, transition de vue chat/Codex/Control Me, ouverture animée des modales/dropdowns/panneaux, toast de mise à jour avec rebond, accent visuel sur la conversation/section active dans la Sidebar, scrollbar personnalisée — respecte `prefers-reduced-motion`. Voir "Animations et micro-interactions (v0.5.5)" dans Architecture.
 - [FAIT] v0.5.6 : Control Me plus rapide et plus fiable — attente adaptative après chaque action (remplace le délai fixe de 120ms par une détection locale de stabilisation de l'écran) et nouvel outil `read_ui_elements` (Gemini peut lire l'arbre d'accessibilité Windows de la fenêtre au premier plan — type/libellé/état/position des contrôles — sans capture d'écran, en complément de `computer_use`) — voir "Attente adaptative et lecture de l'arbre d'accessibilité (v0.5.6)" dans Architecture > Control Me.
+- [FAIT] v0.5.7 : Control Me pilotable **à distance depuis le site** (`site/controlremote.html`, lien depuis la landing) — code de jumelage à 12 chiffres généré dans l'app, écran live + chat + bouton Arrêter côté navigateur, tout via Supabase **Realtime** (Broadcast + Presence, aucune table Postgres, client WebSocket écrit à la main côté Rust) — voir "Control Me à distance depuis le site (v0.5.7)" dans Architecture > Control Me pour le détail complet, y compris le modèle de sécurité (code = mot de passe partagé, protection anti-brute-force côté navigateur assumée comme non absolue). Réglages **entièrement refaits en page pleine** à sections (Général/Modèles/Control Me/Mises à jour), `SettingsModal.tsx` supprimé au profit de `SettingsView.tsx` — voir "Réglages en page pleine (v0.5.7)".
 
 ## Architecture
 
@@ -770,6 +771,192 @@ tauri-plugin-autostart en leur temps).
   est bien appelé par Gemini quand pertinent (son usage reste à la
   discrétion du modèle, pas forçable).
 
+### Control Me à distance depuis le site (v0.5.7)
+
+Demande explicite : piloter Control Me depuis le site Vercel (pas seulement
+depuis l'app), avec une page `/controlremote` accessible depuis la landing,
+un code de jumelage généré dans l'app et stocké côté navigateur (reconnexion
+automatique à la prochaine visite), écran live + chat + bouton Arrêter, en
+s'appuyant sur Supabase **Realtime**. Deux clarifications tranchées avec
+l'utilisateur avant de coder (voir `AskUserQuestion` dans l'historique) :
+**pas de Prisma** (ORM Node/TS — ne peut pas tourner dans l'app Rust, et le
+site n'a aucun backend ; ajouté un aurait exigé un vrai service Node hors
+scope) — appels directs à Supabase (REST + Realtime) des deux côtés, comme
+partout ailleurs dans ce projet ; et **client Realtime Rust écrit à la
+main** (`tokio-tungstenite` + protocole Phoenix Channels vérifié contre
+https://supabase.com/docs/guides/realtime/protocol avant d'écrire le
+moindre code) plutôt qu'une crate communautaire peu utilisée — aucun client
+Realtime officiel n'existe en Rust, contrairement à `@supabase/supabase-js`
+utilisé tel quel côté site (asymétrie assumée : client officiel là où il
+existe, écrit à la main là où il n'existe pas).
+
+**Découverte qui simplifie tout le design, faite avant d'écrire quoi que ce
+soit** : aucune table Postgres n'est nécessaire. Realtime Broadcast +
+Presence suffit entièrement :
+- Le code de jumelage (12 chiffres, générés par `rand`) est simplement le
+  **nom du salon** (topic) `realtime:remote:{code}` — pas de ligne à
+  créer/valider en base, pas de RLS à écrire pour ça.
+- "Qui est connecté" = **Presence** native du salon : l'app track sa propre
+  présence sous la clé `"host"`, le site sous une clé aléatoire par onglet
+  — toute clé de présence différente de `"host"` est traitée comme un
+  viewer côté app (un seul hôte possible par construction).
+- L'écran live et les instructions/réponses de chat transitent en
+  **Broadcast** éphémère, jamais persistés nulle part.
+
+Ça préserve presque entièrement la posture "Supabase en lecture seule côté
+Postgres" déjà documentée plus bas dans ce fichier — c'est le service
+Realtime (WebSocket), pas l'API REST/Postgres, qui porte toute cette
+fonctionnalité. Nouvelle **5ᵉ exception réseau** documentée dans
+"Confidentialité réseau" ci-dessous : l'écran et les instructions
+transitent désormais aussi par le relais Realtime de Supabase quand le
+contrôle à distance est actif.
+
+- **`src-tauri/src/commands/remote.rs`** (nouveau) : client WebSocket
+  Phoenix Channels écrit à la main (`connect_async` de `tokio-tungstenite`,
+  `rustls-tls-webpki-roots` pour `wss://`, cohérent avec le choix
+  `rustls-tls` déjà fait pour `reqwest` — pas d'openssl/native-tls).
+  `generate_remote_code`/`clear_remote_code` (commandes Tauri) persistent
+  `Settings.remote_code` et démarrent/arrêtent une tâche de fond
+  (`tokio::spawn`, cycle de vie géré via `RemoteState`/`RemoteHandle` —
+  simple `task.abort()` à l'arrêt, pas de flag d'annulation coopératif
+  séparé, aucune section critique à protéger côté remote.rs qui le
+  justifierait). **Reprise automatique au démarrage**
+  (`resume_remote_on_startup`, appelé dans le hook `setup` de `lib.rs`) :
+  si un code existe déjà dans les réglages, l'app se remet à écouter toute
+  seule, cohérent avec "le site se reconnecte tout seul" côté navigateur —
+  sans ça, la reconnexion automatique du site n'aurait personne en face.
+  Heartbeat toutes les 25s, diffusion d'écran (réutilise directement
+  `capture_screenshot_base64()` de `controlme.rs`, rendue `pub(crate)`)
+  à 1 image/seconde **uniquement tant qu'un viewer est présent**
+  (`tokio::time::interval`, pas de capture ni de bande passante sinon).
+  Reconnexion avec délai fixe de 5s en cas de coupure.
+- **Refactor minimal de `controlme.rs`** : le corps de `run_control_me`
+  extrait dans `run_control_me_core` (prend directement les `Arc<...>`
+  au lieu de `State<'_, T>`, pour être appelable depuis `remote.rs` sans
+  passer par l'IPC Tauri), la commande `#[tauri::command]` d'origine
+  devient un wrapper de 3 lignes. **Aucune modification du corps de la
+  boucle Gemini elle-même** : quand une instruction arrive par broadcast,
+  `remote.rs` appelle `run_control_me_core` directement, puis s'abonne
+  temporairement aux **mêmes événements Tauri locaux**
+  (`control-me-step`/`-message`/`-done`/`-error`/`-cancelled`/`-limit`,
+  via `app.listen`/`app.unlisten`) déjà émis normalement par la boucle,
+  et les rediffuse tels quels sur le salon Realtime — plus simple et plus
+  sûr qu'ajouter un paramètre "diffuseur" à travers toute la boucle
+  Gemini, et **bénéfice gratuit** : une instruction déclenchée à distance
+  s'affiche aussi en direct dans `ControlMeView` local si l'app est
+  ouverte, exactement comme une instruction locale.
+  **Lacune connue, assumée** : `control-me-confirmation-required` n'est
+  **pas** rediffusé — une pause `safety_decision` déclenchée par une
+  instruction distante ne peut aujourd'hui être résolue que depuis l'app
+  locale (Réglages/ControlMeView), pas depuis le site. Corriger ça
+  demanderait que le site envoie son propre broadcast
+  accepter/refuser routé vers `resolve_control_me_confirmation` — pas
+  construit dans cette passe, noté comme limite réelle plutôt que caché.
+- **Modèle de sécurité, documenté explicitement, pas caché** : le code est
+  un **secret partagé sans authentification supplémentaire** — quiconque
+  le connaît (ou le devine) peut voir l'écran et contrôler le PC. Même
+  posture de compromis que "autonome par défaut, Stop est le seul
+  garde-fou" déjà en place pour Control Me local. Espace de 10¹² codes
+  (12 chiffres) : deviner au hasard est déjà impraticable sans la moindre
+  protection supplémentaire.
+  **Protection anti-brute-force demandée explicitement, entièrement côté
+  site** (`site/controlremote.html`) : puisqu'aucune table Postgres ne
+  valide un code, "code inexistant" ne peut être détecté que par un
+  **timeout de 8 secondes sans présence `host`** après avoir rejoint le
+  salon — regroupe "code faux" et "app éteinte", indistinguable sans
+  backend, assumé comme tel. Compteur d'échecs dans le `localStorage` du
+  navigateur ; à la 5ᵉ tentative échouée, l'appareil passe en
+  `ollamachat_remote_banned = true` et le formulaire de saisie disparaît
+  définitivement sur ce navigateur. **Ce timeout ne s'applique qu'à la
+  saisie explicite d'un nouveau code** — la reconnexion automatique avec
+  un code déjà enregistré ne compte jamais comme un échec (l'app locale
+  simplement pas encore lancée n'est pas une tentative de piratage).
+  **Limite honnête** : protection entièrement côté client, contournable en
+  vidant le `localStorage`/navigation privée/autre appareil — un vrai frein
+  contre un script bête qui boucle dans le même navigateur, pas une
+  garantie contre un attaquant qui changerait de contexte à chaque
+  tentative. Pistes plus robustes explicitement proposées mais **pas
+  construites** (au choix, si redemandées) : ralentissement progressif
+  entre tentatives, rotation automatique du code, alerte système
+  immédiate dans l'app à toute connexion, un seul viewer à la fois,
+  validation côté serveur (réintroduirait une table Postgres + RLS +
+  Edge Function — la vraie solution robuste si le contournement du ban
+  local devient un problème réel).
+- **`site/controlremote.html`** (nouveau, statique, même philosophie zéro
+  build que `index.html`) : charge `@supabase/supabase-js` via CDN
+  (`type="module"`, jsDelivr `/+esm` — vérifié que `supabase.channel(nom)`
+  correspond bien au topic Phoenix `realtime:{nom}` construit à la main
+  côté Rust, API `channel.on("presence"/"broadcast", ...)`/`.track()`/
+  `.send()`/`.subscribe()` vérifiée contre la doc officielle avant
+  d'écrire le JS). Code sauvegardé dans `localStorage`
+  (`ollamachat_remote_code`) : présent → reconnexion immédiate sans
+  ressaisie ; absent → formulaire. Bouton **Se déconnecter** vide
+  uniquement le code sauvegardé (pas le compteur d'échecs/ban, qui lui
+  reste indépendant). Vue écran (`<img>` dont le `src` devient le dernier
+  `data:image/jpeg;base64,...` reçu — pas de canvas/vidéo, le plus simple
+  et robuste), transcript de chat (`textContent` partout, jamais
+  `innerHTML`, contenu venant du réseau), bouton Arrêter. Lien ajouté
+  dans `site/index.html` (section Control Me existante, pas de nouvelle
+  barre de nav).
+- **Réglages** (Control Me → nouvelle sous-section) : bouton "Générer un
+  code" (affiche le code, avertissement de sécurité explicite),
+  "Régénérer"/"Désactiver", indicateur **live** "Connecté : oui/non"
+  alimenté par l'événement Tauri `remote-viewer-changed` (émis par
+  `remote.rs` à chaque `presence_diff` du salon) — voir "Réglages en page
+  pleine (v0.5.7)" ci-dessous pour la nouvelle organisation.
+- `cargo check` passé à 0 erreur **ni avertissement** dès la première
+  tentative pour tout le client WebSocket écrit à la main (une vraie
+  surprise vu la nouveauté du code, mais confirmé, pas supposé).
+  **Aucune vérification de bout en bout possible dans cet environnement**
+  — contrairement à toute fonctionnalité précédente, celle-ci a besoin de
+  deux bouts vivants en même temps (l'app lancée + un navigateur sur le
+  site déployé), totalement hors de portée ici (pas d'accès GUI, pas de
+  déploiement Vercel déclenchable). Protocole écrit d'après la doc sans
+  jamais l'avoir vu tourner en vrai — risque réel de détail subtil (nom
+  de topic, format de `ref`, timing du heartbeat) qui ne se révélera qu'à
+  l'usage. **À tester explicitement par l'utilisateur** après build +
+  déploiement du site : génération du code, jumelage depuis le site
+  (écran + indicateur "connecté" des deux côtés), instruction envoyée
+  depuis le site exécutée sur le PC, bouton Arrêter, fermeture/réouverture
+  du site (reconnexion automatique sans ressaisir), déconnexion + nouveau
+  code, et les 5 tentatives ratées → bannissement.
+
+### Réglages en page pleine (v0.5.7)
+
+Demandé explicitement, groupé avec le contrôle à distance : refonte
+complète des Réglages, qui n'avaient pas bougé depuis le tout début du
+projet — `SettingsModal.tsx` (169 lignes, une seule popup plate,
+`.modal-overlay`/`.modal`) **supprimé entièrement**, remplacé par
+`src/components/SettingsView.tsx`, une **page pleine** avec plusieurs
+sections, même pattern exact que Codex/Control Me (`view` dans `App.tsx`
+gagne une 4ᵉ valeur `"settings"`, lazy + `Suspense`, plus d'état modal
+séparé — `Sidebar.tsx` : le bouton Paramètres appelle `setView("settings")`
+au lieu d'ouvrir une popup, et gagne le même surlignage d'état actif que
+Codex/Control Me).
+
+- Navigation interne simple (colonne de gauche, `.settings-nav`) entre
+  quatre sections : **Général** (host Ollama/contexte max/prompt système,
+  contenu déplacé tel quel), **Modèles installés** (liste/suppression,
+  déplacé tel quel), **Control Me** (nouvelle organisation : modèle
+  Gemini — même `<select>` que dans `ControlMeView.tsx`, persiste le même
+  `settings.gemini_model`, une seule source de vérité éditable à deux
+  endroits cohérents — clé API Gemini, et le jumelage à distance décrit
+  ci-dessus), **Mises à jour** (déplacé tel quel).
+- Un seul bouton "Enregistrer" reste global (pas un par section) pour les
+  champs texte (Général) — évite plusieurs flux de sauvegarde divergents.
+  Le modèle Gemini et le code de jumelage, eux, persistent **immédiatement**
+  à chaque changement (même pattern que `handlePersistControlMeModel`
+  existant / les nouvelles commandes `generate_remote_code`/
+  `clear_remote_code` qui sauvegardent déjà côté Rust) — pas de double
+  sauvegarde ni d'incohérence si l'utilisateur quitte la page sans cliquer
+  "Enregistrer".
+- CSS : `.settings-view`/`.settings-nav`/`.settings-content`/
+  `.settings-section` (nouvelles classes) réutilisent les styles déjà
+  partagés par `.modal` pour les champs/boutons (`label`/`input`/
+  `textarea`/`select`/`button` étendus pour cibler aussi
+  `.settings-section`, pas dupliqués) et le système d'animation déjà en
+  place depuis la v0.5.5 (`view-in` pour l'entrée de la page).
+
 ### Les 6 outils de l'agent
 1. `read_file` — lecture texte (limite 5 Mo), chemin absolu
 2. `list_dir` — listing un niveau, chemin absolu
@@ -939,8 +1126,20 @@ réseau sortants dans `src-tauri/src/commands/` à cette date :
    C'est une rupture délibérée et documentée de la garantie ci-dessous, pas
    un oubli — demandée explicitement par l'utilisateur en connaissance de
    cause.
+5. **[2026-08-31, exception explicite] `remote.rs`** (client WebSocket
+   Realtime de Control Me à distance) → service Supabase **Realtime**
+   (pas l'API REST/Postgres), **uniquement quand un code de jumelage est
+   actif** (généré explicitement par l'utilisateur dans Réglages). Envoie
+   des **captures d'écran complètes en continu** (1/s tant qu'un viewer
+   est présent sur le salon) et le texte des instructions/réponses vers ce
+   relais, consultable par quiconque a rejoint le salon avec le bon code —
+   voir "Control Me à distance depuis le site (v0.5.7)" dans Architecture
+   > Control Me pour le détail complet (aucune table Postgres, tout en
+   Broadcast/Presence éphémère jamais persisté ; modèle de sécurité du
+   code de jumelage). Même famille de rupture délibérée et documentée que
+   le point 4 — demandée explicitement, en connaissance de cause.
 
-En dehors de ces quatre cas, aucune autre destination réseau n'existe dans
+En dehors de ces cinq cas, aucune autre destination réseau n'existe dans
 le code (pas de télémétrie, pas d'analytics, pas d'appel automatique à un
 service tiers non listé ici). Si tu ajoutes un nouvel appel réseau, vérifie
 qu'il tombe dans un de ces cas — sinon, demande confirmation avant d'envoyer
@@ -1514,6 +1713,44 @@ l'utilisateur confirme qu'elle est bien dans `.env` local.
   `npm run build` passés à 0 erreur. **Pas de vérification visuelle
   possible dans cet environnement** (pas d'accès GUI) — à confirmer par
   l'utilisateur après installation.
+- **2026-08-31** — v0.5.6 : Control Me plus rapide et plus fiable, sur
+  discussion libre autour d'alternatives aux captures d'écran classiques
+  ("plus opti", "en live") ayant abouti à un plan validé en deux parties.
+  Voir "Attente adaptative et lecture de l'arbre d'accessibilité (v0.5.6)"
+  dans Architecture > Control Me pour le détail technique complet :
+  attente adaptative locale (miniatures niveaux de gris, remplace le délai
+  fixe de 120ms) et nouvel outil `read_ui_elements` via la crate
+  `uiautomation` (API vérifiée dans son vrai code source avant d'écrire
+  quoi que ce soit, même discipline qu'enigo/xcap). Bug réel de la crate
+  découvert en compilant (import non conditionné malgré la feature
+  "input" désactivée) et corrigé en réactivant juste cette feature.
+  `cargo check` passé à 0 erreur/avertissement. App de chat principale et
+  Control Me standalone publiés et vérifiés indépendamment via la clé
+  anon.
+- **2026-08-31** — v0.5.7 : Control Me pilotable à distance depuis le
+  site, demandé explicitement avec un niveau de détail élevé (jumelage par
+  code, écran live, chat, bouton Arrêter, persistance côté navigateur,
+  Supabase Realtime) puis complété par une exigence de protection
+  anti-brute-force (code à 12 chiffres, ban après 5 tentatives échouées,
+  stocké en local) suivie d'une demande d'en proposer d'autres — voir
+  "Control Me à distance depuis le site (v0.5.7)" dans Architecture >
+  Control Me pour le détail technique complet. Passé par plan mode vu
+  l'ampleur (nouvelle brique d'infra temps réel, plusieurs décisions
+  d'architecture) avec deux clarifications tranchées via `AskUserQuestion`
+  avant de coder : pas de Prisma (ORM Node/TS incompatible avec l'app
+  Rust et le site statique) au profit d'appels directs Supabase, et un
+  client Realtime Rust écrit à la main (`tokio-tungstenite` + protocole
+  Phoenix Channels vérifié contre la doc officielle) plutôt qu'une crate
+  communautaire peu éprouvée. Découverte notable pendant la conception :
+  aucune table Postgres n'est nécessaire, Broadcast + Presence suffisent
+  entièrement (le code de jumelage est directement le nom du salon).
+  `cargo check` passé à 0 erreur ni avertissement dès la première
+  tentative pour tout le client WebSocket. Réglages entièrement refaits
+  en page pleine dans la même passe (demande groupée) — voir "Réglages en
+  page pleine (v0.5.7)". **Aucune vérification de bout en bout possible
+  dans cet environnement** (nécessite l'app lancée ET un navigateur sur
+  le site déployé en même temps) — à tester explicitement par
+  l'utilisateur après build et déploiement Vercel du site.
 
 ## Prochaines étapes (dans l'ordre du fichier de passation d'origine)
 

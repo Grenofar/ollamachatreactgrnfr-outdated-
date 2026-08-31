@@ -17,7 +17,7 @@ export default function Sidebar({
 }: {
   conversations: ConversationMeta[];
   currentId: string | null;
-  view: "chat" | "codex" | "controlme";
+  view: "chat" | "codex" | "controlme" | "settings";
   onNew: () => void;
   onSelect: (id: string) => void;
   onDelete: (id: string) => void;
@@ -146,7 +146,10 @@ export default function Sidebar({
       <button className="sidebar-install-btn" onClick={onOpenInstall}>
         Installer un modèle
       </button>
-      <button className="sidebar-settings-btn" onClick={onOpenSettings}>
+      <button
+        className={`sidebar-settings-btn ${view === "settings" ? "sidebar-nav-active" : ""}`}
+        onClick={onOpenSettings}
+      >
         Paramètres
       </button>
     </div>

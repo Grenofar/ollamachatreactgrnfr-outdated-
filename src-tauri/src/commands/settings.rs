@@ -16,6 +16,8 @@ pub struct Settings {
     pub gemini_api_key: Option<String>,
     #[serde(default = "default_gemini_model")]
     pub gemini_model: String,
+    #[serde(default)]
+    pub remote_code: Option<String>,
 }
 
 fn default_codex_mode() -> String {
@@ -39,6 +41,7 @@ fn default_settings() -> Settings {
         codex_last_folder: None,
         gemini_api_key: None,
         gemini_model: default_gemini_model(),
+        remote_code: None,
     }
 }
 

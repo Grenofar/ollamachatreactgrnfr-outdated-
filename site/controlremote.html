@@ -1,0 +1,503 @@
+<!doctype html>
+<html lang="fr">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Control Me à distance</title>
+<meta name="description" content="Contrôle ton PC à distance depuis ce navigateur, jumelé avec l'app Control Me via un code." />
+<style>
+  :root {
+    color-scheme: dark;
+    --bg: #0b0d10;
+    --bg-raised: #14171b;
+    --border: #23272e;
+    --text: #e8eaed;
+    --text-dim: #9aa0a6;
+    --accent: #6ea8fe;
+    --accent-strong: #4c86e0;
+    --warn: #e0b666;
+    --danger: #e08a8a;
+    --ok: #7fd0a0;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    background: var(--bg);
+    color: var(--text);
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+    line-height: 1.5;
+  }
+  .wrap {
+    max-width: 720px;
+    margin: 0 auto;
+    padding: 40px 20px 64px;
+  }
+  .back-link {
+    display: inline-block;
+    color: var(--text-dim);
+    text-decoration: none;
+    font-size: 0.85rem;
+    margin-bottom: 20px;
+  }
+  .back-link:hover { color: var(--text); }
+  h1 {
+    font-size: 1.5rem;
+    margin: 0 0 8px;
+  }
+  p { color: var(--text-dim); margin: 0 0 12px; }
+
+  .note {
+    background: var(--bg-raised);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    padding: 14px 16px;
+    font-size: 0.88rem;
+    color: var(--text-dim);
+    margin-bottom: 20px;
+  }
+  .note strong { color: var(--warn); }
+
+  .banned-note strong { color: var(--danger); }
+
+  form { display: flex; flex-direction: column; gap: 12px; }
+  input[type="text"] {
+    background: var(--bg-raised);
+    border: 1px solid var(--border);
+    color: var(--text);
+    border-radius: 8px;
+    padding: 12px 14px;
+    font-size: 1.3rem;
+    letter-spacing: 3px;
+    font-family: Consolas, Menlo, monospace;
+    text-align: center;
+  }
+  .pair-error {
+    font-size: 0.85rem;
+    color: var(--warn);
+    min-height: 1.2em;
+  }
+
+  .btn {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 10px;
+    padding: 12px 24px;
+    border-radius: 10px;
+    border: 1px solid var(--border);
+    background: var(--bg-raised);
+    color: var(--text);
+    font-size: 0.95rem;
+    cursor: pointer;
+  }
+  .btn-primary {
+    color: #ffffff;
+    background: var(--accent-strong);
+    border-color: transparent;
+    font-weight: 600;
+  }
+  .btn-primary:hover { background: var(--accent); }
+  .btn-danger {
+    color: var(--danger);
+  }
+  .btn:disabled { opacity: 0.5; cursor: default; }
+
+  .status-bar {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    margin-bottom: 16px;
+  }
+  .status-dot {
+    width: 9px;
+    height: 9px;
+    border-radius: 50%;
+    background: var(--text-dim);
+  }
+  .status-dot.online { background: var(--ok); }
+  .status-text { font-size: 0.85rem; color: var(--text-dim); flex: 1; }
+
+  .screen-frame {
+    background: #000000;
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    aspect-ratio: 16 / 9;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    overflow: hidden;
+    margin-bottom: 16px;
+  }
+  .screen-frame img {
+    width: 100%;
+    height: 100%;
+    object-fit: contain;
+  }
+  .screen-placeholder {
+    color: var(--text-dim);
+    font-size: 0.85rem;
+  }
+
+  .transcript {
+    background: var(--bg-raised);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    padding: 12px 14px;
+    height: 220px;
+    overflow-y: auto;
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    margin-bottom: 12px;
+    font-size: 0.88rem;
+  }
+  .transcript-empty { color: var(--text-dim); }
+  .remote-step {
+    color: var(--accent);
+    background: #1c2634;
+    border-radius: 6px;
+    padding: 4px 10px;
+    font-size: 0.8rem;
+    align-self: center;
+  }
+  .remote-bubble {
+    max-width: 85%;
+    border-radius: 12px;
+    padding: 8px 12px;
+  }
+  .remote-bubble-user {
+    align-self: flex-end;
+    background: #2f2f31;
+  }
+  .remote-bubble-assistant {
+    align-self: flex-start;
+    background: #1e2530;
+  }
+
+  .input-row {
+    display: flex;
+    gap: 8px;
+  }
+  .input-row input[type="text"] {
+    flex: 1;
+    font-size: 0.95rem;
+    letter-spacing: normal;
+    text-align: left;
+    font-family: inherit;
+  }
+
+  .footer-actions {
+    display: flex;
+    justify-content: space-between;
+    margin-top: 20px;
+  }
+
+  @media (prefers-color-scheme: light) {
+    :root:not([data-theme="dark"]) {
+      --bg: #f7f8fa;
+      --bg-raised: #ffffff;
+      --border: #e2e5e9;
+      --text: #1c1e21;
+      --text-dim: #5f6570;
+      --accent: #2f6fed;
+      --accent-strong: #2857c4;
+      --warn: #9a6b17;
+      --danger: #b23c3c;
+      --ok: #1f7a45;
+    }
+  }
+</style>
+</head>
+<body>
+
+  <div class="wrap">
+    <a class="back-link" href="/">← Ollama Chat React</a>
+
+    <div id="banned-state" hidden>
+      <h1>Accès bloqué</h1>
+      <div class="note banned-note">
+        <strong>Cet appareil a été bloqué</strong> après plusieurs tentatives de code
+        échouées. Aucun nouveau code ne peut être essayé depuis ce navigateur.
+      </div>
+    </div>
+
+    <div id="pair-form-state" hidden>
+      <h1>Control Me à distance</h1>
+      <p>
+        Saisis le code à 12 chiffres généré dans l'app (Réglages → Control Me)
+        pour voir l'écran et donner des instructions depuis ce navigateur.
+      </p>
+      <div class="note">
+        <strong>Attention :</strong> toute personne connaissant ce code peut voir
+        ton écran et contrôler ton PC — traite-le comme un mot de passe. Il est
+        enregistré dans ce navigateur une fois connecté, pour ne pas avoir à le
+        ressaisir.
+      </div>
+      <form id="pair-form">
+        <input type="text" id="code-input" inputmode="numeric" maxlength="12" placeholder="000000000000" autocomplete="off" />
+        <button type="submit" class="btn btn-primary" id="pair-submit">Se connecter</button>
+        <div class="pair-error" id="pair-error"></div>
+      </form>
+    </div>
+
+    <div id="remote-app-state" hidden>
+      <div class="status-bar">
+        <span class="status-dot" id="status-dot"></span>
+        <span class="status-text" id="status-text">Connexion…</span>
+        <button class="btn btn-danger" id="disconnect-btn">Se déconnecter</button>
+      </div>
+
+      <div class="screen-frame">
+        <img id="screen-img" hidden alt="Écran distant" />
+        <span class="screen-placeholder" id="screen-placeholder">En attente de l'écran…</span>
+      </div>
+
+      <div class="transcript" id="transcript">
+        <div class="transcript-empty" id="transcript-empty">
+          Décris ce que tu veux faire sur le PC — la conversation apparaît ici.
+        </div>
+      </div>
+
+      <form id="instruction-form" class="input-row">
+        <input type="text" id="instruction-input" placeholder="Donne une instruction…" autocomplete="off" />
+        <button type="submit" class="btn btn-primary" id="send-btn">Envoyer</button>
+      </form>
+
+      <div class="footer-actions">
+        <button class="btn" id="stop-btn">Arrêter</button>
+      </div>
+    </div>
+  </div>
+
+  <script type="module">
+    import { createClient } from "https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/+esm";
+
+    const SUPABASE_URL = "https://cihuwuiyziarnghethbi.supabase.co";
+    const SUPABASE_ANON_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImNpaHV3dWl5emlhcm5naGV0aGJpIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODgwNjM3OTQsImV4cCI6MjEwMzYzOTc5NH0.AkAe00Vzu4506nHSjh2bl99x5hZUSejZRm3pJwVuGtI";
+
+    // Deliberately no server anywhere in this pairing flow (see CLAUDE.md) —
+    // the code IS the Realtime channel topic, "connected" is channel
+    // Presence, screen/chat ride on Broadcast. Nothing here is persisted to
+    // Postgres.
+    const LS_CODE = "ollamachat_remote_code";
+    const LS_ATTEMPTS = "ollamachat_remote_attempts";
+    const LS_BANNED = "ollamachat_remote_banned";
+    const JOIN_TIMEOUT_MS = 8000;
+    const MAX_ATTEMPTS = 5;
+    const HOST_KEY = "host";
+
+    const supabase = createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+    const viewerKey = crypto.randomUUID();
+
+    const bannedState = document.getElementById("banned-state");
+    const pairFormState = document.getElementById("pair-form-state");
+    const remoteAppState = document.getElementById("remote-app-state");
+    const pairForm = document.getElementById("pair-form");
+    const codeInput = document.getElementById("code-input");
+    const pairSubmit = document.getElementById("pair-submit");
+    const pairError = document.getElementById("pair-error");
+    const statusDot = document.getElementById("status-dot");
+    const statusText = document.getElementById("status-text");
+    const disconnectBtn = document.getElementById("disconnect-btn");
+    const screenImg = document.getElementById("screen-img");
+    const screenPlaceholder = document.getElementById("screen-placeholder");
+    const transcript = document.getElementById("transcript");
+    const transcriptEmpty = document.getElementById("transcript-empty");
+    const instructionForm = document.getElementById("instruction-form");
+    const instructionInput = document.getElementById("instruction-input");
+    const sendBtn = document.getElementById("send-btn");
+    const stopBtn = document.getElementById("stop-btn");
+
+    let channel = null;
+    let hostOnline = false;
+
+    function showState(el) {
+      [bannedState, pairFormState, remoteAppState].forEach((s) => (s.hidden = s !== el));
+    }
+
+    function isBanned() {
+      return localStorage.getItem(LS_BANNED) === "true";
+    }
+
+    function updateHostStatus() {
+      statusDot.classList.toggle("online", hostOnline);
+      statusText.textContent = hostOnline ? "Connecté" : "En attente de l'app…";
+    }
+
+    function setScreen(b64) {
+      screenImg.src = "data:image/jpeg;base64," + b64;
+      screenImg.hidden = false;
+      screenPlaceholder.hidden = true;
+    }
+
+    function appendStep(text) {
+      transcriptEmpty.hidden = true;
+      const div = document.createElement("div");
+      div.className = "remote-step";
+      div.textContent = text;
+      transcript.appendChild(div);
+      transcript.scrollTop = transcript.scrollHeight;
+    }
+
+    function appendMessage(role, text) {
+      if (!text) return;
+      transcriptEmpty.hidden = true;
+      const div = document.createElement("div");
+      div.className = `remote-bubble remote-bubble-${role}`;
+      div.textContent = text;
+      transcript.appendChild(div);
+      transcript.scrollTop = transcript.scrollHeight;
+    }
+
+    function setRunning(running) {
+      sendBtn.disabled = running;
+      instructionInput.disabled = running;
+    }
+
+    function clearTranscript() {
+      transcript.querySelectorAll(".remote-step, .remote-bubble").forEach((el) => el.remove());
+      transcriptEmpty.hidden = false;
+      screenImg.hidden = true;
+      screenPlaceholder.hidden = false;
+    }
+
+    function recordFailedAttempt() {
+      const n = Number(localStorage.getItem(LS_ATTEMPTS) || "0") + 1;
+      localStorage.setItem(LS_ATTEMPTS, String(n));
+      if (n >= MAX_ATTEMPTS) {
+        localStorage.setItem(LS_BANNED, "true");
+        showState(bannedState);
+      } else {
+        pairError.textContent = `Code invalide ou appareil hors ligne. Tentative ${n}/${MAX_ATTEMPTS}.`;
+        pairSubmit.disabled = false;
+      }
+    }
+
+    // isReconnect = true for a code already saved from a previous visit:
+    // no 8s-timeout failure/attempt-counting in that case — the host app
+    // simply not running yet isn't a "wrong guess" and shouldn't burn
+    // through the ban counter for someone using their own saved pairing.
+    function connectToCode(code, isReconnect) {
+      const ch = supabase.channel("remote:" + code, {
+        config: {
+          broadcast: { self: false, ack: false },
+          presence: { key: viewerKey },
+        },
+      });
+
+      let settled = isReconnect;
+      let timeoutHandle = null;
+
+      ch.on("presence", { event: "sync" }, () => {
+        const state = ch.presenceState();
+        hostOnline = Object.keys(state).includes(HOST_KEY);
+        updateHostStatus();
+        if (hostOnline && !settled) {
+          settled = true;
+          if (timeoutHandle) clearTimeout(timeoutHandle);
+          localStorage.setItem(LS_CODE, code);
+          localStorage.removeItem(LS_ATTEMPTS);
+        }
+      });
+
+      ch.on("broadcast", { event: "frame" }, ({ payload }) => setScreen(payload.jpeg_base64));
+      ch.on("broadcast", { event: "step" }, ({ payload }) => {
+        const intent = payload.intent ? `${payload.intent} — ` : "";
+        appendStep(`${intent}${payload.label ?? payload.action ?? ""}`);
+      });
+      ch.on("broadcast", { event: "message" }, ({ payload }) => appendMessage("assistant", payload.text));
+      ch.on("broadcast", { event: "done" }, ({ payload }) => {
+        appendMessage("assistant", payload.summary);
+        setRunning(false);
+      });
+      ch.on("broadcast", { event: "error" }, ({ payload }) => {
+        appendStep(`Erreur : ${payload.message ?? ""}`);
+        setRunning(false);
+      });
+      ch.on("broadcast", { event: "cancelled" }, () => {
+        appendStep("Arrêté.");
+        setRunning(false);
+      });
+      ch.on("broadcast", { event: "limit" }, () => {
+        appendStep("Limite d'actions atteinte pour cette instruction.");
+        setRunning(false);
+      });
+
+      ch.subscribe(async (status) => {
+        if (status !== "SUBSCRIBED") return;
+        await ch.track({ role: "viewer" });
+      });
+
+      channel = ch;
+      showState(remoteAppState);
+      updateHostStatus();
+
+      if (!isReconnect) {
+        timeoutHandle = setTimeout(() => {
+          if (settled) return;
+          settled = true;
+          supabase.removeChannel(ch);
+          if (channel === ch) channel = null;
+          showState(pairFormState);
+          recordFailedAttempt();
+        }, JOIN_TIMEOUT_MS);
+      }
+    }
+
+    function disconnect() {
+      if (channel) {
+        supabase.removeChannel(channel);
+        channel = null;
+      }
+      hostOnline = false;
+      localStorage.removeItem(LS_CODE);
+      clearTranscript();
+      codeInput.value = "";
+      pairError.textContent = "";
+      pairSubmit.disabled = false;
+      showState(pairFormState);
+    }
+
+    pairForm.addEventListener("submit", (e) => {
+      e.preventDefault();
+      if (isBanned()) return;
+      const code = codeInput.value.replace(/\D/g, "");
+      if (code.length !== 12) {
+        pairError.textContent = "Le code doit contenir 12 chiffres.";
+        return;
+      }
+      pairSubmit.disabled = true;
+      pairError.textContent = "Connexion en cours…";
+      connectToCode(code, false);
+    });
+
+    disconnectBtn.addEventListener("click", disconnect);
+
+    instructionForm.addEventListener("submit", (e) => {
+      e.preventDefault();
+      const text = instructionInput.value.trim();
+      if (!text || !channel) return;
+      appendMessage("user", text);
+      channel.send({ type: "broadcast", event: "instruction", payload: { text } });
+      instructionInput.value = "";
+      setRunning(true);
+    });
+
+    stopBtn.addEventListener("click", () => {
+      if (!channel) return;
+      channel.send({ type: "broadcast", event: "stop", payload: {} });
+    });
+
+    if (isBanned()) {
+      showState(bannedState);
+    } else {
+      const saved = localStorage.getItem(LS_CODE);
+      if (saved) {
+        connectToCode(saved, true);
+      } else {
+        showState(pairFormState);
+      }
+    }
+  </script>
+</body>
+</html>

@@ -32,6 +32,7 @@ export interface Settings {
   codex_last_folder?: string | null;
   gemini_api_key?: string | null;
   gemini_model: string;
+  remote_code?: string | null;
 }
 
 export interface DirEntry {

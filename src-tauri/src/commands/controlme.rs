@@ -250,7 +250,7 @@ fn dispatch_action(app: &AppHandle, name: &str, args: &Value, width: u32, height
 // Returns (base64 JPEG, real screen width, real screen height). The real
 // dimensions (not the downscaled ones) are what denormalize() uses, since a
 // 0-999 coordinate is the same fraction of the screen either way.
-fn capture_screenshot_base64() -> Result<(String, u32, u32), String> {
+pub(crate) fn capture_screenshot_base64() -> Result<(String, u32, u32), String> {
     let monitors = Monitor::all().map_err(|e| e.to_string())?;
     let monitor = monitors
         .iter()
@@ -433,13 +433,33 @@ pub async fn run_control_me(
     model: String,
     instruction: String,
 ) -> Result<(), String> {
+    run_control_me_core(app, cancel.0.clone(), confirmation.0.clone(), api_key, model, instruction).await
+}
+
+// Extracted from the #[tauri::command] above so the remote-pairing task
+// (remote.rs) can trigger the exact same Gemini loop from a broadcast
+// instruction, without going through Tauri's IPC layer — it already has an
+// AppHandle and can read the same managed ControlMeCancelFlag/
+// ControlMeConfirmation state directly. Every event this emits
+// (control-me-step/-message/-done/-error) is a normal Tauri app event
+// regardless of caller, so the remote task mirrors sessions it triggers by
+// just listening for those same events and re-broadcasting them — no
+// broadcaster parameter needed here.
+pub async fn run_control_me_core(
+    app: AppHandle,
+    cancel_flag: Arc<AtomicBool>,
+    confirmation: Arc<Mutex<Option<oneshot::Sender<bool>>>>,
+    api_key: String,
+    model: String,
+    instruction: String,
+) -> Result<(), String> {
     if api_key.trim().is_empty() {
         return Err("Aucune clé API Gemini configurée. Ajoute-la dans Réglages.".to_string());
     }
     let model = if model.trim().is_empty() { GEMINI_MODEL.to_string() } else { model };
 
-    cancel.0.store(false, Ordering::SeqCst);
-    let flag = cancel.0.clone();
+    cancel_flag.store(false, Ordering::SeqCst);
+    let flag = cancel_flag;
     let client = reqwest::Client::new();
 
     let (initial_screenshot, width, height) = capture_screenshot_base64()?;
@@ -579,7 +599,6 @@ pub async fn run_control_me(
             let (tx, rx) = oneshot::channel::<bool>();
             {
                 let mut guard = confirmation
-                    .0
                     .lock()
                     .map_err(|_| "État de confirmation corrompu".to_string())?;
                 *guard = Some(tx);

@@ -184,3 +184,11 @@ export const loadControlMeSession = (id: string) => invoke<ControlMeSession>("lo
 export const saveControlMeSession = (session: ControlMeSession) =>
   invoke<void>("save_control_me_session", { session });
 export const deleteControlMeSession = (id: string) => invoke<void>("delete_control_me_session", { id });
+
+// ------------------------------------------------------- Control Me remote
+
+export const generateRemoteCode = () => invoke<string>("generate_remote_code");
+export const clearRemoteCode = () => invoke<void>("clear_remote_code");
+
+export const onRemoteViewerChanged = (cb: (connected: boolean) => void) =>
+  listen<{ connected: boolean }>("remote-viewer-changed", (e) => cb(e.payload.connected));
