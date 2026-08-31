@@ -46,7 +46,7 @@ pas devenir obsolète.
 - [FAIT, première version] **Control Me** : nouvel espace dans l'app (bouton Sidebar, comme Codex) où une IA (Gemini, modèle choisi par l'utilisateur — 3.5 Flash-Lite/3.5 Flash/3.6 Flash/3.7 Flash, voir v0.4.2 — via l'Interactions API de Google + son outil intégré `computer_use`) contrôle **de façon autonome** la souris et le clavier de l'utilisateur à partir de captures d'écran, avec un bouton Stop comme seul garde-fou (+ le `safety_decision` de Gemini lui-même, respecté). Rompt délibérément "rien ne sort de l'app" (captures d'écran envoyées à Google) — voir "Control Me" dans Architecture et la section Confidentialité réseau mise à jour. Clé API Gemini propre à l'utilisateur (Réglages), jamais fournie par l'app. Pas encore testé en conditions réelles (nécessite la clé de l'utilisateur) ; l'overlay séparé + raccourci global F5 du plan initial n'est pas encore construit, cette version vit dans la fenêtre principale comme Codex.
 - [FAIT] v0.4.1 : Control Me signalé "trop long" par l'utilisateur après premier test (captures d'écran + réflexion Gemini) — captures redimensionnées et compressées en JPEG (au lieu de PNG pleine résolution), `thinking_level: "low"`, délai de stabilisation réduit — voir "Optimisation vitesse (v0.4.1)" dans Architecture > Control Me.
 - [FAIT] v0.4.2 : sélecteur de modèle Gemini dans Control Me (3.5 Flash-Lite/3.5 Flash/3.6 Flash/3.7 Flash), persisté dans les réglages — voir "Sélecteur de modèle (v0.4.2)" dans Architecture > Control Me. Note : 3.6 Flash n'est pas documenté par Google comme compatible avec `computer_use`, laissé sélectionnable quand même (demandé explicitement) mais signalé dans le menu.
-- [FAIT] v0.4.3 : Control Me encore jugé "un peu long" après v0.4.1/v0.4.2 — deuxième passe d'optimisation, plus agressive (image encore réduite/compressée, `thinking_level: "minimal"`) — voir "Optimisation vitesse, deuxième passe (v0.4.3)" dans Architecture > Control Me, avec le compromis précision/vitesse assumé explicitement documenté.
+- [FAIT] v0.5.0 : Control Me installable **séparément** de l'app de chat, même mécanisme de mise à jour/setup, bouton dédié sur le site, doc autonome `CONTROLME.md` — voir "Control Me : produit installable séparément (v0.5.0)" dans Architecture > Control Me pour le détail complet (config Tauri alternative fusionnée par-dessus la config de base, pas de duplication de code, colonne `product` sur `app_releases`). **Migration SQL à exécuter par l'utilisateur avant de considérer le site à jour** — sans elle, le bouton de téléchargement existant de l'app de chat casse aussi.
 
 ## Architecture
 
@@ -207,6 +207,12 @@ plein écran avec un bouton retour), pas une fenêtre séparée. Le
 raccourci global F5 + fenêtre overlay indépendante du plan reste une
 extension possible plus tard, pas encore construite.
 
+**Installable séparément depuis la v0.5.0** — voir `CONTROLME.md` (racine
+du dépôt) pour la doc destinée à quelqu'un qui n'installe QUE Control Me,
+et "Control Me : produit installable séparément (v0.5.0)" plus bas dans
+cette section pour le détail technique (même code, config Tauri alternative,
+`product` sur `app_releases`).
+
 - **API utilisée : Interactions API de Google (`/v1beta/interactions`),
   pas l'ancien `generateContent`.** Recherché en direct au moment de coder
   (le modèle et cette API sont sortis le 2026-08-13, après la coupure de
@@ -307,25 +313,75 @@ laissé sélectionnable quand même puisque demandé explicitement, mais avec
 un libellé "(compatibilité non confirmée)" dans le menu pour que ça ne
 soit pas un mystère si une session échoue avec ce modèle.
 
-**Optimisation vitesse, deuxième passe (v0.4.3)** : "c'est encore un peu
-long" après v0.4.1/v0.4.2. Les deux leviers les plus significatifs
-poussés plus loin dans `controlme.rs` :
-- `SCREENSHOT_MAX_WIDTH` 1280 → 1024, `SCREENSHOT_JPEG_QUALITY` 80 → 65 :
-  image encore plus petite à encoder/uploader/analyser.
-- `thinking_level` "low" → **"minimal"** (le palier le plus bas
-  documenté) : le modèle réfléchit encore moins avant de décider d'une
-  action.
-Compromis explicite assumé, pas gratuit : moins de réflexion et une image
-plus compressée augmentent le risque de clics imprécis/d'erreurs qui
-forceraient un tour supplémentaire pour se corriger — ce qui mangerait une
-partie du temps gagné. Si la précision se dégrade visiblement après ce
-changement, `thinking_level: "low"` (v0.4.1) est le premier réglage à
-restaurer avant de toucher à la taille/qualité d'image. Le délai de
-stabilisation (120ms) n'a pas été réduit davantage : c'est déjà proche du
-plancher où l'écran a eu le temps de refléter l'action, la latence
-dominante restant l'appel Gemini lui-même — pas quelque chose que ce
-projet peut réduire davantage sans dégrader la précision ou changer de
-palier de service (`service_tier`, payant, pas activé).
+### Control Me : produit installable séparément (v0.5.0)
+
+Demandé explicitement : Control Me installable **tout seul**, avec le même
+mécanisme de mise à jour/setup que l'app de chat, un bouton dédié sur le
+site, et sa propre doc autonome (`CONTROLME.md`).
+
+**Décision d'architecture : même code, config Tauri alternative — pas de
+second projet Tauri ni de Cargo workspace.** `npx tauri build` supporte
+`-c/--config <fichier>` (vérifié via `npx tauri build --help` avant
+d'écrire le moindre fichier), qui fusionne un JSON par-dessus
+`tauri.conf.json` — fusion **profonde** de type JSON Merge Patch (RFC 7396,
+crate `json_patch`, vérifié dans le code source de `tauri-utils` avant de
+s'appuyer dessus) : seules les clés présentes dans le fichier de
+surcharge sont remplacées, tout le reste (dont `plugins.updater.pubkey`,
+qu'on ne veut surtout pas dupliquer/désynchroniser) vient de la config de
+base automatiquement.
+
+- **`src-tauri/tauri.controlme.conf.json`** (nouveau) : `productName`
+  "Control Me", `identifier` **différent** (`com.userasus.control-me` vs
+  `com.userasus.ollama-chat-react` — sépare l'installation/le registre
+  Windows des deux produits, sinon installer l'un écraserait l'autre),
+  `build.beforeBuildCommand` pointé sur `npm run build:controlme`,
+  `app.windows` remplacé par une seule fenêtre 480×700 sans Sidebar/Chat/
+  Codex, `plugins.updater.endpoints` remplacé par la même URL RPC **avec
+  `?p_product=controlme`** en plus (voir le `product` sur `app_releases`
+  ci-dessous). Le `pubkey` de signature n'est PAS dupliqué ici — hérité de
+  `tauri.conf.json` par la fusion profonde, même clé de confiance pour les
+  deux produits (pas une frontière de sécurité entre eux, un secret de
+  moins à gérer). Build : `npx tauri build --config
+  src-tauri/tauri.controlme.conf.json`.
+- **Un seul crate Rust, un seul frontend Vite** — zéro duplication de
+  `controlme.rs` (logique Gemini/enigo/xcap). Le build standalone
+  embarque quand même les commandes Chat/Codex inutilisées (coût binaire
+  réel, accepté pour l'instant plutôt que de forker le code — piste
+  d'optimisation notée dans "Prochaines étapes" si la taille de
+  l'installeur devient un problème).
+- **`src/main.tsx`** : au lieu d'un composant racine unique, choisit entre
+  `<App/>` et un nouveau `<StandaloneApp/>` (`src/controlme-standalone/`)
+  selon `import.meta.env.VITE_STANDALONE === "controlme"` — variable posée
+  par **`.env.controlme`** (nouveau), chargée automatiquement par Vite
+  via le script npm **`build:controlme`** (nouveau : `vite build --mode
+  controlme`, convention standard Vite pour charger `.env.<mode>`).
+  `StandaloneApp.tsx` charge les réglages (`loadSettings`), affiche un
+  bouton "Clé API Gemini" minimal (pas la `SettingsModal` complète —
+  aucun des autres réglages, host Ollama/prompt système/etc., ne
+  s'applique ici) et rend `ControlMeView` directement — pas de Sidebar,
+  pas de bouton retour (`onBack` rendu optionnel dans `ControlMeView` pour
+  ça, `undefined` en mode standalone).
+- **`app_releases` gagne une colonne `product`** (`supabase/
+  controlme_product_migration.sql`, nouveau fichier de migration —
+  **l'utilisateur doit l'exécuter une fois dans l'éditeur SQL Supabase**,
+  même processus que chaque migration précédente de ce projet, jamais fait
+  automatiquement par l'app). `latest_release_manifest()` prend maintenant
+  un paramètre `p_product` avec la valeur par défaut `'ollamachat'` —
+  rétrocompatible par construction : les lignes déjà publiées héritent de
+  `product = 'ollamachat'` par défaut, et l'endpoint de l'app de chat
+  (qui appelle la fonction sans paramètre) continue de se comporter
+  exactement comme avant, sans le moindre changement à son
+  `tauri.conf.json`. Publier une release Control Me = même flux "Publier
+  une release" plus loin dans ce fichier, avec `"product": "controlme"`
+  ajouté au JSON inséré.
+  **Tant que cette migration SQL n'a pas été appliquée, le bouton de
+  téléchargement existant du site casse aussi** (requête `product=eq...`
+  sur une colonne qui n'existe pas encore → 400 → repli silencieux sur
+  "bientôt disponible") — migration à appliquer avant de considérer le
+  site à jour.
+- **`site/index.html`** : deuxième section + bouton (`data-product`),
+  `loadLatestRelease(product)` généralisée pour interroger `app_releases`
+  filtré par produit au lieu d'une requête unique non filtrée.
 
 ### Les 6 outils de l'agent
 1. `read_file` — lecture texte (limite 5 Mo), chemin absolu
@@ -921,14 +977,41 @@ l'utilisateur confirme qu'elle est bien dans `.env` local.
   `app_releases`, et vérifié via la clé **anon** (fichier : 200 OK,
   6 704 875 octets ; `latest_release_manifest` : renvoie bien la v0.4.2
   avec signature et URL) avant d'annoncer la release terminée.
-- **2026-08-30** — v0.4.3 : retour utilisateur "c'est encore un peu long"
-  après v0.4.1/v0.4.2. Deuxième passe, plus agressive sur les deux mêmes
-  leviers — voir "Optimisation vitesse, deuxième passe (v0.4.3)" dans
-  Architecture > Control Me : image encore réduite (1280→1024px) et
-  compressée (JPEG 80→65), `thinking_level` "low"→"minimal". Compromis
-  précision/vitesse assumé et documenté explicitement, avec la marche
-  arrière recommandée (revenir à "low" en premier) si la précision se
-  dégrade trop après ce changement.
+- **2026-08-30** — L'utilisateur a annulé localement (hors git, édition
+  directe des fichiers — "j'ai rewind [le] code") les changements de
+  vitesse d'une v0.4.3 qui avait été committée (`ce95a72`) mais dont le
+  build n'avait jamais été publié : `SCREENSHOT_MAX_WIDTH`/
+  `SCREENSHOT_JPEG_QUALITY`/`thinking_level` sont revenus aux valeurs de
+  v0.4.1 (1280/80/"low"), la doc "deuxième passe" ajoutée à ce fichier a
+  été retirée. **Le commit v0.4.3 reste dans l'historique git**, mais son
+  contenu ne reflète plus l'état réel du code depuis ce rewind — ne pas
+  supposer que les valeurs "minimal"/1024/65 sont actives sans vérifier le
+  fichier réel. Le build v0.4.3 alors en cours a été stoppé avant
+  publication pour éviter de publier un binaire étiqueté 0.4.3 mais
+  content de 0.4.1/0.4.2.
+- **2026-08-31** — v0.5.0 : Control Me installable séparément de l'app de
+  chat, demandé explicitement ("qu'on peut installer CM séparément avec le
+  même type de mise à jour et de setup, et un bouton installer Control
+  Me, et un markdown pour control me..."). Assez large et avec plusieurs
+  approches architecturales possibles (second projet Tauri vs Cargo
+  workspace vs config alternative sur le même code) pour repasser par plan
+  mode avant de coder. Voir "Control Me : produit installable séparément
+  (v0.5.0)" dans Architecture > Control Me pour le détail technique
+  complet. Approche retenue : config Tauri alternative
+  (`tauri.controlme.conf.json`, fusion profonde RFC 7396 vérifiée dans le
+  code source de `tauri-utils` avant de s'appuyer dessus) sur le même
+  crate Rust/frontend Vite — zéro duplication de `controlme.rs`. Colonne
+  `product` ajoutée à `app_releases` (migration
+  `supabase/controlme_product_migration.sql`, **pas encore exécutée par
+  l'utilisateur au moment d'écrire ceci** — le bouton de téléchargement
+  existant de l'app de chat sur le site casse tant que ce n'est pas fait).
+  Site (`site/index.html`) : deuxième bouton, requête filtrée par produit.
+  Nouveau `CONTROLME.md` à la racine du dépôt pour une doc autonome. Idées
+  supplémentaires proposées mais **pas construites** (discussion, pas
+  engagement) : build standalone plus léger sans le chunk Monaco/CodexView,
+  UX "tray-first" avec raccourci global (reprend l'idée de l'overlay F5 du
+  tout premier plan Control Me), icône/branding distincts, lancement au
+  démarrage de Windows.
 
 ## Prochaines étapes (dans l'ordre du fichier de passation d'origine)
 

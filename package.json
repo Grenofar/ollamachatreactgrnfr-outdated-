@@ -1,11 +1,12 @@
 {
   "name": "ollama-chat-react",
   "private": true,
-  "version": "0.4.3",
+  "version": "0.5.0",
   "type": "module",
   "scripts": {
     "dev": "vite",
     "build": "tsc && vite build",
+    "build:controlme": "tsc && vite build --mode controlme",
     "preview": "vite preview",
     "tauri": "tauri"
   },

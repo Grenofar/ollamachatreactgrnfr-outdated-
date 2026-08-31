@@ -1,0 +1,30 @@
+{
+  "$schema": "https://schema.tauri.app/config/2",
+  "productName": "Control Me",
+  "identifier": "com.userasus.control-me",
+  "build": {
+    "beforeBuildCommand": "npm run build:controlme"
+  },
+  "app": {
+    "windows": [
+      {
+        "title": "Control Me",
+        "width": 480,
+        "height": 700,
+        "minWidth": 380,
+        "minHeight": 480,
+        "resizable": true
+      }
+    ]
+  },
+  "bundle": {
+    "shortDescription": "Contrôle autonome du clavier et de la souris par IA (Gemini)"
+  },
+  "plugins": {
+    "updater": {
+      "endpoints": [
+        "https://cihuwuiyziarnghethbi.supabase.co/rest/v1/rpc/latest_release_manifest?p_product=controlme"
+      ]
+    }
+  }
+}

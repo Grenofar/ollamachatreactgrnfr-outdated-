@@ -16,6 +16,10 @@ dist-ssr
 .env
 .env.*
 !.env.example
+# Not a secret — just a Vite build-mode flag (VITE_STANDALONE=controlme)
+# consumed by the build:controlme script, needs to be committed for that
+# script to work from a clean checkout.
+!.env.controlme
 
 # Editor directories and files
 .vscode/*

@@ -35,7 +35,7 @@ export default function ControlMeView({
   onPersistModel,
 }: {
   settings: Settings;
-  onBack: () => void;
+  onBack?: () => void;
   onPersistModel: (model: string) => void;
 }) {
   const [instruction, setInstruction] = useState("");
@@ -125,7 +125,7 @@ export default function ControlMeView({
   return (
     <div className="controlme">
       <div className="controlme-header">
-        <button onClick={onBack}>← Chat</button>
+        {onBack && <button onClick={onBack}>← Chat</button>}
         <span className="controlme-header-title">Control Me</span>
         <div className="controlme-header-spacer" />
         <select

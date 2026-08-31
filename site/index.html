@@ -308,7 +308,25 @@
     </section>
 
     <section class="center">
-      <a class="btn js-cta">Vérification…</a>
+      <a class="btn js-cta" data-product="ollamachat">Vérification…</a>
+    </section>
+
+    <section>
+      <h2>Control Me</h2>
+      <p>
+        Une IA (Gemini) qui contrôle directement ta souris et ton clavier à
+        partir de captures d'écran, pour automatiser des tâches sur ton PC.
+        Nécessite ta propre clé API Gemini. Installable séparément de
+        l'application de chat ci-dessus.
+      </p>
+      <p class="section-hint">
+        Autonome par défaut (pas d'approbation par action) — des captures
+        d'écran sont envoyées à Google pendant chaque session.
+      </p>
+    </section>
+
+    <section class="center">
+      <a class="btn js-cta" data-product="controlme">Vérification…</a>
     </section>
   </div>
 
@@ -330,11 +348,17 @@
       el.textContent = `Télécharger — v${release.version}`;
     }
 
-    async function loadLatestRelease() {
-      const buttons = document.querySelectorAll(".js-cta");
+    // Each button declares its own product (data-product) so this single
+    // page can offer independent download buttons for each installable
+    // product sharing the same app_releases table (see
+    // supabase/controlme_product_migration.sql) — a button with no matching
+    // release just falls back to "bientôt disponible", same as before.
+    async function loadLatestRelease(product) {
+      const buttons = document.querySelectorAll(`.js-cta[data-product="${product}"]`);
+      if (buttons.length === 0) return;
       try {
         const res = await fetch(
-          `${SUPABASE_URL}/rest/v1/app_releases?select=version,download_url,notes,published_at&order=published_at.desc&limit=1`,
+          `${SUPABASE_URL}/rest/v1/app_releases?select=version,download_url,notes,published_at&product=eq.${encodeURIComponent(product)}&order=published_at.desc&limit=1`,
           { headers: { apikey: SUPABASE_ANON_KEY, Authorization: `Bearer ${SUPABASE_ANON_KEY}` } },
         );
         if (!res.ok) throw new Error("bad status");
@@ -349,12 +373,13 @@
           }
         });
       } catch {
-        // offline, unreachable, or table not created yet: fall back quietly
+        // offline, unreachable, or table/column not created yet: fall back quietly
         buttons.forEach(renderComingSoon);
       }
     }
 
-    loadLatestRelease();
+    loadLatestRelease("ollamachat");
+    loadLatestRelease("controlme");
 
     // Simple deterministic rule-of-thumb calculator — no network call, no
     // AI, just arithmetic on numbers the visitor picks themselves. Ratios
