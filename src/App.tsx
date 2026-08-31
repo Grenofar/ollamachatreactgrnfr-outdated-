@@ -11,6 +11,7 @@ import ModelSelect from "./components/ModelSelect";
 const CodexView = lazy(() => import("./components/codex/CodexView"));
 const ControlMeView = lazy(() => import("./components/controlme/ControlMeView"));
 const SettingsView = lazy(() => import("./components/SettingsView"));
+const ExtensionsView = lazy(() => import("./components/ExtensionsView"));
 import {
   listModels,
   listConversations,
@@ -51,7 +52,7 @@ export default function App() {
   const [streamingText, setStreamingText] = useState("");
   const [connError, setConnError] = useState<string | null>(null);
   const [showInstall, setShowInstall] = useState(false);
-  const [view, setView] = useState<"chat" | "codex" | "controlme" | "settings">("chat");
+  const [view, setView] = useState<"chat" | "codex" | "controlme" | "settings" | "extensions">("chat");
   const [remoteConnected, setRemoteConnected] = useState(false);
   const [editingIndex, setEditingIndex] = useState<number | null>(null);
   const [editText, setEditText] = useState("");
@@ -472,6 +473,7 @@ export default function App() {
         onOpenSettings={() => setView("settings")}
         onOpenCodex={() => setView("codex")}
         onOpenControlMe={() => setView("controlme")}
+        onOpenExtensions={() => setView("extensions")}
       />
 
       {view === "codex" && settings ? (
@@ -509,6 +511,10 @@ export default function App() {
             onCheckUpdate={handleCheckUpdate}
             onInstallUpdate={handleInstallUpdate}
           />
+        </Suspense>
+      ) : view === "extensions" && settings ? (
+        <Suspense fallback={<div className="codex-editor-empty">Chargement…</div>}>
+          <ExtensionsView />
         </Suspense>
       ) : (
       <div className="main">

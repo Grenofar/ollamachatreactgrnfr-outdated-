@@ -13,10 +13,11 @@ export default function Sidebar({
   onOpenSettings,
   onOpenCodex,
   onOpenControlMe,
+  onOpenExtensions,
 }: {
   conversations: ConversationMeta[];
   currentId: string | null;
-  view: "chat" | "codex" | "controlme" | "settings";
+  view: "chat" | "codex" | "controlme" | "settings" | "extensions";
   onNew: () => void;
   onSelect: (id: string) => void;
   onDelete: (id: string) => void;
@@ -24,6 +25,7 @@ export default function Sidebar({
   onOpenSettings: () => void;
   onOpenCodex: () => void;
   onOpenControlMe: () => void;
+  onOpenExtensions: () => void;
 }) {
   const [search, setSearch] = useState("");
   const [searchResults, setSearchResults] = useState<ConversationMeta[] | null>(null);
@@ -140,6 +142,12 @@ export default function Sidebar({
         onClick={onOpenControlMe}
       >
         Control Me
+      </button>
+      <button
+        className={`sidebar-install-btn ${view === "extensions" ? "sidebar-nav-active" : ""}`}
+        onClick={onOpenExtensions}
+      >
+        Extensions
       </button>
       <button
         className={`sidebar-settings-btn ${view === "settings" ? "sidebar-nav-active" : ""}`}

@@ -1,16 +1,21 @@
 import { useEffect, useState } from "react";
 import { getVersion } from "@tauri-apps/api/app";
 import type { Update } from "@tauri-apps/plugin-updater";
-import {
-  clearRemoteCode,
-  deleteModel,
-  generateRemoteCode,
-  getKnowledgeBaseStatus,
-  importKnowledgeBase,
-  openKnowledgeBaseFolder,
-  publishKnowledgeBase,
-} from "../api";
-import type { KnowledgeBaseStatus, OllamaModel, Settings } from "../types";
+import { clearRemoteCode, deleteModel, generateRemoteCode } from "../api";
+import type { OllamaModel, Settings } from "../types";
+
+// Réglages > Extensions only ever lists name + description — the actual
+// interactive UI for each extension (open folder, publish, import...)
+// lives in its own dedicated Sidebar space (ExtensionsView.tsx), same
+// split as Codex/Control Me already have between their own view and
+// whatever of theirs shows up here.
+const EXTENSIONS = [
+  {
+    name: "DB ready for Control Me",
+    description:
+      "Base de connaissances locale (fichiers .txt/.json/.sql dans un dossier caché) que Control Me peut lire pendant une session, en local ou à distance — gérée depuis l'espace Extensions.",
+  },
+];
 
 // gemini-3.6-flash isn't in Google's documented list of computer_use-compatible
 // models — kept selectable since it was explicitly requested elsewhere in
@@ -83,30 +88,12 @@ export default function SettingsView({
   const [deletingModel, setDeletingModel] = useState<string | null>(null);
   const [generatingCode, setGeneratingCode] = useState(false);
   const [remoteError, setRemoteError] = useState<string | null>(null);
-  const [knowledgeStatus, setKnowledgeStatus] = useState<KnowledgeBaseStatus | null>(null);
-  const [knowledgeTitle, setKnowledgeTitle] = useState("");
-  const [publishing, setPublishing] = useState(false);
-  const [publishedCode, setPublishedCode] = useState<string | null>(null);
-  const [knowledgeError, setKnowledgeError] = useState<string | null>(null);
-  const [importCode, setImportCode] = useState("");
-  const [importing, setImporting] = useState(false);
 
   useEffect(() => {
     getVersion()
       .then(setAppVersion)
       .catch(() => setAppVersion(null));
   }, []);
-
-  function refreshKnowledgeStatus() {
-    getKnowledgeBaseStatus()
-      .then(setKnowledgeStatus)
-      .catch(() => setKnowledgeStatus(null));
-  }
-
-  useEffect(() => {
-    if (section === "extensions") refreshKnowledgeStatus();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [section]);
 
   function handleSave() {
     onSave(form);
@@ -151,55 +138,6 @@ export default function SettingsView({
       setRemoteError(String(e));
     } finally {
       setGeneratingCode(false);
-    }
-  }
-
-  async function handleOpenKnowledgeFolder() {
-    try {
-      await openKnowledgeBaseFolder();
-      // Files are added outside the app (Explorer) — refresh shortly after
-      // giving the user a moment to drop something in, harmless no-op if
-      // they don't.
-      window.setTimeout(refreshKnowledgeStatus, 3000);
-    } catch (e) {
-      setKnowledgeError(String(e));
-    }
-  }
-
-  async function handlePublishKnowledge() {
-    if (
-      !window.confirm(
-        "Ce contenu sera visible publiquement par n'importe qui, sans limite de durée, et ne peut pas être retiré depuis cette version de l'app — ne publie rien de sensible. Continuer ?",
-      )
-    ) {
-      return;
-    }
-    setPublishing(true);
-    setKnowledgeError(null);
-    setPublishedCode(null);
-    try {
-      const code = await publishKnowledgeBase(knowledgeTitle.trim() || "Base de connaissances");
-      setPublishedCode(code);
-    } catch (e) {
-      setKnowledgeError(String(e));
-    } finally {
-      setPublishing(false);
-    }
-  }
-
-  async function handleImportKnowledge() {
-    const code = importCode.trim();
-    if (!code) return;
-    setImporting(true);
-    setKnowledgeError(null);
-    try {
-      await importKnowledgeBase(code);
-      setImportCode("");
-      refreshKnowledgeStatus();
-    } catch (e) {
-      setKnowledgeError(String(e));
-    } finally {
-      setImporting(false);
     }
   }
 
@@ -367,59 +305,17 @@ export default function SettingsView({
         {section === "extensions" && (
           <div className="settings-section">
             <h2>Extensions</h2>
-
-            <div className="extension-card">
-              <div className="extension-card-header">
-                <strong>DB ready for Control Me</strong>
-                <span className="modal-hint">
-                  Une base de connaissances locale que tu remplis toi-même (fichiers .txt/.json/.sql
-                  dans un dossier caché) — Control Me peut la lire pendant une session, en local ou à
-                  distance. Différent de la mémoire auto-apprise : ici, c'est toi qui décides quoi y
-                  mettre.
-                </span>
-              </div>
-
-              {knowledgeStatus && (
-                <div className="modal-hint">
-                  {knowledgeStatus.valid_files.length === 0
-                    ? "Dossier vide pour l'instant."
-                    : `${knowledgeStatus.valid_files.length} fichier(s) valide(s) (${knowledgeStatus.valid_files.join(", ")}).`}
-                  {knowledgeStatus.invalid_files.length > 0 && (
-                    <div className="install-error">
-                      Fichiers non autorisés (seuls .txt/.json/.sql sont acceptés, retire-les pour que
-                      l'IA puisse lire le reste) : {knowledgeStatus.invalid_files.join(", ")}
-                    </div>
-                  )}
-                </div>
-              )}
-
-              <button onClick={handleOpenKnowledgeFolder}>Ouvrir le dossier</button>
-
-              <label>Publier en public</label>
-              <input
-                value={knowledgeTitle}
-                onChange={(e) => setKnowledgeTitle(e.target.value)}
-                placeholder="Titre (optionnel)"
-              />
-              <button onClick={handlePublishKnowledge} disabled={publishing}>
-                {publishing ? "Publication…" : "Publier en public"}
-              </button>
-              {publishedCode && (
-                <div className="install-success">
-                  Publié — code à partager : <strong>{publishedCode}</strong>
-                </div>
-              )}
-
-              <label>Importer via un code</label>
-              <div className="modal-actions">
-                <input value={importCode} onChange={(e) => setImportCode(e.target.value)} placeholder="Code partagé" />
-                <button onClick={handleImportKnowledge} disabled={importing || !importCode.trim()}>
-                  {importing ? "Import…" : "Importer"}
-                </button>
-              </div>
-
-              {knowledgeError && <div className="install-error">{knowledgeError}</div>}
+            <div className="modal-hint">
+              Liste des extensions installées — ouvre l'espace Extensions (Sidebar) pour les utiliser.
             </div>
+            {EXTENSIONS.map((ext) => (
+              <div key={ext.name} className="extension-card">
+                <div className="extension-card-header">
+                  <strong>{ext.name}</strong>
+                  <span className="modal-hint">{ext.description}</span>
+                </div>
+              </div>
+            ))}
           </div>
         )}
 

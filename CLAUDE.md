@@ -1103,11 +1103,20 @@ que le système générique. Un dossier local que l'utilisateur remplit
 lui-même (fichiers `.txt`/`.json`/`.sql`), que Control Me peut lire comme
 base de connaissances de référence — différent de la mémoire auto-apprise
 (`remember_fact`) : ici, c'est l'utilisateur qui choisit explicitement le
-contenu, pas l'IA qui infère des faits. Présenté dans Réglages sous une
-nouvelle section **Extensions**, avec sa propre description, comme
-demandé ("chaque extension a une description") — pas le système de
-plugins complet (versions indépendantes, activation générique), juste
-cette capacité précise nommée et décrite.
+contenu, pas l'IA qui infère des faits. **Correction demandée
+immédiatement après une première version** : l'interface fonctionnelle
+(statut du dossier, "Ouvrir le dossier", publier, importer) ne doit pas
+vivre *dans* Réglages, seulement l'y avoir mentionnée dans une première
+passe — un vrai espace **Extensions** dans la Sidebar, au même niveau que
+Codex/Control Me/Paramètres (`src/components/ExtensionsView.tsx`,
+nouveau, même pattern lazy + `Suspense` que les autres vues), porte
+l'interface réelle de "DB ready for Control Me". Réglages > Extensions
+garde uniquement une liste **en lecture seule** nom + description par
+extension (`EXTENSIONS` dans `SettingsView.tsx`) — correspond à "chaque
+extension a une description" sans y mêler l'interface fonctionnelle. Pas
+le système de plugins complet (versions indépendantes, activation
+générique) — juste cette capacité précise, nommée/décrite, avec sa propre
+place dans l'app.
 
 - **Dossier `{app_data_dir}/controlme_knowledge/`**, marqué avec
   l'attribut **caché Windows** (`SetFileAttributesW` +
