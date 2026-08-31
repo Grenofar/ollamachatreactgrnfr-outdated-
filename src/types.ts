@@ -93,3 +93,9 @@ export interface ControlMeStep {
   args: Record<string, unknown>;
 }
 
+export interface ControlMeMemoryEntry {
+  fact: string;
+  category?: string | null;
+  created_at: number;
+}
+

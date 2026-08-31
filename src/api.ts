@@ -5,6 +5,7 @@ import type {
   AgentChatResponse,
   AgentMessage,
   ChatMessage,
+  ControlMeMemoryEntry,
   ControlMeStep,
   Conversation,
   ConversationMeta,
@@ -166,3 +167,10 @@ export const onControlMeLimit = (cb: () => void) => listen("control-me-limit", (
 
 export const onControlMeConfirmationRequired = (cb: (payload: { action: string; explanation: string }) => void) =>
   listen<{ action: string; explanation: string }>("control-me-confirmation-required", (e) => cb(e.payload));
+
+export const resolveControlMeConfirmation = (accept: boolean) =>
+  invoke<void>("resolve_control_me_confirmation", { accept });
+
+export const listControlMeMemory = () => invoke<ControlMeMemoryEntry[]>("list_control_me_memory");
+
+export const clearControlMeMemory = () => invoke<void>("clear_control_me_memory");

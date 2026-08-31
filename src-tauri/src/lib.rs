@@ -2,7 +2,10 @@ mod commands;
 
 use commands::agent::{agent_chat, cancel_agent_chat, AgentCancelFlag};
 use commands::chat::{cancel_chat, delete_model, install_model, list_models, send_chat, CancelFlag};
-use commands::controlme::{cancel_control_me, run_control_me, ControlMeCancelFlag};
+use commands::controlme::{
+    cancel_control_me, clear_control_me_memory, list_control_me_memory, resolve_control_me_confirmation,
+    run_control_me, ControlMeCancelFlag, ControlMeConfirmation,
+};
 use commands::conversations::{
     delete_conversation, list_conversations, load_conversation, save_conversation, search_conversations,
 };
@@ -35,6 +38,10 @@ pub fn run() {
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_window_state::Builder::default().build())
         .plugin(tauri_plugin_process::init())
+        .plugin(tauri_plugin_autostart::init(
+            tauri_plugin_autostart::MacosLauncher::LaunchAgent,
+            None,
+        ))
         .plugin(
             tauri_plugin_updater::Builder::new()
                 .header("apikey", SUPABASE_ANON_KEY)
@@ -47,6 +54,7 @@ pub fn run() {
         .manage(ShellCancelFlag(Arc::new(AtomicBool::new(false))))
         .manage(AgentCancelFlag(Arc::new(AtomicBool::new(false))))
         .manage(ControlMeCancelFlag(Arc::new(AtomicBool::new(false))))
+        .manage(ControlMeConfirmation(Arc::new(std::sync::Mutex::new(None))))
         .manage(Watchdog::new())
         .setup(|app| {
             let watchdog = app.state::<Watchdog>().0.clone();
@@ -147,6 +155,9 @@ pub fn run() {
             close_app,
             run_control_me,
             cancel_control_me,
+            resolve_control_me_confirmation,
+            list_control_me_memory,
+            clear_control_me_memory,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

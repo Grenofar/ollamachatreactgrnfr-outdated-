@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import { disable, enable, isEnabled } from "@tauri-apps/plugin-autostart";
 import "../App.css";
 import ControlMeView from "../components/controlme/ControlMeView";
 import { loadSettings, saveSettings } from "../api";
@@ -8,10 +9,27 @@ export default function StandaloneApp() {
   const [settings, setSettings] = useState<Settings | null>(null);
   const [showKeyInput, setShowKeyInput] = useState(false);
   const [keyDraft, setKeyDraft] = useState("");
+  const [autostart, setAutostart] = useState(false);
 
   useEffect(() => {
     loadSettings().then(setSettings);
+    isEnabled()
+      .then(setAutostart)
+      .catch(() => {});
   }, []);
+
+  async function toggleAutostart() {
+    try {
+      if (autostart) {
+        await disable();
+      } else {
+        await enable();
+      }
+      setAutostart(await isEnabled());
+    } catch {
+      // best-effort — leave the checkbox reflecting the last known state
+    }
+  }
 
   function handlePersistModel(model: string) {
     setSettings((prev) => {
@@ -43,6 +61,10 @@ export default function StandaloneApp() {
     <div className="standalone-shell">
       <div className="standalone-topbar">
         <span className="standalone-title">Control Me</span>
+        <label className="standalone-autostart">
+          <input type="checkbox" checked={autostart} onChange={toggleAutostart} />
+          Lancer au démarrage de Windows
+        </label>
         <button onClick={openKeyInput}>Clé API Gemini</button>
       </div>
       {showKeyInput && (

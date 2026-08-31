@@ -10,17 +10,32 @@
 // categories (financial transactions, account creation, etc.) that we
 // respect even though the user chose fully-autonomous mode — that flag is
 // the model's own judgment call, not a general per-action approval gate.
+use super::data_dir;
 use base64::{engine::general_purpose::STANDARD, Engine as _};
 use enigo::{Axis, Button, Coordinate, Direction, Enigo, Key, Keyboard, Mouse, Settings as EnigoSettings};
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
 use std::sync::atomic::{AtomicBool, Ordering};
-use std::sync::Arc;
+use std::sync::{Arc, Mutex};
 use std::time::Duration;
 use tauri::{AppHandle, Emitter, State};
+use tokio::sync::oneshot;
 use xcap::Monitor;
 
 pub struct ControlMeCancelFlag(pub Arc<AtomicBool>);
+
+// Holds the sender half of a one-shot channel while a require_confirmation
+// pause is in effect — resolve_control_me_confirmation takes it and sends
+// the user's answer, unblocking run_control_me's await without ending the
+// command (unlike the original "just emit and return" behavior).
+pub struct ControlMeConfirmation(pub Arc<Mutex<Option<oneshot::Sender<bool>>>>);
+
+#[derive(Serialize, Deserialize, Clone)]
+pub struct MemoryEntry {
+    pub fact: String,
+    pub category: Option<String>,
+    pub created_at: f64,
+}
 
 const MAX_CONTROL_ME_ITERATIONS: u32 = 40;
 const GEMINI_MODEL: &str = "gemini-3.7-flash";
@@ -51,6 +66,64 @@ struct StepPayload {
     intent: Option<String>,
     action: String,
     label: String,
+}
+
+fn memory_path(app: &AppHandle) -> Result<std::path::PathBuf, String> {
+    Ok(data_dir(app)?.join("controlme_memory.json"))
+}
+
+fn load_memory(app: &AppHandle) -> Result<Vec<MemoryEntry>, String> {
+    let path = memory_path(app)?;
+    if !path.exists() {
+        return Ok(Vec::new());
+    }
+    let content = std::fs::read_to_string(&path).map_err(|e| e.to_string())?;
+    serde_json::from_str(&content).map_err(|e| e.to_string())
+}
+
+fn save_memory(app: &AppHandle, entries: &[MemoryEntry]) -> Result<(), String> {
+    let path = memory_path(app)?;
+    let content = serde_json::to_string_pretty(entries).map_err(|e| e.to_string())?;
+    std::fs::write(&path, content).map_err(|e| e.to_string())
+}
+
+fn now_unix_secs() -> f64 {
+    std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|d| d.as_secs_f64())
+        .unwrap_or(0.0)
+}
+
+// Dispatches one function call to its handler and returns (label,
+// error_text) for the transcript/function_result — shared by both the
+// direct-execution path and the require_confirmation path below, so the
+// "emit step, screenshot, build the next request body" tail of the loop
+// only has to exist once.
+fn dispatch_action(app: &AppHandle, name: &str, args: &Value, width: u32, height: u32) -> (String, Option<String>) {
+    if name == "remember_fact" {
+        let fact = args["fact"].as_str().unwrap_or("").trim().to_string();
+        let category = args["category"].as_str().map(|s| s.to_string());
+        if fact.is_empty() {
+            return ("Aucun fait fourni.".to_string(), Some("Aucun fait fourni.".to_string()));
+        }
+        return match load_memory(app) {
+            Ok(mut entries) => {
+                entries.push(MemoryEntry { fact: fact.clone(), category, created_at: now_unix_secs() });
+                match save_memory(app, &entries) {
+                    Ok(()) => (format!("Fait enregistré : {fact}"), None),
+                    Err(e) => (format!("Erreur : {e}"), Some(e)),
+                }
+            }
+            Err(e) => (format!("Erreur : {e}"), Some(e)),
+        };
+    }
+    if name == "take_screenshot" {
+        return ("Capture d'écran".to_string(), None);
+    }
+    match execute_action(name, args, width, height) {
+        Ok(l) => (l, None),
+        Err(e) => (format!("Erreur : {e}"), Some(e)),
+    }
 }
 
 // Returns (base64 JPEG, real screen width, real screen height). The real
@@ -233,6 +306,7 @@ fn execute_action(name: &str, args: &Value, width: u32, height: u32) -> Result<S
 #[tauri::command]
 pub async fn run_control_me(
     cancel: State<'_, ControlMeCancelFlag>,
+    confirmation: State<'_, ControlMeConfirmation>,
     app: AppHandle,
     api_key: String,
     model: String,
@@ -248,21 +322,53 @@ pub async fn run_control_me(
     let client = reqwest::Client::new();
 
     let (initial_screenshot, width, height) = capture_screenshot_base64()?;
-    let tools = json!([{
-        "type": "computer_use",
-        "environment": "desktop",
-        "enable_prompt_injection_detection": true,
-    }]);
+    let tools = json!([
+        {
+            "type": "computer_use",
+            "environment": "desktop",
+            "enable_prompt_injection_detection": true,
+        },
+        {
+            "type": "function",
+            "name": "remember_fact",
+            "description": "Enregistre un fait durable appris sur l'utilisateur (son rôle, ses habitudes, les logiciels qu'il utilise...) pour s'en souvenir lors de futures sessions. Uniquement pour de l'information utile sur le long terme, pas des détails ponctuels sans intérêt futur.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "fact": { "type": "string", "description": "Le fait à retenir, formulé clairement et de façon autonome" },
+                    "category": { "type": "string", "description": "Catégorie optionnelle (ex: rôle, logiciel, habitude)" }
+                },
+                "required": ["fact"]
+            }
+        }
+    ]);
 
     // thinking_level "low" trades some reasoning depth for much faster
     // per-step responses — appropriate for a tight screenshot/act loop
     // rather than a one-shot hard problem.
     let generation_config = json!({ "thinking_level": "low" });
 
+    // Pragmatic "retrieval": the whole memory file gets prepended as-is
+    // rather than semantically searched — realistically a personal-profile
+    // list stays small (tens of facts), so a vector store would be real
+    // infrastructure for no practical benefit here. Revisit only if this
+    // ever grows large enough to meaningfully bloat context.
+    let memory = load_memory(&app).unwrap_or_default();
+    let instruction_with_memory = if memory.is_empty() {
+        instruction
+    } else {
+        let facts: Vec<String> = memory.iter().map(|m| format!("- {}", m.fact)).collect();
+        format!(
+            "Ce que tu sais déjà sur cette personne :\n{}\n\nInstruction actuelle : {}",
+            facts.join("\n"),
+            instruction
+        )
+    };
+
     let mut body = json!({
         "model": model,
         "input": [
-            { "type": "text", "text": instruction },
+            { "type": "text", "text": instruction_with_memory },
             { "type": "image", "data": initial_screenshot, "mime_type": "image/jpeg" },
         ],
         "tools": tools,
@@ -335,28 +441,50 @@ pub async fn run_control_me(
         let call = function_calls[0];
         let call_id = call["id"].as_str().unwrap_or("").to_string();
         let action_name = call["name"].as_str().unwrap_or("").to_string();
-        let args = call["arguments"].clone();
+        let mut args = call["arguments"].clone();
         let intent = args["intent"].as_str().map(|s| s.to_string());
 
-        if args["safety_decision"]["decision"] == "require_confirmation" {
+        let (label, error_text) = if args["safety_decision"]["decision"] == "require_confirmation" {
             let explanation = args["safety_decision"]["explanation"]
                 .as_str()
                 .unwrap_or("Action jugée sensible par le modèle.")
                 .to_string();
+            let (tx, rx) = oneshot::channel::<bool>();
+            {
+                let mut guard = confirmation
+                    .0
+                    .lock()
+                    .map_err(|_| "État de confirmation corrompu".to_string())?;
+                *guard = Some(tx);
+            }
             let _ = app.emit(
                 "control-me-confirmation-required",
                 json!({ "action": action_name, "explanation": explanation }),
             );
-            return Ok(());
-        }
 
-        let (label, error_text) = if action_name == "take_screenshot" {
-            ("Capture d'écran".to_string(), None)
-        } else {
-            match execute_action(&action_name, &args, width, height) {
-                Ok(l) => (l, None),
-                Err(e) => (format!("Erreur : {e}"), Some(e)),
+            // Pauses this command in place rather than ending it — resolve_
+            // control_me_confirmation sends into `rx` to resume the same
+            // run, instead of the user having to send a whole new message.
+            let accepted = tokio::select! {
+                result = rx => result.unwrap_or(false),
+                _ = wait_for_cancel(flag.clone()) => {
+                    let _ = app.emit("control-me-cancelled", ());
+                    return Err(CANCELLED_MESSAGE.to_string());
+                }
+            };
+
+            if !accepted {
+                ("Action refusée par l'utilisateur.".to_string(), None)
+            } else {
+                // Google's documented protocol for this exact flag: mark it
+                // acknowledged before re-attempting the action.
+                if let Some(obj) = args.as_object_mut() {
+                    obj.insert("safety_acknowledgement".to_string(), json!(true));
+                }
+                dispatch_action(&app, &action_name, &args, width, height)
             }
+        } else {
+            dispatch_action(&app, &action_name, &args, width, height)
         };
 
         let _ = app.emit(
@@ -395,4 +523,23 @@ pub async fn run_control_me(
 #[tauri::command]
 pub fn cancel_control_me(cancel: State<ControlMeCancelFlag>) {
     cancel.0.store(true, Ordering::SeqCst);
+}
+
+#[tauri::command]
+pub fn resolve_control_me_confirmation(confirmation: State<ControlMeConfirmation>, accept: bool) {
+    if let Ok(mut guard) = confirmation.0.lock() {
+        if let Some(tx) = guard.take() {
+            let _ = tx.send(accept);
+        }
+    }
+}
+
+#[tauri::command]
+pub fn list_control_me_memory(app: AppHandle) -> Result<Vec<MemoryEntry>, String> {
+    load_memory(&app)
+}
+
+#[tauri::command]
+pub fn clear_control_me_memory(app: AppHandle) -> Result<(), String> {
+    save_memory(&app, &[])
 }

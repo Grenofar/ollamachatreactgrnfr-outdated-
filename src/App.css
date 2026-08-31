@@ -987,6 +987,15 @@ body {
   flex: 1;
 }
 
+.standalone-autostart {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12px;
+  color: #9a9a9a;
+  cursor: pointer;
+}
+
 .standalone-key-row {
   display: flex;
   gap: 8px;
@@ -1002,6 +1011,73 @@ body {
   border: 1px solid #3a3a3a;
   border-radius: 8px;
   padding: 6px 10px;
+  font-size: 12px;
+}
+
+/* ---------------------------------------------------- Control Me memory */
+.controlme-memory-panel {
+  padding: 10px 14px;
+  background: #1c1c1c;
+  border-bottom: 1px solid #2c2c2c;
+}
+
+.controlme-memory-empty {
+  font-size: 12px;
+  color: #9a9a9a;
+}
+
+.controlme-memory-list {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  max-height: 200px;
+  overflow-y: auto;
+}
+
+.controlme-memory-entry {
+  font-size: 12px;
+  color: #cccccc;
+  background: #232323;
+  border-radius: 8px;
+  padding: 6px 10px;
+}
+
+.controlme-memory-category {
+  display: inline-block;
+  margin-right: 8px;
+  padding: 1px 7px;
+  border-radius: 8px;
+  background: #1c2634;
+  color: #9fc0ff;
+  font-size: 10px;
+}
+
+.controlme-memory-clear {
+  margin-top: 8px;
+}
+
+/* --------------------------------------------- Control Me confirmation */
+.controlme-confirm {
+  align-self: center;
+  max-width: 640px;
+  width: 100%;
+  margin: 4px auto;
+  padding: 10px 14px;
+  background: #3a2f1f;
+  border: 1px solid #5a4a2f;
+  border-radius: 10px;
+}
+
+.controlme-confirm-text {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  font-size: 12.5px;
+  color: #e0b666;
+}
+
+.controlme-confirm-text span {
+  color: #cccccc;
   font-size: 12px;
 }
 

@@ -42,6 +42,33 @@ exactement le même code, seule l'interface autour change.
   conséquence pour voir comment ça se comporte avant de lui confier
   quelque chose d'important.
 
+## Quand Gemini demande une confirmation
+
+Sur une action qu'il juge particulièrement sensible (transaction
+financière, création de compte, modification de données importantes...),
+Gemini fait une pause et affiche directement dans la conversation ce qu'il
+veut faire et pourquoi. Deux boutons : **Confirmer** (l'action s'exécute,
+la session continue normalement) ou **Refuser** (l'action est annulée, la
+session continue quand même — Gemini s'adapte à ton refus au lieu de
+s'arrêter).
+
+## Mémoire
+
+Control Me peut retenir des faits durables sur toi (ton rôle, les
+logiciels que tu utilises, tes habitudes) d'une session à l'autre, quand
+il juge que c'est utile sur le long terme — pas de contrôle de ta part
+fait par fait, c'est lui qui décide quoi retenir. Le bouton **Mémoire** en
+haut de l'app te montre tout ce qui a été enregistré, avec un bouton pour
+tout effacer d'un coup. Ces faits restent uniquement sur ton PC (fichier
+local) ; ils sont réinjectés dans le contexte au début de chaque nouvelle
+instruction pour que Gemini en tienne compte.
+
+## Lancement au démarrage de Windows
+
+Une case à cocher en haut de l'app active/désactive le lancement
+automatique au démarrage de Windows — pratique pour un outil censé être
+disponible à tout moment.
+
 ## Installation
 
 Tu as besoin de ta propre clé API Gemini (obtenue sur Google AI Studio) —

@@ -47,6 +47,7 @@ pas devenir obsolète.
 - [FAIT] v0.4.1 : Control Me signalé "trop long" par l'utilisateur après premier test (captures d'écran + réflexion Gemini) — captures redimensionnées et compressées en JPEG (au lieu de PNG pleine résolution), `thinking_level: "low"`, délai de stabilisation réduit — voir "Optimisation vitesse (v0.4.1)" dans Architecture > Control Me.
 - [FAIT] v0.4.2 : sélecteur de modèle Gemini dans Control Me (3.5 Flash-Lite/3.5 Flash/3.6 Flash/3.7 Flash), persisté dans les réglages — voir "Sélecteur de modèle (v0.4.2)" dans Architecture > Control Me. Note : 3.6 Flash n'est pas documenté par Google comme compatible avec `computer_use`, laissé sélectionnable quand même (demandé explicitement) mais signalé dans le menu.
 - [FAIT] v0.5.0 : Control Me installable **séparément** de l'app de chat, même mécanisme de mise à jour/setup, bouton dédié sur le site, doc autonome `CONTROLME.md` — voir "Control Me : produit installable séparément (v0.5.0)" dans Architecture > Control Me pour le détail complet (config Tauri alternative fusionnée par-dessus la config de base, pas de duplication de code, colonne `product` sur `app_releases`). **Migration SQL à exécuter par l'utilisateur avant de considérer le site à jour** — sans elle, le bouton de téléchargement existant de l'app de chat casse aussi.
+- [FAIT] v0.5.1 : Control Me — confirmation `require_confirmation` désormais inline (reprend la session en place au lieu de tout arrêter), mémoire IA type RAG simplifiée où **l'IA décide elle-même** quoi retenir sur l'utilisateur via un outil `remember_fact` (panneau "Mémoire" pour voir/tout effacer), lancement au démarrage de Windows (build standalone) — voir "Confirmation inline, mémoire IA, lancement au démarrage" dans Architecture > Control Me.
 
 ## Architecture
 
@@ -382,6 +383,85 @@ base automatiquement.
 - **`site/index.html`** : deuxième section + bouton (`data-product`),
   `loadLatestRelease(product)` généralisée pour interroger `app_releases`
   filtré par produit au lieu d'une requête unique non filtrée.
+
+### Confirmation inline, mémoire IA, lancement au démarrage
+
+Trois demandes choisies par l'utilisateur dans une liste de pistes que
+j'avais proposées. Recherche faite avant de coder (pas supposée de
+mémoire) : la doc de référence de l'Interactions API pour les outils
+`file_search`/`retrieval` (candidats naturels pour une "mémoire type
+RAG") montre qu'ils sont **en lecture seule côté modèle** — pas de
+mécanisme pour que le modèle y écrive lui-même, seulement une API Files
+séparée qu'on remplit à l'avance. Ne convient pas à la demande explicite
+("que l'IA lui-même y apporte des modifications, en fonction de ce qu'il
+a appris") — d'où l'outil `function` personnalisé ci-dessous à la place.
+Vérifié aussi que `computer_use` peut être combiné avec un outil
+`function` personnalisé dans le même tableau `tools` (exemple documenté
+par Google : un outil `yield_to_user` personnalisé aux côtés de
+`computer_use` pour des scénarios humain-dans-la-boucle).
+
+- **Confirmation qui reprend en place, pas un arrêt complet.** Avant :
+  `require_confirmation` (voir plus haut) coupait toute la commande
+  Rust et prévenait l'utilisateur, qui devait renvoyer un nouveau message
+  pour continuer. Maintenant : un canal `tokio::sync::oneshot` (feature
+  `sync` ajoutée à `tokio` dans `Cargo.toml`), stocké dans un nouvel état
+  managé `ControlMeConfirmation` (`Arc<Mutex<Option<oneshot::Sender<bool>>>>`,
+  même forme que `ControlMeCancelFlag` mais portant un `bool` au lieu
+  d'être sondé) — `run_control_me` crée le canal, stocke l'émetteur,
+  émet l'événement, puis `.await` le récepteur (dans un `tokio::select!`
+  qui laisse Stop toujours fonctionner pendant l'attente). Nouvelle
+  commande `resolve_control_me_confirmation(accept)` : récupère
+  l'émetteur et y envoie la réponse, ce qui débloque la boucle **sans y
+  mettre fin**. En cas d'acceptation, `"safety_acknowledgement": true` est
+  ajouté aux arguments de l'action avant de l'exécuter (protocole exact
+  documenté par Google pour ce flag) ; en cas de refus, la boucle
+  continue quand même (résultat "Action refusée par l'utilisateur.",
+  comme un refus d'approbation dans Codex) au lieu de s'arrêter, pour que
+  Gemini puisse s'adapter. `ControlMeView.tsx` : le gestionnaire
+  `onControlMeConfirmationRequired` ne coupe plus `running` — un état
+  `pendingConfirmation` affiche un prompt inline dans le transcript
+  (`.controlme-confirm`, même famille visuelle que l'approbation inline
+  de Codex), avec `resolveControlMeConfirmation(accept)` sur les boutons.
+- **Mémoire "type RAG" simplifiée délibérément — et assumée comme telle,
+  pas cachée.** Un vrai RAG par embeddings demande un modèle
+  d'embedding et un index vectoriel : de la vraie infrastructure pour ce
+  qui reste, en pratique, une liste de la taille d'un profil personnel
+  (dizaines de faits, pas des milliers). v1 : un outil `function`
+  personnalisé `remember_fact` déclaré aux côtés de `computer_use` dans
+  le tableau `tools` (paramètres `fact`/`category`) ; dans la boucle,
+  `remember_fact` est traité comme `take_screenshot` — une branche AVANT
+  `execute_action`, jamais passée à `enigo` (voir `dispatch_action`,
+  factorisée pour être partagée entre le chemin direct et le chemin
+  "après confirmation", qui exécutaient sinon un code quasi-identique en
+  double) — qui ajoute le fait à `{data_dir}/controlme_memory.json`
+  (même convention que `settings.json`) et renvoie une confirmation
+  courte comme résultat de fonction. **"Retrieval" au sens où le fichier
+  entier est chargé et préfixé à l'instruction initiale d'une nouvelle
+  session** ("Ce que tu sais déjà sur cette personne : ...") avant chaque
+  nouvel appel — retrieval-*augmenté* sans avoir besoin d'un vector
+  store, tant que le nombre de faits reste raisonnable ; un vrai filtrage
+  par mots-clés/embeddings resterait à envisager seulement si ça devait
+  un jour grossir au point de peser sur le contexte/la latence. Nouvelles
+  commandes `list_control_me_memory`/`clear_control_me_memory` — donner à
+  l'utilisateur une vraie visibilité et un moyen simple de tout effacer
+  n'est pas une option ici (des données sur lui s'accumulent sans
+  confirmation par fait), c'est une partie non négociable de la
+  fonctionnalité, pas une finition plus tard. Panneau "Mémoire" dans
+  `ControlMeView.tsx` (bouton dans l'en-tête, liste + bouton "Tout
+  effacer" avec confirmation `window.confirm`).
+- **Lancement au démarrage de Windows** : `tauri-plugin-autostart`
+  (officiel, rien de personnalisé) — `tauri_plugin_autostart::init(MacosLauncher::LaunchAgent, None)`
+  dans `lib.rs` (le paramètre `macos_launcher` doit être fourni même sur
+  ce projet Windows-only, la signature de la fonction `init` est commune
+  à toutes les plateformes ; vérifié dans le code source du plugin avant
+  d'écrire l'appel — la struct `Builder` interne, elle, n'a ce champ que
+  sous `#[cfg(target_os = "macos")]`). Capacité `autostart:default`
+  ajoutée à `capabilities/default.json` (vérifié que le plugin en a bien
+  une, comme les autres). Case à cocher "Lancer au démarrage de Windows"
+  dans `StandaloneApp.tsx` uniquement (`@tauri-apps/plugin-autostart`,
+  `enable`/`disable`/`isEnabled`) — scopé au build standalone comme
+  demandé ; l'app de chat principale n'a pas ce contrôle dans son
+  interface, même si le plugin est enregistré pour les deux (même crate).
 
 ### Les 6 outils de l'agent
 1. `read_file` — lecture texte (limite 5 Mo), chemin absolu
@@ -1012,6 +1092,29 @@ l'utilisateur confirme qu'elle est bien dans `.env` local.
   UX "tray-first" avec raccourci global (reprend l'idée de l'overlay F5 du
   tout premier plan Control Me), icône/branding distincts, lancement au
   démarrage de Windows.
+- **2026-08-31** — v0.5.1 : trois pistes choisies par l'utilisateur parmi
+  celles proposées ("2 3 4 type rag au final fais en sorte que l'ia
+  lui-même y apporte des modif, en fonction de ce qu'il a appris sur la
+  personne 5 7 déjà fait 8 j'ai pas compris") : confirmation inline,
+  mémoire IA, lancement au démarrage — plan mode à nouveau vu la
+  complexité (multiples approches possibles pour la mémoire, mécanisme de
+  pause/reprise mi-boucle pour la confirmation). Recherche avant de
+  coder : les outils `file_search`/`retrieval` de Google sont en lecture
+  seule côté modèle (pas de mécanisme d'écriture), donc écartés au profit
+  d'un outil `function` personnalisé `remember_fact` — confirmé aussi que
+  `computer_use` peut être combiné avec un outil `function` personnalisé
+  dans le même tableau `tools` (exemple documenté par Google,
+  `yield_to_user`). Voir "Confirmation inline, mémoire IA, lancement au
+  démarrage" dans Architecture > Control Me pour le détail technique
+  complet. `tauri-plugin-autostart` : API exacte (`init(macos_launcher,
+  args)`, champ `macos_launcher` de `Builder` gated `#[cfg(target_os =
+  "macos")]` mais paramètre de `init` toujours requis) vérifiée dans le
+  code source du plugin avant d'écrire l'appel, comme d'habitude dans ce
+  projet plutôt que deviné de mémoire. Un premier `npx tauri build
+  --config ...` pour le standalone Control Me avait été lancé **avant**
+  d'avoir fini le code Rust (interface déjà mise à jour pour appeler des
+  commandes qui n'existaient pas encore côté backend) — repéré et stoppé
+  avant publication plutôt que de laisser un build cassé sortir.
 
 ## Prochaines étapes (dans l'ordre du fichier de passation d'origine)
 

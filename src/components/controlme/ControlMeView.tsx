@@ -3,6 +3,8 @@ import MessageBubble from "../MessageBubble";
 import SendButton from "../SendButton";
 import {
   cancelControlMe,
+  clearControlMeMemory,
+  listControlMeMemory,
   onControlMeCancelled,
   onControlMeConfirmationRequired,
   onControlMeDone,
@@ -10,9 +12,10 @@ import {
   onControlMeLimit,
   onControlMeMessage,
   onControlMeStep,
+  resolveControlMeConfirmation,
   runControlMe,
 } from "../../api";
-import type { Settings } from "../../types";
+import type { ControlMeMemoryEntry, Settings } from "../../types";
 
 interface TranscriptEntry {
   role: "user" | "assistant" | "system";
@@ -42,6 +45,11 @@ export default function ControlMeView({
   const [entries, setEntries] = useState<TranscriptEntry[]>([]);
   const [running, setRunning] = useState(false);
   const [model, setModel] = useState(settings.gemini_model || "gemini-3.7-flash");
+  const [pendingConfirmation, setPendingConfirmation] = useState<{ action: string; explanation: string } | null>(
+    null,
+  );
+  const [showMemory, setShowMemory] = useState(false);
+  const [memory, setMemory] = useState<ControlMeMemoryEntry[] | null>(null);
   const scrollRef = useRef<HTMLDivElement>(null);
 
   const apiKey = settings.gemini_api_key?.trim() ?? "";
@@ -84,14 +92,10 @@ export default function ControlMeView({
         setRunning(false);
       }),
       onControlMeConfirmationRequired(({ action, explanation }) => {
-        setEntries((prev) => [
-          ...prev,
-          {
-            role: "system",
-            content: `Action mise en pause (${action}) : ${explanation}. Gemini juge cette action sensible — envoie un nouveau message pour confirmer et continuer.`,
-          },
-        ]);
-        setRunning(false);
+        // Stays "running": the Rust loop is paused mid-flight waiting on
+        // resolveControlMeConfirmation, not stopped — accepting or
+        // refusing resumes the same run instead of requiring a new message.
+        setPendingConfirmation({ action, explanation });
       }),
     ];
     return () => {
@@ -115,6 +119,38 @@ export default function ControlMeView({
     cancelControlMe().catch(() => {});
   }
 
+  function resolveConfirmation(accept: boolean) {
+    setEntries((prev) => [
+      ...prev,
+      {
+        role: "system",
+        content: accept
+          ? `Action confirmée (${pendingConfirmation?.action}).`
+          : `Action refusée (${pendingConfirmation?.action}).`,
+      },
+    ]);
+    setPendingConfirmation(null);
+    resolveControlMeConfirmation(accept).catch(() => {});
+  }
+
+  function toggleMemory() {
+    if (showMemory) {
+      setShowMemory(false);
+      return;
+    }
+    setShowMemory(true);
+    listControlMeMemory()
+      .then(setMemory)
+      .catch(() => setMemory([]));
+  }
+
+  function handleClearMemory() {
+    if (!window.confirm("Effacer tout ce que l'IA a retenu sur toi ?")) return;
+    clearControlMeMemory()
+      .then(() => setMemory([]))
+      .catch(() => {});
+  }
+
   function handleKeyDown(e: KeyboardEvent<HTMLTextAreaElement>) {
     if (e.key === "Enter" && !e.shiftKey) {
       e.preventDefault();
@@ -128,6 +164,7 @@ export default function ControlMeView({
         {onBack && <button onClick={onBack}>← Chat</button>}
         <span className="controlme-header-title">Control Me</span>
         <div className="controlme-header-spacer" />
+        <button onClick={toggleMemory}>Mémoire</button>
         <select
           className="controlme-model-select"
           value={model}
@@ -148,6 +185,30 @@ export default function ControlMeView({
         </div>
       )}
 
+      {showMemory && (
+        <div className="controlme-memory-panel">
+          {memory === null ? (
+            <div className="controlme-memory-empty">Chargement…</div>
+          ) : memory.length === 0 ? (
+            <div className="controlme-memory-empty">Rien de retenu pour l'instant.</div>
+          ) : (
+            <>
+              <div className="controlme-memory-list">
+                {memory.map((entry, i) => (
+                  <div key={i} className="controlme-memory-entry">
+                    {entry.category && <span className="controlme-memory-category">{entry.category}</span>}
+                    {entry.fact}
+                  </div>
+                ))}
+              </div>
+              <button className="controlme-memory-clear" onClick={handleClearMemory}>
+                Tout effacer
+              </button>
+            </>
+          )}
+        </div>
+      )}
+
       <div className="controlme-scroll" ref={scrollRef}>
         {entries.length === 0 && (
           <div className="empty-state">
@@ -165,6 +226,20 @@ export default function ControlMeView({
           ) : (
             <MessageBubble key={i} role={entry.role} content={entry.content} />
           ),
+        )}
+        {pendingConfirmation && (
+          <div className="controlme-confirm">
+            <div className="controlme-confirm-text">
+              <strong>Confirmation demandée : {pendingConfirmation.action}</strong>
+              <span>{pendingConfirmation.explanation}</span>
+            </div>
+            <div className="modal-actions">
+              <button onClick={() => resolveConfirmation(false)}>Refuser</button>
+              <button className="primary-btn" onClick={() => resolveConfirmation(true)}>
+                Confirmer
+              </button>
+            </div>
+          </div>
         )}
       </div>
 
