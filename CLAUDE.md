@@ -1114,7 +1114,19 @@ l'utilisateur confirme qu'elle est bien dans `.env` local.
   --config ...` pour le standalone Control Me avait été lancé **avant**
   d'avoir fini le code Rust (interface déjà mise à jour pour appeler des
   commandes qui n'existaient pas encore côté backend) — repéré et stoppé
-  avant publication plutôt que de laisser un build cassé sortir.
+  avant publication plutôt que de laisser un build cassé sortir. App de
+  chat principale publiée et vérifiée via la clé **anon** (fichier : 200
+  OK, 6 721 386 octets ; `latest_release_manifest` : renvoie bien la
+  v0.5.1). Ligne insérée **sans** le champ `product` (la migration SQL
+  n'était toujours pas appliquée à ce moment — vérifié en direct via
+  `GET .../app_releases?select=product` avant de publier, colonne
+  inexistante confirmée par l'erreur PostgREST `42703`) ; le build
+  standalone Control Me suit dans la foulée, sa propre ligne
+  `app_releases` (avec `product: "controlme"` cette fois) ne pourra être
+  insérée qu'une fois la migration appliquée par l'utilisateur — sans ça,
+  son endpoint de mise à jour (`?p_product=controlme`) échouerait proprement
+  (fonction `latest_release_manifest` sans paramètre encore déployée), pas
+  de risque de servir le mauvais manifeste entre-temps.
 
 ## Prochaines étapes (dans l'ordre du fichier de passation d'origine)
 
