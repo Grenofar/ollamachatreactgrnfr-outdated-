@@ -52,6 +52,7 @@ pas devenir obsolète.
 - [FAIT] v0.5.3 : historique des sessions Control Me — les conversations ne disparaissent plus à la fermeture, sauvegardées automatiquement (même pattern que les conversations du chat), boutons "Nouvelle session"/"Historique" pour relire ou supprimer une ancienne session — voir "Historique des sessions Control Me (v0.5.3)" dans Architecture > Control Me.
 - [FAIT] v0.5.4 : recherche dans l'historique Control Me (titre + contenu, `search_control_me_sessions`), renommage d'une session (double-clic, comme la Sidebar du chat), et navigation simplifiée — plus de bouton dédié "← Chat" dans Codex/Control Me, cliquer un élément de la Sidebar (nouvelle conversation ou conversation existante) y ramène directement — voir "Recherche/renommage de session, retrait du bouton retour (v0.5.4)" dans Architecture > Control Me.
 - [FAIT] v0.5.5 : passe d'animations sur toute l'app (CSS uniquement, aucune dépendance ajoutée) — micro-interactions de boutons, halo de focus sur les champs, entrée en fondu/décalage des bulles de chat et cartes d'outils avec effet cascade, indicateur de frappe animé + curseur clignotant pendant le streaming, transition de vue chat/Codex/Control Me, ouverture animée des modales/dropdowns/panneaux, toast de mise à jour avec rebond, accent visuel sur la conversation/section active dans la Sidebar, scrollbar personnalisée — respecte `prefers-reduced-motion`. Voir "Animations et micro-interactions (v0.5.5)" dans Architecture.
+- [FAIT] v0.5.6 : Control Me plus rapide et plus fiable — attente adaptative après chaque action (remplace le délai fixe de 120ms par une détection locale de stabilisation de l'écran) et nouvel outil `read_ui_elements` (Gemini peut lire l'arbre d'accessibilité Windows de la fenêtre au premier plan — type/libellé/état/position des contrôles — sans capture d'écran, en complément de `computer_use`) — voir "Attente adaptative et lecture de l'arbre d'accessibilité (v0.5.6)" dans Architecture > Control Me.
 
 ## Architecture
 
@@ -665,6 +666,109 @@ Trois demandes explicites groupées dans la même session de travail.
   ajouté dans `handleNewConversation` et `handleSelectConversation`
   (`App.tsx`), les deux seuls points d'entrée qui déclenchent
   `onNew`/`onSelect` de la Sidebar.
+
+### Attente adaptative et lecture de l'arbre d'accessibilité (v0.5.6)
+
+Demandé après une discussion libre : existe-t-il un autre moyen pour l'IA
+de savoir ce qui se passe à l'écran, sans passer par des captures d'écran,
+"en live" et "plus opti" ? Avec la consigne explicite de créer un vrai
+outil que Gemini peut appeler lui-même. Deux améliorations indépendantes,
+toutes deux passées par plan mode vu la nouveauté (nouvelle dépendance,
+interop Windows), et toutes deux vérifiées contre du vrai code source avant
+d'écrire quoi que ce soit (même discipline que pour enigo/xcap/
+tauri-plugin-autostart en leur temps).
+
+- **Attente adaptative** (remplace le délai fixe `sleep(120ms)` après
+  chaque action, dans `run_control_me`) : nouvelle fonction
+  `wait_for_settle()` qui capture une miniature très légère (64px de
+  large, niveaux de gris — `capture_grayscale_thumb()`, réutilise
+  `xcap::Monitor::capture_image()` déjà en place, pas de nouvel appel)
+  toutes les 40ms et compare deux captures consécutives
+  (`thumbs_differ()`, différence moyenne absolue par pixel, seuil 3.0) ;
+  dès que l'écran est stable sur 2 vérifications consécutives OU qu'un
+  plafond de 900ms est atteint, la vraie capture (pleine résolution/JPEG,
+  comme avant) part vers Gemini. Plus rapide quand l'UI a déjà fini de
+  réagir (cas courant), plus fiable quand elle met du temps (au lieu
+  d'agir sur une capture obsolète). 100% local, aucun nouvel appel
+  réseau. Reste réactif à Stop (le flag d'annulation est vérifié à chaque
+  poll de 40ms, plus une vérification après le retour de la fonction).
+  **Constantes non testées visuellement** (pas d'accès GUI dans cet
+  environnement) : `SETTLE_POLL_INTERVAL_MS`/`SETTLE_MAX_WAIT_MS`/
+  `SETTLE_STABLE_CHECKS`/`SETTLE_DIFF_THRESHOLD` en haut de
+  `controlme.rs`, à ajuster après un vrai test utilisateur.
+- **Nouvel outil `read_ui_elements`** (`function`, combiné à
+  `computer_use` dans le tableau `tools` — pattern déjà éprouvé avec
+  `remember_fact`) : Gemini peut l'appeler pour lire la structure
+  d'accessibilité Windows (UI Automation) de la fenêtre au premier plan —
+  titre + liste de contrôles visibles avec type, libellé exact, état
+  activé/désactivé, et position **déjà normalisée 0-999** (même repère
+  que les coordonnées de clic de `computer_use`, donc directement
+  réutilisable) — sans capture d'écran. Complémentaire à `computer_use`,
+  pas un remplacement : une UI dessinée directement (jeu, canvas) n'expose
+  rien à l'accessibilité, cas normal signalé comme tel dans le texte
+  retourné plutôt que traité comme une erreur.
+  - Nouveau fichier `src-tauri/src/commands/ui_automation.rs` (plutôt que
+    d'alourdir encore `controlme.rs`, déjà volumineux — même raison que
+    l'extraction passée de `controlme_sessions.rs`) :
+    `read_foreground_ui_elements(screen_width, screen_height)` parcourt
+    récursivement l'arbre depuis la fenêtre au premier plan
+    (`GetForegroundWindow()` + `element_from_handle`), profondeur
+    plafonnée à 6 **et** nombre total de nœuds visités plafonné à 500
+    (garde-fou contre un arbre DOM de navigateur géant — un onglet Chrome
+    mirror tout son DOM dans l'accessibilité), ne garde que les contrôles
+    visibles et nommés (`is_control_element() && !is_offscreen()`, nom ou
+    automation_id non vide), plafonne aussi à 60 éléments retenus, et
+    retourne un texte compact (une ligne par élément) plutôt qu'un JSON
+    verbeux — plus économe en tokens.
+  - **Crate choisie, API vérifiée en lisant son vrai code source avant
+    d'écrire** (`crates/uiautomation/src/core.rs` sur GitHub, pas
+    supposée) : [`uiautomation`](https://github.com/leexgone/uiautomation-rs)
+    0.25.0, wrapper autour des interfaces COM `IUIAutomation` — même
+    logique que le choix d'enigo/xcap : un wrapper maintenu plutôt que de
+    l'interop COM UI Automation écrite à la main (notoirement pénible à
+    faire correctement).
+  - **Point de compatibilité de version vérifié** : `uiautomation` épingle
+    `windows = "0.62.2"` en interne, différent de notre `windows = "0.61"`
+    existant (utilisé uniquement pour le correctif WebView2 Ctrl+S dans
+    `lib.rs`) — mais aucune interop directe de type COM n'est nécessaire
+    entre les deux (contrairement à la leçon webview2-com où un vrai objet
+    COM devait transiter entre crates de versions identiques) : seule une
+    valeur de handle brute transite. `GetForegroundWindow()` est appelé
+    via notre `windows = "0.61"` existant (feature
+    `Win32_UI_WindowsAndMessaging` ajoutée), puis `hwnd.0 as isize` (HWND
+    est `#[repr(transparent)] struct HWND(pub *mut c_void)` dans les deux
+    versions), puis `uiautomation::types::Handle::from(cette_isize)` —
+    zéro duplication de code d'interop, juste deux résolutions du crate
+    `windows` dans l'arbre de dépendances (coût de compilation
+    légèrement augmenté, aucun risque fonctionnel).
+  - **Vrai bug de la crate découvert en compilant** (pas supposé) :
+    `uiautomation = { default-features = false }` seul ne compile PAS —
+    `core.rs` importe `crate::inputs::MouseButton` sans condition alors
+    que le module `inputs` est déclaré derrière `#[cfg(feature =
+    "input")]` dans son `lib.rs`. Corrigé en réactivant juste la feature
+    `input` (toujours sans `control`/`pattern`, qu'on n'utilise
+    réellement pas — on ne fait que lire, jamais envoyer d'action via UI
+    Automation, enigo s'en charge déjà) — un vrai constat empirique via
+    `cargo check`, pas une hypothèse.
+  - Petit refactor de `dispatch_action` (`controlme.rs`) : sa signature
+    passe de `(label, erreur)` à `(label_transcript, texte_résultat,
+    erreur)` — nécessaire parce que `read_ui_elements` veut un libellé
+    court dans le transcript ("Lecture de l'interface (N éléments)") mais
+    le texte complet envoyé à Gemini ; tous les autres appelants gardent
+    simplement `label_transcript == texte_résultat`, comme avant.
+  - **Hors scope, explicitement pas construit** : capture différentielle
+    DXGI Desktop Duplication (gain marginal une fois l'attente adaptative
+    en place, risque d'implémentation COM bien plus élevé) ; hooks
+    `SetWinEventHook` pour détecter un changement de fenêtre au premier
+    plan (piste future si redemandée séparément) ; remplacer entièrement
+    les captures d'écran par l'accessibilité (perdrait le raisonnement
+    visuel de `computer_use` pour toute UI non standard).
+- `cargo check` passé à 0 erreur ni avertissement après correctif de la
+  feature `input`. **Pas de vérification visuelle possible dans cet
+  environnement** (pas d'accès GUI) — à confirmer par l'utilisateur après
+  installation : ressenti de vitesse/fiabilité, et si `read_ui_elements`
+  est bien appelé par Gemini quand pertinent (son usage reste à la
+  discrétion du modèle, pas forçable).
 
 ### Les 6 outils de l'agent
 1. `read_file` — lecture texte (limite 5 Mo), chemin absolu

@@ -11,6 +11,7 @@
 // respect even though the user chose fully-autonomous mode — that flag is
 // the model's own judgment call, not a general per-action approval gate.
 use super::data_dir;
+use super::ui_automation::read_foreground_ui_elements;
 use base64::{engine::general_purpose::STANDARD, Engine as _};
 use enigo::{Axis, Button, Coordinate, Direction, Enigo, Key, Keyboard, Mouse, Settings as EnigoSettings};
 use serde::{Deserialize, Serialize};
@@ -51,6 +52,18 @@ const CANCELLED_MESSAGE: &str = "Annulé par l'utilisateur.";
 const SCREENSHOT_MAX_WIDTH: u32 = 1280;
 const SCREENSHOT_JPEG_QUALITY: u8 = 80;
 
+// Adaptive settle wait (replaces a fixed post-action delay, see
+// wait_for_settle below): starting values, not visually tuned (no GUI
+// access in this environment) — adjust if real usage shows either the
+// poll interval or the diff threshold needs work.
+const SETTLE_POLL_INTERVAL_MS: u64 = 40;
+const SETTLE_MAX_WAIT_MS: u64 = 900;
+const SETTLE_STABLE_CHECKS: u32 = 2;
+const SETTLE_THUMB_WIDTH: u32 = 64;
+// Mean absolute per-pixel difference (0-255 scale) below which two
+// grayscale thumbnails count as "the same frame".
+const SETTLE_DIFF_THRESHOLD: f64 = 3.0;
+
 // Same polling pattern as agent.rs's wait_for_cancel: the only await points
 // here (the Gemini HTTP call) are short-lived enough that ~60ms of added
 // cancel latency is imperceptible, and it avoids a lost-wakeup race.
@@ -60,6 +73,82 @@ async fn wait_for_cancel(flag: Arc<AtomicBool>) {
             return;
         }
         tokio::time::sleep(Duration::from_millis(60)).await;
+    }
+}
+
+// Cheap capture for settle-comparison only — a tiny grayscale downscale,
+// nowhere near the quality/size needed for the real screenshot sent to
+// Gemini (capture_screenshot_base64 handles that once the screen has
+// settled).
+fn capture_grayscale_thumb() -> Result<Vec<u8>, String> {
+    let monitors = Monitor::all().map_err(|e| e.to_string())?;
+    let monitor = monitors
+        .iter()
+        .find(|m| m.is_primary().unwrap_or(false))
+        .or_else(|| monitors.first())
+        .ok_or_else(|| "Aucun écran détecté".to_string())?;
+    let image = monitor.capture_image().map_err(|e| e.to_string())?;
+    let width = image.width();
+    let scaled_height = if width > SETTLE_THUMB_WIDTH {
+        (((image.height() as f64) * (SETTLE_THUMB_WIDTH as f64) / (width as f64)).round() as u32).max(1)
+    } else {
+        image.height()
+    };
+    let resized = xcap::image::imageops::resize(
+        &image,
+        SETTLE_THUMB_WIDTH.min(width),
+        scaled_height,
+        xcap::image::imageops::FilterType::Nearest,
+    );
+    Ok(xcap::image::DynamicImage::ImageRgba8(resized).to_luma8().into_raw())
+}
+
+fn thumbs_differ(a: &[u8], b: &[u8]) -> bool {
+    if a.is_empty() || a.len() != b.len() {
+        return true;
+    }
+    let sum: u64 = a
+        .iter()
+        .zip(b.iter())
+        .map(|(x, y)| (*x as i32 - *y as i32).unsigned_abs() as u64)
+        .sum();
+    (sum as f64 / a.len() as f64) > SETTLE_DIFF_THRESHOLD
+}
+
+// Replaces a fixed post-action delay: polls a cheap thumbnail every
+// SETTLE_POLL_INTERVAL_MS and returns as soon as the screen has stopped
+// visibly changing (two consecutive stable thumbnails) or SETTLE_MAX_WAIT_MS
+// is reached — faster than a fixed wait once the UI has already reacted,
+// more reliable than one when it's still animating/loading. Also returns
+// promptly on cancellation (checked every poll) so Stop stays responsive
+// during what would otherwise be up to ~900ms of waiting.
+async fn wait_for_settle(flag: Arc<AtomicBool>) {
+    let start = std::time::Instant::now();
+    let mut previous: Option<Vec<u8>> = None;
+    let mut stable_count: u32 = 0;
+    loop {
+        if flag.load(Ordering::SeqCst) || start.elapsed() >= Duration::from_millis(SETTLE_MAX_WAIT_MS) {
+            return;
+        }
+        match capture_grayscale_thumb() {
+            Ok(thumb) => {
+                if let Some(prev) = &previous {
+                    if thumbs_differ(prev, &thumb) {
+                        stable_count = 0;
+                    } else {
+                        stable_count += 1;
+                        if stable_count >= SETTLE_STABLE_CHECKS {
+                            return;
+                        }
+                    }
+                }
+                previous = Some(thumb);
+            }
+            // Capture failed — bail rather than loop forever; the real
+            // capture right after this call will surface the actual error.
+            Err(_) => return,
+        }
+        tokio::time::sleep(Duration::from_millis(SETTLE_POLL_INTERVAL_MS)).await;
     }
 }
 
@@ -96,35 +185,65 @@ fn now_unix_secs() -> f64 {
         .unwrap_or(0.0)
 }
 
-// Dispatches one function call to its handler and returns (label,
-// error_text) for the transcript/function_result — shared by both the
-// direct-execution path and the require_confirmation path below, so the
-// "emit step, screenshot, build the next request body" tail of the loop
-// only has to exist once.
-fn dispatch_action(app: &AppHandle, name: &str, args: &Value, width: u32, height: u32) -> (String, Option<String>) {
+// Dispatches one function call to its handler and returns (transcript_label,
+// result_text, error_text) — shared by both the direct-execution path and
+// the require_confirmation path below, so the "emit step, screenshot, build
+// the next request body" tail of the loop only has to exist once.
+//
+// transcript_label and result_text are the same short string for every
+// action except read_ui_elements: that one needs a short label for the
+// transcript ("Lecture de l'interface (N éléments)") but the full element
+// dump as the text actually sent back to Gemini.
+fn dispatch_action(app: &AppHandle, name: &str, args: &Value, width: u32, height: u32) -> (String, String, Option<String>) {
     if name == "remember_fact" {
         let fact = args["fact"].as_str().unwrap_or("").trim().to_string();
         let category = args["category"].as_str().map(|s| s.to_string());
         if fact.is_empty() {
-            return ("Aucun fait fourni.".to_string(), Some("Aucun fait fourni.".to_string()));
+            let msg = "Aucun fait fourni.".to_string();
+            return (msg.clone(), msg.clone(), Some(msg));
         }
         return match load_memory(app) {
             Ok(mut entries) => {
                 entries.push(MemoryEntry { fact: fact.clone(), category, created_at: now_unix_secs() });
                 match save_memory(app, &entries) {
-                    Ok(()) => (format!("Fait enregistré : {fact}"), None),
-                    Err(e) => (format!("Erreur : {e}"), Some(e)),
+                    Ok(()) => {
+                        let msg = format!("Fait enregistré : {fact}");
+                        (msg.clone(), msg, None)
+                    }
+                    Err(e) => {
+                        let msg = format!("Erreur : {e}");
+                        (msg.clone(), msg, Some(e))
+                    }
                 }
             }
-            Err(e) => (format!("Erreur : {e}"), Some(e)),
+            Err(e) => {
+                let msg = format!("Erreur : {e}");
+                (msg.clone(), msg, Some(e))
+            }
         };
     }
     if name == "take_screenshot" {
-        return ("Capture d'écran".to_string(), None);
+        let msg = "Capture d'écran".to_string();
+        return (msg.clone(), msg, None);
+    }
+    if name == "read_ui_elements" {
+        return match read_foreground_ui_elements(width, height) {
+            Ok(text) => {
+                let count = text.lines().count().saturating_sub(1);
+                (format!("Lecture de l'interface ({count} éléments)"), text, None)
+            }
+            Err(e) => {
+                let msg = format!("Erreur : {e}");
+                (msg.clone(), msg, Some(e))
+            }
+        };
     }
     match execute_action(name, args, width, height) {
-        Ok(l) => (l, None),
-        Err(e) => (format!("Erreur : {e}"), Some(e)),
+        Ok(l) => (l.clone(), l, None),
+        Err(e) => {
+            let msg = format!("Erreur : {e}");
+            (msg.clone(), msg, Some(e))
+        }
     }
 }
 
@@ -342,6 +461,12 @@ pub async fn run_control_me(
                 },
                 "required": ["fact"]
             }
+        },
+        {
+            "type": "function",
+            "name": "read_ui_elements",
+            "description": "Lit la structure d'accessibilité de la fenêtre actuellement au premier plan (titre + liste des contrôles visibles avec leur type, leur libellé exact, leur état activé/désactivé, et leur position déjà normalisée 0-999 — le même repère que les coordonnées de clic) sans prendre de capture d'écran. Plus rapide et plus fiable qu'une capture pour confirmer un texte exact ou trouver la position précise d'un élément avant d'agir dessus. À utiliser en complément du raisonnement visuel habituel, pas à sa place — ne fonctionne pas pour une interface dessinée directement (jeu, canvas), qui n'expose rien à l'accessibilité.",
+            "parameters": { "type": "object", "properties": {} }
         }
     ]);
 
@@ -446,7 +571,7 @@ pub async fn run_control_me(
         let mut args = call["arguments"].clone();
         let intent = args["intent"].as_str().map(|s| s.to_string());
 
-        let (label, error_text) = if args["safety_decision"]["decision"] == "require_confirmation" {
+        let (transcript_label, result_text, error_text) = if args["safety_decision"]["decision"] == "require_confirmation" {
             let explanation = args["safety_decision"]["explanation"]
                 .as_str()
                 .unwrap_or("Action jugée sensible par le modèle.")
@@ -476,7 +601,8 @@ pub async fn run_control_me(
             };
 
             if !accepted {
-                ("Action refusée par l'utilisateur.".to_string(), None)
+                let msg = "Action refusée par l'utilisateur.".to_string();
+                (msg.clone(), msg, None)
             } else {
                 // Google's documented protocol for this exact flag: mark it
                 // acknowledged before re-attempting the action.
@@ -491,7 +617,7 @@ pub async fn run_control_me(
 
         let _ = app.emit(
             "control-me-step",
-            StepPayload { intent, action: action_name.clone(), label: label.clone() },
+            StepPayload { intent, action: action_name.clone(), label: transcript_label },
         );
 
         if flag.load(Ordering::SeqCst) {
@@ -499,12 +625,17 @@ pub async fn run_control_me(
             return Err(CANCELLED_MESSAGE.to_string());
         }
 
-        // Brief settle delay so the next screenshot reflects the action's
-        // visual effect (a click's UI update, a page finishing a scroll…).
-        tokio::time::sleep(Duration::from_millis(120)).await;
+        // Adaptive settle wait (see wait_for_settle) instead of a fixed
+        // delay, so the next screenshot reflects the action's actual visual
+        // effect without waiting longer than necessary.
+        wait_for_settle(flag.clone()).await;
+        if flag.load(Ordering::SeqCst) {
+            let _ = app.emit("control-me-cancelled", ());
+            return Err(CANCELLED_MESSAGE.to_string());
+        }
         let (screenshot, _, _) = capture_screenshot_base64()?;
 
-        let mut result_parts = vec![json!({ "type": "text", "text": error_text.unwrap_or(label) })];
+        let mut result_parts = vec![json!({ "type": "text", "text": error_text.unwrap_or(result_text) })];
         result_parts.push(json!({ "type": "image", "data": screenshot, "mime_type": "image/jpeg" }));
 
         body = json!({

@@ -22,6 +22,15 @@ exactement le même code, seule l'interface autour change.
 5. Nouvelle capture d'écran, et ça recommence, jusqu'à ce que Gemini estime
    avoir terminé.
 
+Gemini dispose aussi d'un second outil, `read_ui_elements` : il peut lire la
+liste des boutons/champs/textes visibles dans la fenêtre au premier plan
+(sans capture d'écran) quand il a besoin d'un libellé exact ou d'une
+position précise — plus rapide qu'une capture pour ce genre de vérification.
+C'est lui qui décide quand s'en servir, ce n'est pas systématique. Entre
+chaque action, l'app attend que l'écran ait fini de bouger avant de
+recapturer (au lieu d'un délai fixe) — plus rapide quand l'interface a déjà
+réagi, plus fiable quand elle met plus de temps.
+
 ## Ce qu'il faut savoir avant d'installer
 
 - **Contrôle autonome, sans confirmation par action.** Contrairement à un
