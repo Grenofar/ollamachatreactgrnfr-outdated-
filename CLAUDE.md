@@ -1176,7 +1176,11 @@ l'utilisateur confirme qu'elle est bien dans `.env` local.
   n'affecte que Control Me mais partage le même binaire/version ; Control
   Me : le changement de modèle par défaut). Les deux vérifiées
   indépendamment via la clé anon (`latest_release_manifest` sans
-  paramètre et avec `?p_product=controlme`) après publication.
+  paramètre et avec `?p_product=controlme`) après publication — app de
+  chat : 6 720 977 octets ; Control Me : 6 713 340 octets (uploadé sous
+  la clé `control-me_0.5.2_x64-setup.exe`, sans espace, alors que le
+  fichier NSIS local en contient un — `productName: "Control Me"` produit
+  littéralement `Control Me_0.5.2_x64-setup.exe`).
 
 ## Prochaines étapes (dans l'ordre du fichier de passation d'origine)
 
