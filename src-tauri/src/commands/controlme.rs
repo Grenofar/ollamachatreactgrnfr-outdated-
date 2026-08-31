@@ -66,7 +66,7 @@ const SETTLE_THUMB_WIDTH: u32 = 64;
 const SETTLE_DIFF_THRESHOLD: f64 = 3.0;
 // Tools that never touch the screen — no settle wait, no screenshot
 // attached to their result (see the main loop below).
-const NO_VISUAL_EFFECT_TOOLS: [&str; 2] = ["read_ui_elements", "remember_fact"];
+const NO_VISUAL_EFFECT_TOOLS: [&str; 3] = ["read_ui_elements", "remember_fact", "read_knowledge_base"];
 // Fixed settle delay used in "windows_ui" perception mode instead of the
 // adaptive pixel-diff wait above — there's no screen to diff against, just
 // a short buffer so a UI has time to actually update before the
@@ -253,6 +253,15 @@ fn dispatch_action(app: &AppHandle, name: &str, args: &Value, width: u32, height
                 let count = text.lines().count().saturating_sub(1);
                 (format!("Lecture de l'interface ({count} éléments)"), text, None)
             }
+            Err(e) => {
+                let msg = format!("Erreur : {e}");
+                (msg.clone(), msg, Some(e))
+            }
+        };
+    }
+    if name == "read_knowledge_base" {
+        return match super::knowledge_base::validate_and_read_knowledge_base(app) {
+            Ok(text) => ("Lecture de la base de connaissances".to_string(), text, None),
             Err(e) => {
                 let msg = format!("Erreur : {e}");
                 (msg.clone(), msg, Some(e))
@@ -483,6 +492,19 @@ fn read_ui_elements_tool(preferred: bool) -> Value {
     })
 }
 
+// "DB ready for Control Me" — an optional local knowledge base the user
+// can populate themselves (Réglages > Extensions), distinct from
+// remember_fact's auto-learned memory: this is reference material the
+// user explicitly chose to provide, not facts Gemini inferred on its own.
+fn read_knowledge_base_tool() -> Value {
+    json!({
+        "type": "function",
+        "name": "read_knowledge_base",
+        "description": "Lit la base de connaissances locale que l'utilisateur a préparée lui-même (fichiers texte/JSON/SQL de référence — pas des faits appris automatiquement, contrairement à remember_fact). Utile pour des informations que l'utilisateur veut explicitement mettre à disposition (identifiants d'un compte à utiliser, notes de procédure, données de référence...). Peut être vide si rien n'a été configuré — dans ce cas, l'outil le signale simplement.",
+        "parameters": { "type": "object", "properties": {} }
+    })
+}
+
 fn build_capture_tools() -> Value {
     json!([
         {
@@ -492,6 +514,7 @@ fn build_capture_tools() -> Value {
         },
         remember_fact_tool(),
         read_ui_elements_tool(false),
+        read_knowledge_base_tool(),
     ])
 }
 
@@ -634,6 +657,7 @@ fn build_windows_ui_tools() -> Value {
         },
         remember_fact_tool(),
         read_ui_elements_tool(true),
+        read_knowledge_base_tool(),
     ])
 }
 

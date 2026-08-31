@@ -53,7 +53,7 @@ pas devenir obsolète.
 - [FAIT] v0.5.4 : recherche dans l'historique Control Me (titre + contenu, `search_control_me_sessions`), renommage d'une session (double-clic, comme la Sidebar du chat), et navigation simplifiée — plus de bouton dédié "← Chat" dans Codex/Control Me, cliquer un élément de la Sidebar (nouvelle conversation ou conversation existante) y ramène directement — voir "Recherche/renommage de session, retrait du bouton retour (v0.5.4)" dans Architecture > Control Me.
 - [FAIT] v0.5.5 : passe d'animations sur toute l'app (CSS uniquement, aucune dépendance ajoutée) — micro-interactions de boutons, halo de focus sur les champs, entrée en fondu/décalage des bulles de chat et cartes d'outils avec effet cascade, indicateur de frappe animé + curseur clignotant pendant le streaming, transition de vue chat/Codex/Control Me, ouverture animée des modales/dropdowns/panneaux, toast de mise à jour avec rebond, accent visuel sur la conversation/section active dans la Sidebar, scrollbar personnalisée — respecte `prefers-reduced-motion`. Voir "Animations et micro-interactions (v0.5.5)" dans Architecture.
 - [FAIT] v0.5.6 : Control Me plus rapide et plus fiable — attente adaptative après chaque action (remplace le délai fixe de 120ms par une détection locale de stabilisation de l'écran) et nouvel outil `read_ui_elements` (Gemini peut lire l'arbre d'accessibilité Windows de la fenêtre au premier plan — type/libellé/état/position des contrôles — sans capture d'écran, en complément de `computer_use`) — voir "Attente adaptative et lecture de l'arbre d'accessibilité (v0.5.6)" dans Architecture > Control Me.
-- [FAIT] v0.5.7 : Control Me pilotable **à distance depuis le site** (`site/controlremote.html`, lien depuis la landing) — code de jumelage à 12 chiffres généré dans l'app, écran live + chat + mémoire + bouton Arrêter côté navigateur, tout via Supabase **Realtime** (Broadcast + Presence, aucune table Postgres, client WebSocket écrit à la main côté Rust) — voir "Control Me à distance depuis le site (v0.5.7)" et "Mémoire visible depuis le site distant (v0.5.7)" dans Architecture > Control Me, y compris le modèle de sécurité (code = mot de passe partagé, protection anti-brute-force côté navigateur assumée comme non absolue). Réglages **entièrement refaits en page pleine** à sections (Général/Modèles + Installer un modèle/Control Me/Mises à jour), `SettingsModal.tsx` supprimé au profit de `SettingsView.tsx`, bouton "Installer un modèle" déplacé de la Sidebar vers Réglages — voir "Réglages en page pleine (v0.5.7)". Deux correctifs Control Me au passage : `key_down` qui ne faisait rien (bug réel d'enigo, `release_keys_when_dropped`) et `read_ui_elements` qui n'apportait plus son gain de vitesse (capturait quand même un screenshot inutile) — voir "Correctifs de vitesse et de fiabilité (v0.5.7)". Nouveau **mode de perception "Windows UI"** (toggle Réglages > Control Me, `capture` vs `windows_ui`) : `computer_use` entièrement retiré et remplacé par des outils `function` personnalisés reproduisant le même jeu d'actions — plus aucune capture d'écran envoyée, juste du texte d'accessibilité, mais perte du garde-fou `require_confirmation` (propre au protocole `computer_use`) — voir "Mode de perception Windows UI (v0.5.7)".
+- [FAIT] v0.5.7 : Control Me pilotable **à distance depuis le site** (`site/controlremote.html`, lien depuis la landing) — code de jumelage à 12 chiffres généré dans l'app, écran live + chat + mémoire + bouton Arrêter côté navigateur, tout via Supabase **Realtime** (Broadcast + Presence, aucune table Postgres, client WebSocket écrit à la main côté Rust) — voir "Control Me à distance depuis le site (v0.5.7)" et "Mémoire visible depuis le site distant (v0.5.7)" dans Architecture > Control Me, y compris le modèle de sécurité (code = mot de passe partagé, protection anti-brute-force côté navigateur assumée comme non absolue). Réglages **entièrement refaits en page pleine** à sections (Général/Modèles + Installer un modèle/Control Me/Mises à jour), `SettingsModal.tsx` supprimé au profit de `SettingsView.tsx`, bouton "Installer un modèle" déplacé de la Sidebar vers Réglages — voir "Réglages en page pleine (v0.5.7)". Deux correctifs Control Me au passage : `key_down` qui ne faisait rien (bug réel d'enigo, `release_keys_when_dropped`) et `read_ui_elements` qui n'apportait plus son gain de vitesse (capturait quand même un screenshot inutile) — voir "Correctifs de vitesse et de fiabilité (v0.5.7)". Nouveau **mode de perception "Windows UI"** (toggle Réglages > Control Me, `capture` vs `windows_ui`) : `computer_use` entièrement retiré et remplacé par des outils `function` personnalisés reproduisant le même jeu d'actions — plus aucune capture d'écran envoyée, juste du texte d'accessibilité, mais perte du garde-fou `require_confirmation` (propre au protocole `computer_use`) — voir "Mode de perception Windows UI (v0.5.7)". Nouvelle **extension "DB ready for Control Me"** (Réglages > Extensions) : dossier local caché (`.txt`/`.json`/`.sql` uniquement, validation qui refuse le dossier en bloc si un seul fichier a un autre type) que Control Me peut lire comme base de connaissances via un nouvel outil `read_knowledge_base`, plus un flux de **publication publique via Supabase** (première écriture `anon` de tout ce projet, jusqu'ici strictement lecture seule — RLS et implications documentées explicitement) — voir "Base de connaissances Control Me (v0.5.7)".
 
 ## Architecture
 
@@ -1094,6 +1094,97 @@ réglage `Settings.control_me_perception_mode` (`"capture"` par défaut, ou
   avec un tableau `tools` sans `computer_use` (jamais documenté par
   Google comme combinaison testée) ; à valider par l'utilisateur.
 
+### Base de connaissances Control Me — "DB ready for Control Me" (v0.5.7)
+
+Demandé explicitement, dans le prolongement de la discussion sur les
+extensions (système complet de plugins indépendamment mis à jour, mis en
+pause plus tôt — voir plus bas) : une capacité concrète et scopée plutôt
+que le système générique. Un dossier local que l'utilisateur remplit
+lui-même (fichiers `.txt`/`.json`/`.sql`), que Control Me peut lire comme
+base de connaissances de référence — différent de la mémoire auto-apprise
+(`remember_fact`) : ici, c'est l'utilisateur qui choisit explicitement le
+contenu, pas l'IA qui infère des faits. Présenté dans Réglages sous une
+nouvelle section **Extensions**, avec sa propre description, comme
+demandé ("chaque extension a une description") — pas le système de
+plugins complet (versions indépendantes, activation générique), juste
+cette capacité précise nommée et décrite.
+
+- **Dossier `{app_data_dir}/controlme_knowledge/`**, marqué avec
+  l'attribut **caché Windows** (`SetFileAttributesW` +
+  `FILE_ATTRIBUTE_HIDDEN`, feature `Win32_Storage_FileSystem` ajoutée à
+  la dépendance `windows` déjà présente — API vérifiée par compilation
+  réelle, `HSTRING::from(path.to_string_lossy())` passé directement,
+  pas devinée sans vérifier). **Honnête à documenter, pas survendu** : un
+  dossier caché est un frein cosmétique (décourage un dépôt
+  accidentel/casual), **pas un vrai contrôle d'accès** — un processus
+  tournant avec les droits de l'utilisateur (dont un malware déjà actif)
+  voit un dossier caché aussi facilement qu'un dossier normal.
+- **Validation "tout ou rien"** (`src-tauri/src/commands/knowledge_base.rs`,
+  nouveau fichier) : si un seul fichier du dossier n'a pas l'extension
+  `.txt`/`.json`/`.sql`, la lecture est **entièrement refusée** (pas un
+  filtrage silencieux qui ignore juste le fichier en trop) et les noms
+  des fichiers fautifs sont renvoyés à l'utilisateur — correspond
+  littéralement à la demande ("si y'a que la db et pas autre chose").
+  Contenu concaténé et plafonné à 50 Ko (`MAX_TOTAL_BYTES`, même logique
+  de garde-fou que les plafonds de `read_ui_elements`).
+- **Ce que ça protège réellement, sans survendre** : le filtrage par
+  extension bloque le vecteur "déposer un exécutable/script" (`.exe`/
+  `.ps1`/`.bat`/`.vbs`/`.js`/`.lnk`...), et le contenu n'est **jamais
+  exécuté ni interprété** — même un fichier `.sql` n'est lu que comme
+  texte brut renvoyé à Gemini, aucun moteur de base de données ne
+  l'exécute nulle part dans ce projet. Ce que ça ne protège **pas** :
+  l'injection de prompt (du texte malveillant dans un `.txt` par ailleurs
+  autorisé, visant à manipuler Gemini) — aucun filtre par type de fichier
+  ne peut empêcher ça, catégorie de risque différente, déjà couverte pour
+  Control Me par `enable_prompt_injection_detection`.
+- **Nouvel outil Gemini `read_knowledge_base`**, ajouté aux deux modes de
+  perception (`build_capture_tools()` et `build_windows_ui_tools()` dans
+  `controlme.rs`, orthogonal au mode de perception comme `remember_fact`)
+  et à `NO_VISUAL_EFFECT_TOOLS` (aucun effet sur l'écran, même
+  optimisation de vitesse que `read_ui_elements`/`remember_fact` — pas
+  d'attente, pas de capture après coup). Dispatché dans `dispatch_action`
+  avant `execute_action`, jamais passé à enigo. Dossier vide ou absent →
+  message clair plutôt qu'une erreur.
+- **Publication publique via Supabase — première écriture `anon` de tout
+  ce projet**, rupture assumée et documentée, pas un oubli. Jusqu'ici,
+  Supabase est strictement en lecture seule pour `anon` (choix explicite
+  documenté dans Décisions techniques). Nouvelle table
+  `public.controlme_knowledge_shares` (migration
+  `supabase/knowledge_base_migration.sql`, **à exécuter par
+  l'utilisateur** comme toute migration précédente) avec policies
+  `insert to anon using (true)` **et** `select to anon using (true)` —
+  **aucune policy `update`/`delete`** (même choix initial que
+  `app_releases`) : une base publiée reste publique et immuable pour
+  toujours depuis cette version, pas de bouton "dépublier" (ce projet n'a
+  aucun système de comptes/auth, donc aucune notion de "propriétaire"
+  d'une ligne pour restreindre qui pourrait la modifier/supprimer — à
+  reconsidérer seulement si un vrai besoin de dépublication se présente).
+  Avertissement explicite affiché **avant** publication (`window.confirm`
+  dans `SettingsView.tsx`), pas seulement documenté ici : "Ce contenu
+  sera visible publiquement par n'importe qui, sans limite de durée, et
+  ne peut pas être retiré depuis cette version de l'app."
+- **Pas d'annuaire/de découverte construit** : publier renvoie un
+  `share_code` (génération aléatoire réutilisant le même alphabet sans
+  caractères ambigus que le code de jumelage distant) que l'utilisateur
+  communique lui-même — pas de page listant toutes les bases publiques
+  (une vraie fonctionnalité de marketplace, explicitement hors scope,
+  pas construite sans redemande). "Importer via un code"
+  (`import_knowledge_base`) récupère le contenu d'un `share_code` donné
+  et l'écrit en local (copie ponctuelle, pas une synchronisation en
+  direct).
+- Nouvelle section **Confidentialité réseau** (6ᵉ point) : publication/
+  import passent par l'API REST Supabase, uniquement à l'action explicite
+  de l'utilisateur (bouton Publier/Importer), jamais automatiquement.
+- `cargo check`/`npx tsc --noEmit` passés à 0 erreur ni avertissement dès
+  la première tentative (y compris pour l'appel `SetFileAttributesW`,
+  vérifié par compilation réelle plutôt que suppose). **Aucune
+  vérification de bout en bout possible dans cet environnement** (pas
+  d'accès GUI, pas d'exécution SQL sur le vrai projet Supabase depuis
+  cet environnement) — à tester explicitement par l'utilisateur : dépôt
+  d'un fichier non autorisé (doit être refusé en listant le fichier
+  fautif), lecture par Gemini de fichiers valides, publication vérifiée
+  via `curl` avec la clé anon, import sur un second poste.
+
 ### Les 6 outils de l'agent
 1. `read_file` — lecture texte (limite 5 Mo), chemin absolu
 2. `list_dir` — listing un niveau, chemin absolu
@@ -1275,8 +1366,17 @@ réseau sortants dans `src-tauri/src/commands/` à cette date :
    Broadcast/Presence éphémère jamais persisté ; modèle de sécurité du
    code de jumelage). Même famille de rupture délibérée et documentée que
    le point 4 — demandée explicitement, en connaissance de cause.
+6. **[2026-09-01, exception explicite] `knowledge_base.rs`**
+   (`publish_knowledge_base`/`import_knowledge_base`) → API REST Supabase,
+   **uniquement à l'action explicite de l'utilisateur** (bouton "Publier
+   en public"/"Importer" dans Réglages > Extensions), jamais
+   automatiquement. Contrairement au point 3 (lecture seule), **ceci
+   écrit réellement** dans une table Postgres publique — voir "Base de
+   connaissances Control Me (v0.5.7)" dans Architecture pour le détail
+   complet (première écriture `anon` de tout ce projet, RLS et
+   implications documentées explicitement à cet endroit).
 
-En dehors de ces cinq cas, aucune autre destination réseau n'existe dans
+En dehors de ces six cas, aucune autre destination réseau n'existe dans
 le code (pas de télémétrie, pas d'analytics, pas d'appel automatique à un
 service tiers non listé ici). Si tu ajoutes un nouvel appel réseau, vérifie
 qu'il tombe dans un de ces cas — sinon, demande confirmation avant d'envoyer
@@ -1413,7 +1513,13 @@ l'utilisateur confirme qu'elle est bien dans `.env` local.
   pattern déjà utilisé par le projet sœur OmniDeck pour son update-checker
   (« Update-checker sur Supabase REST directement, sans Prisma » — même
   raisonnement : pas de serveur Node ici pour justifier un ORM, un simple
-  appel HTTP suffit pour une lecture publique).
+  appel HTTP suffit pour une lecture publique). **Exception ponctuelle,
+  documentée** (v0.5.7) : la publication de base de connaissances Control
+  Me (`knowledge_base.rs`) écrit réellement, avec la clé `anon`, sur
+  action explicite de l'utilisateur uniquement — voir "Base de
+  connaissances Control Me (v0.5.7)" dans Architecture pour le détail
+  complet et le modèle de sécurité assumé. Toujours pas d'ORM/sqlx, RLS
+  au lieu d'un serveur pour gérer qui peut écrire quoi.
 - **Monaco sans CDN** : la version installée (`monaco-editor@0.56.0`) dicte le
   chemin d'import correct via sa map `exports` dans `package.json` — vérifié
   empiriquement : `monaco-editor/editor/editor.worker`, PAS
@@ -1910,6 +2016,29 @@ l'utilisateur confirme qu'elle est bien dans `.env` local.
   confirmer que Gemini se comporte bien sans `computer_use` — combinaison
   jamais documentée par Google) — à tester explicitement par
   l'utilisateur après build et déploiement Vercel du site.
+- **2026-09-01** — "DB ready for Control Me", demandé explicitement dans
+  le prolongement de la discussion sur les extensions : un dossier local
+  caché (`.txt`/`.json`/`.sql` uniquement, validation tout-ou-rien) que
+  Control Me lit comme base de connaissances, présenté comme une
+  extension nommée/décrite dans une nouvelle section Réglages >
+  Extensions, avec un flux de publication publique. Passé par plan mode
+  vu l'ampleur et surtout l'implication de sécurité (première écriture
+  anon de tout ce projet) — clarifiée via `AskUserQuestion` avant de
+  coder : l'utilisateur a choisi explicitement le partage public réel via
+  Supabase plutôt qu'un simple interrupteur local ou un partage limité au
+  contrôle à distance, en connaissance des implications (n'importe qui
+  avec la clé anon peut publier, tout contenu publié est lisible par
+  n'importe qui indéfiniment, pas de dépublication possible dans cette
+  version — ce projet n'ayant aucun système de comptes). Voir "Base de
+  connaissances Control Me (v0.5.7)" dans Architecture pour le détail
+  technique complet. `SetFileAttributesW`/`FILE_ATTRIBUTE_HIDDEN` pour
+  l'attribut caché Windows — API vérifiée par compilation réelle (feature
+  `Win32_Storage_FileSystem` ajoutée à la dépendance `windows` déjà
+  présente), a compilé du premier coup. `cargo check`/`npx tsc --noEmit`
+  passés à 0 erreur ni avertissement. **Aucune vérification de bout en
+  bout possible dans cet environnement** — à tester explicitement par
+  l'utilisateur après build et exécution de la migration SQL
+  (`supabase/knowledge_base_migration.sql`).
 
 ## Prochaines étapes (dans l'ordre du fichier de passation d'origine)
 

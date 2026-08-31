@@ -14,6 +14,7 @@ import type {
   DirEntry,
   EditResult,
   HfModel,
+  KnowledgeBaseStatus,
   OllamaModel,
   Settings,
 } from "./types";
@@ -192,3 +193,11 @@ export const clearRemoteCode = () => invoke<void>("clear_remote_code");
 
 export const onRemoteViewerChanged = (cb: (connected: boolean) => void) =>
   listen<{ connected: boolean }>("remote-viewer-changed", (e) => cb(e.payload.connected));
+
+// ------------------------------------------------- "DB ready" knowledge base
+
+export const getKnowledgeBaseStatus = () => invoke<KnowledgeBaseStatus>("get_knowledge_base_status");
+export const openKnowledgeBaseFolder = () => invoke<void>("open_knowledge_base_folder");
+export const publishKnowledgeBase = (title: string) => invoke<string>("publish_knowledge_base", { title });
+export const importKnowledgeBase = (shareCode: string) =>
+  invoke<void>("import_knowledge_base", { shareCode });

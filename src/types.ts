@@ -119,3 +119,9 @@ export interface ControlMeSessionMeta {
   created_at: number;
 }
 
+export interface KnowledgeBaseStatus {
+  valid_files: string[];
+  invalid_files: string[];
+  total_bytes: number;
+}
+

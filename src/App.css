@@ -1996,3 +1996,20 @@ body {
 .remote-pairing-connected {
   color: #8fd18f;
 }
+
+.extension-card {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  background: #1e1e1e;
+  border: 1px solid #2c2c2c;
+  border-radius: 10px;
+  padding: 14px 16px;
+  margin-top: 4px;
+}
+
+.extension-card-header {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}

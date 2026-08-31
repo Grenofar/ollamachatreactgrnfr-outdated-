@@ -46,7 +46,7 @@ rand = "0.8"
 
 [target.'cfg(windows)'.dependencies]
 webview2-com = "0.38"
-windows = { version = "0.61", features = ["Win32_System_Com", "Win32_UI_WindowsAndMessaging"] }
+windows = { version = "0.61", features = ["Win32_System_Com", "Win32_UI_WindowsAndMessaging", "Win32_Storage_FileSystem"] }
 # Read-only UI Automation tree walking for Control Me's read_ui_elements
 # tool — we only read properties (name, control type, bounding rect,
 # enabled/offscreen state), never send input through it (enigo already

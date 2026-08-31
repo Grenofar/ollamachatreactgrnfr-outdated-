@@ -16,6 +16,9 @@ use commands::conversations::{
 use commands::fsops::{edit_file_text, list_dir, read_file_text, write_file_text};
 use commands::hardware::get_system_ram_gb;
 use commands::huggingface::search_hf_models;
+use commands::knowledge_base::{
+    get_knowledge_base_status, import_knowledge_base, open_knowledge_base_folder, publish_knowledge_base,
+};
 use commands::remote::{clear_remote_code, generate_remote_code, resume_remote_on_startup, RemoteState};
 use commands::settings::{load_settings, save_settings};
 use commands::shell::{cancel_shell_command, run_powershell_command, ShellCancelFlag};
@@ -175,6 +178,10 @@ pub fn run() {
             delete_control_me_session,
             generate_remote_code,
             clear_remote_code,
+            get_knowledge_base_status,
+            open_knowledge_base_folder,
+            publish_knowledge_base,
+            import_knowledge_base,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

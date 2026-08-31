@@ -6,6 +6,7 @@ pub mod conversations;
 pub mod fsops;
 pub mod hardware;
 pub mod huggingface;
+pub mod knowledge_base;
 pub mod remote;
 pub mod settings;
 pub mod shell;
