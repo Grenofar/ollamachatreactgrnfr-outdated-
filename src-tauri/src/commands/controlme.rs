@@ -63,6 +63,9 @@ const SETTLE_THUMB_WIDTH: u32 = 64;
 // Mean absolute per-pixel difference (0-255 scale) below which two
 // grayscale thumbnails count as "the same frame".
 const SETTLE_DIFF_THRESHOLD: f64 = 3.0;
+// Tools that never touch the screen — no settle wait, no screenshot
+// attached to their result (see the main loop below).
+const NO_VISUAL_EFFECT_TOOLS: [&str; 2] = ["read_ui_elements", "remember_fact"];
 
 // Same polling pattern as agent.rs's wait_for_cancel: the only await points
 // here (the Gemini HTTP call) are short-lived enough that ~60ms of added
@@ -163,7 +166,7 @@ fn memory_path(app: &AppHandle) -> Result<std::path::PathBuf, String> {
     Ok(data_dir(app)?.join("controlme_memory.json"))
 }
 
-fn load_memory(app: &AppHandle) -> Result<Vec<MemoryEntry>, String> {
+pub(crate) fn load_memory(app: &AppHandle) -> Result<Vec<MemoryEntry>, String> {
     let path = memory_path(app)?;
     if !path.exists() {
         return Ok(Vec::new());
@@ -172,7 +175,7 @@ fn load_memory(app: &AppHandle) -> Result<Vec<MemoryEntry>, String> {
     serde_json::from_str(&content).map_err(|e| e.to_string())
 }
 
-fn save_memory(app: &AppHandle, entries: &[MemoryEntry]) -> Result<(), String> {
+pub(crate) fn save_memory(app: &AppHandle, entries: &[MemoryEntry]) -> Result<(), String> {
     let path = memory_path(app)?;
     let content = serde_json::to_string_pretty(entries).map_err(|e| e.to_string())?;
     std::fs::write(&path, content).map_err(|e| e.to_string())
@@ -310,7 +313,20 @@ fn key_from_name(name: &str) -> Key {
 // handled by the caller (every iteration captures a fresh screenshot for
 // the feedback loop anyway) so it never reaches here.
 fn execute_action(name: &str, args: &Value, width: u32, height: u32) -> Result<String, String> {
-    let mut enigo = Enigo::new(&EnigoSettings::default()).map_err(|e| e.to_string())?;
+    // release_keys_when_dropped defaults to true in enigo — since a fresh
+    // Enigo is created per action (see below), that default made key_down
+    // silently useless: the key got pressed then immediately released
+    // again the instant this function returned and the local `enigo`
+    // dropped, before the next screenshot ever saw it held. Real Windows
+    // key state is independent of which Enigo instance issued the
+    // SendInput call, so disabling this doesn't change how press/release
+    // themselves work — it just stops this instance from auto-undoing a
+    // press on its way out. Trade-off, now real instead of moot: if the
+    // app is killed while a key_down was never followed by key_up, that
+    // key can stay physically stuck down — inherent to "hold" actually
+    // working, not something a per-call Enigo instance can prevent.
+    let mut enigo = Enigo::new(&EnigoSettings { release_keys_when_dropped: false, ..EnigoSettings::default() })
+        .map_err(|e| e.to_string())?;
     let x = denormalize(args["x"].as_f64().unwrap_or(0.0), width);
     let y = denormalize(args["y"].as_f64().unwrap_or(0.0), height);
 
@@ -485,7 +501,7 @@ pub async fn run_control_me_core(
         {
             "type": "function",
             "name": "read_ui_elements",
-            "description": "Lit la structure d'accessibilité de la fenêtre actuellement au premier plan (titre + liste des contrôles visibles avec leur type, leur libellé exact, leur état activé/désactivé, et leur position déjà normalisée 0-999 — le même repère que les coordonnées de clic) sans prendre de capture d'écran. Plus rapide et plus fiable qu'une capture pour confirmer un texte exact ou trouver la position précise d'un élément avant d'agir dessus. À utiliser en complément du raisonnement visuel habituel, pas à sa place — ne fonctionne pas pour une interface dessinée directement (jeu, canvas), qui n'expose rien à l'accessibilité.",
+            "description": "Lit la structure d'accessibilité de la fenêtre actuellement au premier plan (titre + liste des contrôles visibles avec leur type, leur libellé exact, leur état activé/désactivé, et leur position déjà normalisée 0-999 — le même repère que les coordonnées de clic) sans prendre de capture d'écran, donc nettement plus rapide qu'une capture (pas d'analyse visuelle à faire, réponse quasi instantanée). PRÉFÈRE cet outil à computer_use dès que tu dois localiser ou vérifier un élément précis (bouton, champ, libellé exact) dans une fenêtre standard — appelle-le d'abord plutôt que de deviner une position sur une capture d'écran. Limite réelle à connaître : ne fonctionne pas pour une interface dessinée directement (jeu, canvas, éditeur graphique) qui n'expose rien à l'accessibilité — dans ce cas seulement, reviens à computer_use.",
             "parameters": { "type": "object", "properties": {} }
         }
     ]);
@@ -644,18 +660,28 @@ pub async fn run_control_me_core(
             return Err(CANCELLED_MESSAGE.to_string());
         }
 
-        // Adaptive settle wait (see wait_for_settle) instead of a fixed
-        // delay, so the next screenshot reflects the action's actual visual
-        // effect without waiting longer than necessary.
-        wait_for_settle(flag.clone()).await;
-        if flag.load(Ordering::SeqCst) {
-            let _ = app.emit("control-me-cancelled", ());
-            return Err(CANCELLED_MESSAGE.to_string());
-        }
-        let (screenshot, _, _) = capture_screenshot_base64()?;
-
         let mut result_parts = vec![json!({ "type": "text", "text": error_text.unwrap_or(result_text) })];
-        result_parts.push(json!({ "type": "image", "data": screenshot, "mime_type": "image/jpeg" }));
+
+        // read_ui_elements and remember_fact never touch the screen — the
+        // whole point of read_ui_elements is to be a fast, screenshot-free
+        // alternative to computer_use. Waiting to "settle" and attaching a
+        // full screenshot after one anyway would silently cancel out that
+        // speed gain for no reason (nothing visual changed to wait for or
+        // show). Skipped only for these two; every action that can
+        // actually affect the screen still gets the settle wait + a fresh
+        // screenshot, unchanged.
+        if !NO_VISUAL_EFFECT_TOOLS.contains(&action_name.as_str()) {
+            // Adaptive settle wait (see wait_for_settle) instead of a fixed
+            // delay, so the next screenshot reflects the action's actual
+            // visual effect without waiting longer than necessary.
+            wait_for_settle(flag.clone()).await;
+            if flag.load(Ordering::SeqCst) {
+                let _ = app.emit("control-me-cancelled", ());
+                return Err(CANCELLED_MESSAGE.to_string());
+            }
+            let (screenshot, _, _) = capture_screenshot_base64()?;
+            result_parts.push(json!({ "type": "image", "data": screenshot, "mime_type": "image/jpeg" }));
+        }
 
         body = json!({
             "model": model,

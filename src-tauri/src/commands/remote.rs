@@ -14,7 +14,10 @@
 // existing "Supabase Postgres stays read-only" posture almost entirely
 // intact — only the Realtime *service* (a WebSocket relay), not the
 // Postgres REST API, carries this feature.
-use super::controlme::{capture_screenshot_base64, run_control_me_core, ControlMeCancelFlag, ControlMeConfirmation};
+use super::controlme::{
+    capture_screenshot_base64, load_memory, run_control_me_core, save_memory, ControlMeCancelFlag,
+    ControlMeConfirmation,
+};
 use super::settings::{load_settings, save_settings};
 use super::{SUPABASE_ANON_KEY, SUPABASE_URL};
 use futures_util::stream::SplitSink;
@@ -159,6 +162,30 @@ fn emit_viewer_status(app: &AppHandle, connected: bool) {
     let _ = app.emit("remote-viewer-changed", json!({ "connected": connected }));
 }
 
+fn push_memory(app: &AppHandle, out_tx: &UnboundedSender<Message>, join_ref: &str, ref_counter: &Arc<AtomicU64>, topic: &str) {
+    let entries = load_memory(app).unwrap_or_default();
+    let r = ref_counter.fetch_add(1, Ordering::SeqCst).to_string();
+    let _ = out_tx.send(build_broadcast(join_ref, &r, topic, "memory", json!({ "entries": entries })));
+}
+
+// RAII cleanup for the listeners attached below — run_connection has
+// several early-return points (via `?` and explicit `return Err(...)`),
+// same reasoning as WatchdogGuard in watchdog.rs: every exit path
+// unregisters the listeners without having to remember to do it at each
+// return individually.
+struct MirrorGuard<'a> {
+    app: &'a AppHandle,
+    ids: Vec<tauri::EventId>,
+}
+
+impl Drop for MirrorGuard<'_> {
+    fn drop(&mut self) {
+        for id in self.ids.drain(..) {
+            self.app.unlisten(id);
+        }
+    }
+}
+
 async fn run_connection(app: &AppHandle, topic: &str) -> Result<(), String> {
     let host = SUPABASE_URL.trim_start_matches("https://").trim_start_matches("http://");
     let url = format!("wss://{host}/realtime/v1/websocket?apikey={SUPABASE_ANON_KEY}&vsn=1.0.0");
@@ -185,6 +212,27 @@ async fn run_connection(app: &AppHandle, topic: &str) -> Result<(), String> {
     // channel lets them do that without needing `write` itself, which
     // isn't `Clone`.
     let (out_tx, mut out_rx) = tokio::sync::mpsc::unbounded_channel::<Message>();
+
+    // Mirrors the exact same local Tauri events run_control_me_core emits
+    // — attached once for the whole connection's lifetime (not just while
+    // a remote-triggered instruction is running) so a LOCAL Control Me
+    // session, run by someone sitting at the PC, is also mirrored live to
+    // a connected site viewer, matching a local-triggered run's own
+    // ControlMeView display. Also refreshes the memory panel on the site
+    // after any run finishes, in case remember_fact was called.
+    let mirror_out_tx = out_tx.clone();
+    let mirror_join_ref = join_ref.clone();
+    let mirror_topic = topic.to_string();
+    let mirror_ref_counter = ref_counter.clone();
+    let mirror_app = app.clone();
+    let mirror = move |event_name: &'static str, payload: Value| {
+        let r = mirror_ref_counter.fetch_add(1, Ordering::SeqCst).to_string();
+        let _ = mirror_out_tx.send(build_broadcast(&mirror_join_ref, &r, &mirror_topic, event_name, payload));
+        if matches!(event_name, "done" | "error" | "cancelled") {
+            push_memory(&mirror_app, &mirror_out_tx, &mirror_join_ref, &mirror_ref_counter, &mirror_topic);
+        }
+    };
+    let _mirror_guard = MirrorGuard { app, ids: attach_mirrors(app, mirror) };
 
     let mut viewers: HashSet<String> = HashSet::new();
     let mut frame_ticker = tokio::time::interval(Duration::from_secs(FRAME_INTERVAL_SECS));
@@ -260,8 +308,18 @@ fn handle_incoming(
             emit_viewer_status(app, !viewers.is_empty());
         }
         "presence_diff" => {
+            let has_new_viewer = payload["joins"]
+                .as_object()
+                .map(|j| j.keys().any(|k| k.as_str() != HOST_PRESENCE_KEY))
+                .unwrap_or(false);
             apply_presence_diff(viewers, payload);
             emit_viewer_status(app, !viewers.is_empty());
+            // A viewer freshly joining has no idea what's already been
+            // remembered — send them the current memory list right away,
+            // same as ControlMeView's own memory panel would show locally.
+            if has_new_viewer {
+                push_memory(app, out_tx, join_ref, ref_counter, topic);
+            }
         }
         "broadcast" => {
             let inner_event = payload["event"].as_str().unwrap_or("");
@@ -282,6 +340,10 @@ fn handle_incoming(
                 "stop" => {
                     app.state::<ControlMeCancelFlag>().0.store(true, Ordering::SeqCst);
                 }
+                "clear_memory" => {
+                    let _ = save_memory(app, &[]);
+                    push_memory(app, out_tx, join_ref, ref_counter, topic);
+                }
                 _ => {}
             }
         }
@@ -289,12 +351,10 @@ fn handle_incoming(
     }
 }
 
-// Registers temporary listeners on the same local Tauri events
-// run_control_me_core already emits regardless of caller, forwarding each
-// one out over the Realtime channel for as long as this one remote-
-// triggered run is in flight — rather than threading a broadcaster
-// parameter through the Gemini loop itself. Local ControlMeView shows the
-// exact same events at the exact same time, for free.
+// The mirror listeners are attached once for the whole connection
+// (run_connection), not here — a remote instruction just needs to call the
+// shared Gemini loop; mirroring happens automatically for whatever it
+// emits, the same way it would for a local run.
 //
 // Known gap: control-me-confirmation-required is NOT mirrored — a
 // safety_decision pause triggered by a remote instruction can currently
@@ -330,23 +390,9 @@ fn spawn_remote_instruction(
             return;
         }
 
-        let mirror_tx = out_tx.clone();
-        let mirror_join_ref = join_ref.clone();
-        let mirror_topic = topic.clone();
-        let mirror_ref_counter = ref_counter.clone();
-        let mirror = move |event_name: &'static str, payload: Value| {
-            let r = mirror_ref_counter.fetch_add(1, Ordering::SeqCst).to_string();
-            let _ = mirror_tx.send(build_broadcast(&mirror_join_ref, &r, &mirror_topic, event_name, payload));
-        };
-        let listener_ids = attach_mirrors(&app, mirror);
-
         let cancel = app.state::<ControlMeCancelFlag>().0.clone();
         let confirmation = app.state::<ControlMeConfirmation>().0.clone();
-        let _ = run_control_me_core(app.clone(), cancel, confirmation, api_key, settings.gemini_model, text).await;
-
-        for id in listener_ids {
-            app.unlisten(id);
-        }
+        let _ = run_control_me_core(app, cancel, confirmation, api_key, settings.gemini_model, text).await;
     });
 }
 

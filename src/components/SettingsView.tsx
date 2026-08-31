@@ -39,6 +39,7 @@ export default function SettingsView({
   remoteConnected,
   onSave,
   onRefreshModels,
+  onOpenInstall,
   onPersistModel,
   onRemoteCodeChanged,
   checkingUpdate,
@@ -55,6 +56,7 @@ export default function SettingsView({
   remoteConnected: boolean;
   onSave: (settings: Settings) => void;
   onRefreshModels: () => void;
+  onOpenInstall: () => void;
   onPersistModel: (model: string) => void;
   onRemoteCodeChanged: (code: string | null) => void;
   checkingUpdate: boolean;
@@ -175,6 +177,9 @@ export default function SettingsView({
         {section === "models" && (
           <div className="settings-section">
             <h2>Modèles installés</h2>
+            <button className="primary-btn" onClick={onOpenInstall}>
+              Installer un modèle
+            </button>
             {models.length === 0 ? (
               <div className="modal-hint">Aucun modèle installé.</div>
             ) : (

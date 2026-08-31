@@ -97,7 +97,9 @@ Dans Réglages → Control Me, génère un **code à 12 chiffres**,
 saisis-le une fois sur le site : il se reconnecte automatiquement à chaque
 visite ensuite (bouton **Se déconnecter** pour jumeler un autre code). Une
 fois connecté, le site affiche ton écran en direct, une zone de chat pour
-donner des instructions, et un bouton **Arrêter**.
+donner des instructions, et un bouton **Arrêter**. Le bouton **Mémoire**
+montre aussi, depuis le site, ce que l'IA a retenu sur toi — la même
+mémoire que dans l'app, avec un bouton pour tout effacer.
 
 **Traite ce code comme un mot de passe** : toute personne qui le connaît
 peut voir ton écran et contrôler ton PC depuis n'importe où. Le site

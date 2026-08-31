@@ -53,7 +53,7 @@ pas devenir obsolète.
 - [FAIT] v0.5.4 : recherche dans l'historique Control Me (titre + contenu, `search_control_me_sessions`), renommage d'une session (double-clic, comme la Sidebar du chat), et navigation simplifiée — plus de bouton dédié "← Chat" dans Codex/Control Me, cliquer un élément de la Sidebar (nouvelle conversation ou conversation existante) y ramène directement — voir "Recherche/renommage de session, retrait du bouton retour (v0.5.4)" dans Architecture > Control Me.
 - [FAIT] v0.5.5 : passe d'animations sur toute l'app (CSS uniquement, aucune dépendance ajoutée) — micro-interactions de boutons, halo de focus sur les champs, entrée en fondu/décalage des bulles de chat et cartes d'outils avec effet cascade, indicateur de frappe animé + curseur clignotant pendant le streaming, transition de vue chat/Codex/Control Me, ouverture animée des modales/dropdowns/panneaux, toast de mise à jour avec rebond, accent visuel sur la conversation/section active dans la Sidebar, scrollbar personnalisée — respecte `prefers-reduced-motion`. Voir "Animations et micro-interactions (v0.5.5)" dans Architecture.
 - [FAIT] v0.5.6 : Control Me plus rapide et plus fiable — attente adaptative après chaque action (remplace le délai fixe de 120ms par une détection locale de stabilisation de l'écran) et nouvel outil `read_ui_elements` (Gemini peut lire l'arbre d'accessibilité Windows de la fenêtre au premier plan — type/libellé/état/position des contrôles — sans capture d'écran, en complément de `computer_use`) — voir "Attente adaptative et lecture de l'arbre d'accessibilité (v0.5.6)" dans Architecture > Control Me.
-- [FAIT] v0.5.7 : Control Me pilotable **à distance depuis le site** (`site/controlremote.html`, lien depuis la landing) — code de jumelage à 12 chiffres généré dans l'app, écran live + chat + bouton Arrêter côté navigateur, tout via Supabase **Realtime** (Broadcast + Presence, aucune table Postgres, client WebSocket écrit à la main côté Rust) — voir "Control Me à distance depuis le site (v0.5.7)" dans Architecture > Control Me pour le détail complet, y compris le modèle de sécurité (code = mot de passe partagé, protection anti-brute-force côté navigateur assumée comme non absolue). Réglages **entièrement refaits en page pleine** à sections (Général/Modèles/Control Me/Mises à jour), `SettingsModal.tsx` supprimé au profit de `SettingsView.tsx` — voir "Réglages en page pleine (v0.5.7)".
+- [FAIT] v0.5.7 : Control Me pilotable **à distance depuis le site** (`site/controlremote.html`, lien depuis la landing) — code de jumelage à 12 chiffres généré dans l'app, écran live + chat + mémoire + bouton Arrêter côté navigateur, tout via Supabase **Realtime** (Broadcast + Presence, aucune table Postgres, client WebSocket écrit à la main côté Rust) — voir "Control Me à distance depuis le site (v0.5.7)" et "Mémoire visible depuis le site distant (v0.5.7)" dans Architecture > Control Me, y compris le modèle de sécurité (code = mot de passe partagé, protection anti-brute-force côté navigateur assumée comme non absolue). Réglages **entièrement refaits en page pleine** à sections (Général/Modèles + Installer un modèle/Control Me/Mises à jour), `SettingsModal.tsx` supprimé au profit de `SettingsView.tsx`, bouton "Installer un modèle" déplacé de la Sidebar vers Réglages — voir "Réglages en page pleine (v0.5.7)". Deux correctifs Control Me au passage : `key_down` qui ne faisait rien (bug réel d'enigo, `release_keys_when_dropped`) et `read_ui_elements` qui n'apportait plus son gain de vitesse (capturait quand même un screenshot inutile) — voir "Correctifs de vitesse et de fiabilité (v0.5.7)".
 
 ## Architecture
 
@@ -937,7 +937,10 @@ Codex/Control Me).
 - Navigation interne simple (colonne de gauche, `.settings-nav`) entre
   quatre sections : **Général** (host Ollama/contexte max/prompt système,
   contenu déplacé tel quel), **Modèles installés** (liste/suppression,
-  déplacé tel quel), **Control Me** (nouvelle organisation : modèle
+  déplacé tel quel, **+ bouton "Installer un modèle"** qui ouvre la même
+  `HuggingFaceBrowser` qu'avant — retiré de la Sidebar sur demande
+  explicite, `onOpenInstall` remonté à `SettingsView` au lieu de
+  `Sidebar`), **Control Me** (nouvelle organisation : modèle
   Gemini — même `<select>` que dans `ControlMeView.tsx`, persiste le même
   `settings.gemini_model`, une seule source de vérité éditable à deux
   endroits cohérents — clé API Gemini, et le jumelage à distance décrit
@@ -956,6 +959,81 @@ Codex/Control Me).
   `textarea`/`select`/`button` étendus pour cibler aussi
   `.settings-section`, pas dupliqués) et le système d'animation déjà en
   place depuis la v0.5.5 (`view-in` pour l'entrée de la page).
+
+### Mémoire visible depuis le site distant (v0.5.7)
+
+Demandé explicitement en discussion libre après le contrôle à distance :
+que la mémoire de Control Me (`remember_fact`) fonctionne aussi "pour le
+contrôle à distance". Deux clarifications tranchées avec l'utilisateur
+avant de coder : la mémoire **reste locale** (le fichier JSON existant
+reste la source de vérité — pas de vraie base Supabase, pour ne pas
+rouvrir la posture "Postgres en lecture seule" qu'on venait de préserver
+avec le design Broadcast/Presence), et **pas de vrais embeddings** (la
+liste simple actuelle suffit, cohérent avec ce qui était déjà documenté).
+
+- Nouvel événement `memory` diffusé sur le même salon Realtime
+  (`payload: { entries }`) : poussé (a) à chaque nouveau viewer qui
+  rejoint le salon (`presence_diff` avec un `join` autre que `"host"`),
+  et (b) après chaque `control-me-done`/`-error`/`-cancelled` (au cas où
+  `remember_fact` a été appelé pendant le run). `load_memory`/
+  `save_memory` rendues `pub(crate)` dans `controlme.rs` pour être
+  appelables depuis `remote.rs`.
+- Nouveau broadcast entrant `clear_memory` (site → app) : appelle
+  `save_memory(app, &[])` puis repousse la mémoire (vide) — équivalent
+  distant du bouton "Tout effacer" déjà existant dans `ControlMeView.tsx`.
+- **Refactor important au passage** : les 6 listeners Tauri locaux
+  (`attach_mirrors`) sont maintenant attachés **une seule fois pour toute
+  la durée de la connexion** (`run_connection`), pas seulement pendant
+  qu'une instruction déclenchée à distance est en vol comme dans la
+  première version. Corrige un vrai trou : une session Control Me lancée
+  **localement** (utilisateur assis devant son PC) n'était jusque-là
+  jamais reflétée sur le site connecté, alors que le plan d'origine disait
+  bien "chaque événement... est aussi rediffusé". Nettoyage RAII
+  (`MirrorGuard`, `impl Drop`) plutôt qu'un `unlisten` manuel à chaque
+  `return` de `run_connection` — même raisonnement que `WatchdogGuard`
+  dans `watchdog.rs`.
+- Site (`site/controlremote.html`) : bouton **Mémoire** dans la barre de
+  statut, panneau repliable (même style visuel que le panneau de l'app,
+  catégorie + fait), bouton "Tout effacer" avec confirmation `confirm()`.
+
+### Correctifs de vitesse et de fiabilité (v0.5.7)
+
+Deux retours groupés dans la même session : "le truc de touche enfoncée
+ne fonctionne pas" et "fais en sorte que l'IA soit encore plus rapide...
+avec ui automation et tout".
+
+- **Vrai bug corrigé, trouvé en lisant le code source d'enigo** (pas
+  supposé) : `key_down` ne faisait strictement rien d'utile. `execute_action`
+  crée une nouvelle instance `Enigo` à **chaque appel**, et enigo a
+  `impl Drop for Enigo` qui relâche automatiquement toutes les touches
+  maintenues quand l'instance est détruite
+  (`release_keys_when_dropped: true` par défaut, vérifié dans
+  `enigo-0.6.1/src/lib.rs` et `win_impl.rs`) — donc `key_down` appuyait la
+  touche puis la relâchait **immédiatement** en sortant de la fonction,
+  avant même que la capture d'écran suivante ne la voie enfoncée. Corrigé
+  en passant `release_keys_when_dropped: false` à la construction de
+  l'`Enigo` dans `execute_action`. L'état réel d'une touche sous Windows
+  (`SendInput`) est indépendant de l'instance qui l'a envoyé, donc ça ne
+  change rien au comportement de `Direction::Press`/`Release` eux-mêmes —
+  juste à l'auto-nettoyage en sortie de fonction. **Contrepartie réelle,
+  assumée** : si l'app est tuée pendant qu'une touche est maintenue sans
+  `key_up` correspondant, elle peut rester physiquement bloquée enfoncée —
+  inhérent au fait que "maintenir une touche" fonctionne enfin pour de
+  vrai, pas quelque chose qu'une instance par appel pouvait empêcher de
+  toute façon (elle empêchait juste le "maintenir" de marcher du tout).
+- **`read_ui_elements` ne livrait pas le gain de vitesse annoncé** : après
+  cet outil (et `remember_fact`), la boucle attendait quand même
+  `wait_for_settle` puis recapturait et renvoyait un screenshot complet —
+  alors qu'aucun des deux ne touche jamais l'écran. Nouvelle constante
+  `NO_VISUAL_EFFECT_TOOLS` (`read_ui_elements`, `remember_fact`) : pour ces
+  deux outils, ni attente ni capture d'écran, juste le texte du résultat —
+  toutes les autres actions gardent le comportement inchangé (attente
+  adaptative + capture).
+- Description de l'outil `read_ui_elements` renforcée pour que Gemini le
+  **préfère activement** à `computer_use` quand il doit localiser un
+  élément précis dans une fenêtre standard, plutôt que de le présenter
+  comme un simple complément optionnel — pure ingénierie de prompt, aucune
+  garantie de comportement (reste à la discrétion du modèle).
 
 ### Les 6 outils de l'agent
 1. `read_file` — lecture texte (limite 5 Mo), chemin absolu
@@ -1747,10 +1825,20 @@ l'utilisateur confirme qu'elle est bien dans `.env` local.
   `cargo check` passé à 0 erreur ni avertissement dès la première
   tentative pour tout le client WebSocket. Réglages entièrement refaits
   en page pleine dans la même passe (demande groupée) — voir "Réglages en
-  page pleine (v0.5.7)". **Aucune vérification de bout en bout possible
-  dans cet environnement** (nécessite l'app lancée ET un navigateur sur
-  le site déployé en même temps) — à tester explicitement par
-  l'utilisateur après build et déploiement Vercel du site.
+  page pleine (v0.5.7)", bouton "Installer un modèle" déplacé de la
+  Sidebar vers Réglages sur demande explicite ultérieure. Mémoire Control
+  Me étendue au site distant dans la foulée (discussion libre), avec un
+  vrai refactor du mirroring d'événements pour couvrir aussi les sessions
+  déclenchées localement, pas seulement à distance — voir "Mémoire
+  visible depuis le site distant (v0.5.7)". Deux retours utilisateur
+  traités dans la même session : `key_down` qui ne faisait rien (vrai bug
+  d'enigo trouvé en lisant son code source — `release_keys_when_dropped`)
+  et `read_ui_elements` qui capturait quand même un screenshot inutile
+  après coup, annulant son propre gain de vitesse — voir "Correctifs de
+  vitesse et de fiabilité (v0.5.7)". **Aucune vérification de bout en
+  bout possible dans cet environnement** (nécessite l'app lancée ET un
+  navigateur sur le site déployé en même temps) — à tester explicitement
+  par l'utilisateur après build et déploiement Vercel du site.
 
 ## Prochaines étapes (dans l'ordre du fichier de passation d'origine)
 

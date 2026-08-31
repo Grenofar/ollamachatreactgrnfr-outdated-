@@ -470,7 +470,6 @@ export default function App() {
         onDelete={handleDeleteConversation}
         onRename={handleRenameConversation}
         onOpenSettings={() => setView("settings")}
-        onOpenInstall={() => setShowInstall(true)}
         onOpenCodex={() => setView("codex")}
         onOpenControlMe={() => setView("controlme")}
       />
@@ -498,6 +497,7 @@ export default function App() {
             remoteConnected={remoteConnected}
             onSave={handleSaveSettings}
             onRefreshModels={() => refreshModels(settings.ollama_host)}
+            onOpenInstall={() => setShowInstall(true)}
             onPersistModel={handlePersistControlMeModel}
             onRemoteCodeChanged={handleRemoteCodeChanged}
             checkingUpdate={checkingUpdate}

@@ -117,6 +117,41 @@
   .status-dot.online { background: var(--ok); }
   .status-text { font-size: 0.85rem; color: var(--text-dim); flex: 1; }
 
+  .memory-panel {
+    background: var(--bg-raised);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    padding: 12px 14px;
+    margin-bottom: 16px;
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+  }
+  .memory-empty { color: var(--text-dim); font-size: 0.85rem; }
+  .memory-list {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    max-height: 200px;
+    overflow-y: auto;
+  }
+  .memory-entry {
+    font-size: 0.82rem;
+    color: var(--text);
+    background: var(--bg);
+    border-radius: 8px;
+    padding: 6px 10px;
+  }
+  .memory-category {
+    display: inline-block;
+    margin-right: 8px;
+    padding: 1px 7px;
+    border-radius: 8px;
+    background: #1c2634;
+    color: var(--accent);
+    font-size: 0.7rem;
+  }
+
   .screen-frame {
     background: #000000;
     border: 1px solid var(--border);
@@ -244,7 +279,14 @@
       <div class="status-bar">
         <span class="status-dot" id="status-dot"></span>
         <span class="status-text" id="status-text">Connexion…</span>
+        <button class="btn" id="memory-btn">Mémoire</button>
         <button class="btn btn-danger" id="disconnect-btn">Se déconnecter</button>
+      </div>
+
+      <div class="memory-panel" id="memory-panel" hidden>
+        <div class="memory-empty" id="memory-empty">Rien de retenu pour l'instant.</div>
+        <div class="memory-list" id="memory-list"></div>
+        <button class="btn btn-danger" id="memory-clear-btn" hidden>Tout effacer</button>
       </div>
 
       <div class="screen-frame">
@@ -307,6 +349,11 @@
     const instructionInput = document.getElementById("instruction-input");
     const sendBtn = document.getElementById("send-btn");
     const stopBtn = document.getElementById("stop-btn");
+    const memoryBtn = document.getElementById("memory-btn");
+    const memoryPanel = document.getElementById("memory-panel");
+    const memoryEmpty = document.getElementById("memory-empty");
+    const memoryList = document.getElementById("memory-list");
+    const memoryClearBtn = document.getElementById("memory-clear-btn");
 
     let channel = null;
     let hostOnline = false;
@@ -359,6 +406,28 @@
       transcriptEmpty.hidden = false;
       screenImg.hidden = true;
       screenPlaceholder.hidden = false;
+      renderMemory([]);
+      memoryPanel.hidden = true;
+    }
+
+    function renderMemory(entries) {
+      memoryList.innerHTML = "";
+      const hasEntries = Array.isArray(entries) && entries.length > 0;
+      memoryEmpty.hidden = hasEntries;
+      memoryClearBtn.hidden = !hasEntries;
+      if (!hasEntries) return;
+      for (const entry of entries) {
+        const div = document.createElement("div");
+        div.className = "memory-entry";
+        if (entry.category) {
+          const cat = document.createElement("span");
+          cat.className = "memory-category";
+          cat.textContent = entry.category;
+          div.appendChild(cat);
+        }
+        div.appendChild(document.createTextNode(entry.fact ?? ""));
+        memoryList.appendChild(div);
+      }
     }
 
     function recordFailedAttempt() {
@@ -422,6 +491,7 @@
         appendStep("Limite d'actions atteinte pour cette instruction.");
         setRunning(false);
       });
+      ch.on("broadcast", { event: "memory" }, ({ payload }) => renderMemory(payload.entries));
 
       ch.subscribe(async (status) => {
         if (status !== "SUBSCRIBED") return;
@@ -486,6 +556,16 @@
     stopBtn.addEventListener("click", () => {
       if (!channel) return;
       channel.send({ type: "broadcast", event: "stop", payload: {} });
+    });
+
+    memoryBtn.addEventListener("click", () => {
+      memoryPanel.hidden = !memoryPanel.hidden;
+    });
+
+    memoryClearBtn.addEventListener("click", () => {
+      if (!channel) return;
+      if (!confirm("Effacer tout ce que l'IA a retenu sur toi ?")) return;
+      channel.send({ type: "broadcast", event: "clear_memory", payload: {} });
     });
 
     if (isBanned()) {

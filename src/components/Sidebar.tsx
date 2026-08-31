@@ -11,7 +11,6 @@ export default function Sidebar({
   onDelete,
   onRename,
   onOpenSettings,
-  onOpenInstall,
   onOpenCodex,
   onOpenControlMe,
 }: {
@@ -23,7 +22,6 @@ export default function Sidebar({
   onDelete: (id: string) => void;
   onRename: (id: string, title: string) => void;
   onOpenSettings: () => void;
-  onOpenInstall: () => void;
   onOpenCodex: () => void;
   onOpenControlMe: () => void;
 }) {
@@ -142,9 +140,6 @@ export default function Sidebar({
         onClick={onOpenControlMe}
       >
         Control Me
-      </button>
-      <button className="sidebar-install-btn" onClick={onOpenInstall}>
-        Installer un modèle
       </button>
       <button
         className={`sidebar-settings-btn ${view === "settings" ? "sidebar-nav-active" : ""}`}
