@@ -1220,6 +1220,15 @@ l'utilisateur confirme qu'elle est bien dans `.env` local.
   la clé `control-me_0.5.2_x64-setup.exe`, sans espace, alors que le
   fichier NSIS local en contient un — `productName: "Control Me"` produit
   littéralement `Control Me_0.5.2_x64-setup.exe`).
+- **2026-08-31** — v0.5.3 : historique des sessions Control Me, demandé
+  explicitement ("les conversations Control Me disparaissent à la
+  fermeture ; les sauvegarder comme le fait déjà l'app de chat
+  permettrait de les relire"). Voir "Historique des sessions Control Me
+  (v0.5.3)" dans Architecture > Control Me pour le détail complet — même
+  pattern de persistance que `conversations.rs`, réutilisé trait pour
+  trait plutôt que réinventé. App de chat principale publiée et vérifiée
+  via la clé anon (fichier : 200 OK, 6 736 893 octets ;
+  `latest_release_manifest` sans paramètre : renvoie bien la v0.5.3).
 
 ## Prochaines étapes (dans l'ordre du fichier de passation d'origine)
 
