@@ -1229,6 +1229,11 @@ l'utilisateur confirme qu'elle est bien dans `.env` local.
   trait plutôt que réinventé. App de chat principale publiée et vérifiée
   via la clé anon (fichier : 200 OK, 6 736 893 octets ;
   `latest_release_manifest` sans paramètre : renvoie bien la v0.5.3).
+  Control Me standalone publié et vérifié de la même façon (fichier :
+  200 OK, 6 731 186 octets sous la clé `control-me_0.5.3_x64-setup.exe` ;
+  `latest_release_manifest?p_product=controlme` : renvoie bien la v0.5.3)
+  — les deux endpoints confirmés indépendants l'un de l'autre après
+  publication des deux, cohérent avec le correctif de la v0.5.2.
 
 ## Prochaines étapes (dans l'ordre du fichier de passation d'origine)
 
