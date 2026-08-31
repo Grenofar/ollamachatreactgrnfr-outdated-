@@ -51,8 +51,111 @@ pas devenir obsolète.
 - [FAIT] v0.5.2 : correctif critique Supabase (`latest_release_manifest` ambigu après la migration `product`, cassait l'auto-update de l'app de chat pour de vrai — `drop function` manquant, voir journal 2026-08-31) + modèle Gemini recommandé par défaut changé vers `gemini-3.5-flash-lite` (contredit la recommandation de Google, assumé et documenté).
 - [FAIT] v0.5.3 : historique des sessions Control Me — les conversations ne disparaissent plus à la fermeture, sauvegardées automatiquement (même pattern que les conversations du chat), boutons "Nouvelle session"/"Historique" pour relire ou supprimer une ancienne session — voir "Historique des sessions Control Me (v0.5.3)" dans Architecture > Control Me.
 - [FAIT] v0.5.4 : recherche dans l'historique Control Me (titre + contenu, `search_control_me_sessions`), renommage d'une session (double-clic, comme la Sidebar du chat), et navigation simplifiée — plus de bouton dédié "← Chat" dans Codex/Control Me, cliquer un élément de la Sidebar (nouvelle conversation ou conversation existante) y ramène directement — voir "Recherche/renommage de session, retrait du bouton retour (v0.5.4)" dans Architecture > Control Me.
+- [FAIT] v0.5.5 : passe d'animations sur toute l'app (CSS uniquement, aucune dépendance ajoutée) — micro-interactions de boutons, halo de focus sur les champs, entrée en fondu/décalage des bulles de chat et cartes d'outils avec effet cascade, indicateur de frappe animé + curseur clignotant pendant le streaming, transition de vue chat/Codex/Control Me, ouverture animée des modales/dropdowns/panneaux, toast de mise à jour avec rebond, accent visuel sur la conversation/section active dans la Sidebar, scrollbar personnalisée — respecte `prefers-reduced-motion`. Voir "Animations et micro-interactions (v0.5.5)" dans Architecture.
 
 ## Architecture
+
+### Animations et micro-interactions (v0.5.5)
+
+Demandé explicitement : "il faut qu'il y ai des animations, dans l'app, il
+faut que ca soit impressionant en terme d'interface". Avant ce travail,
+`App.css` (1600 lignes) ne contenait quasiment aucune transition/animation
+(2 `transition` isolées + 1 seul `@keyframes`) — tous les changements d'état
+(hover, ouverture de modale, nouveau message) étaient instantanés. Passe
+**CSS uniquement, aucune dépendance ajoutée** (pas de framer-motion) —
+cohérent avec la préférence du projet d'éviter les dépendances superflues
+(même logique de sobriété que la leçon `image`/AVIF de Control Me), et une
+lib d'animation React est inutile pour des transitions d'état/entrée
+déclaratives comme celles-ci.
+
+- **Système global** (`:root`, en haut d'`App.css`) : deux variables
+  d'easing (`--ease-out`, `--ease-spring`), un bloc
+  `@media (prefers-reduced-motion: reduce)` qui écrase toute durée
+  d'animation/transition à quasi zéro (accessibilité — non négociable dès
+  qu'on ajoute des animations, pas une finition optionnelle).
+- **Boutons, partout, en une seule règle** : `button { transition:
+  background/color/border-color/opacity/box-shadow/transform; }` (élément
+  brut, spécificité volontairement basse) + `button:active:not(:disabled)
+  { transform: scale(0.96); }`. Comme aucun bouton du projet sauf
+  `.send-btn` ne déclarait déjà sa propre `transition` (vérifié par grep
+  avant d'écrire la règle — un raccourci CSS `transition` ne fusionne
+  jamais avec un autre, la règle la plus spécifique gagne entièrement),
+  cette seule règle globale lisse instantanément des dizaines de boutons
+  dans toute l'app (Sidebar, modales, Codex, Control Me, FileTree...) sans
+  avoir à toucher chacun individuellement. `.send-btn` a son `transform`
+  explicitement ajouté à sa propre liste `transition` pour ne pas le
+  perdre (sa règle plus spécifique l'aurait sinon totalement remplacée).
+- **Champs de saisie** : halo de focus bleu générique (`input:focus,
+  textarea:focus:not(.inputarea), select:focus`) — le `:not(.inputarea)`
+  évite d'affecter le textarea caché de Monaco. `.input-pill` (barre de
+  saisie du chat/Control Me) a son propre halo `:focus-within` sur le
+  conteneur arrondi plutôt que sur le textarea interne sans bordure
+  (visuellement plus cohérent avec la forme en pilule).
+- **Entrée des bulles de chat avec effet cascade** : `.bubble-row {
+  animation: bubble-in ...; animation-delay: calc(min(var(--i,0),12) *
+  30ms); }` — `--i` est une custom property CSS posée sur le conteneur
+  parent (`style={{"--i": i}}`, `.message-row` dans App.tsx, le div par
+  message dans `AgentTranscript.tsx`, chaque entrée dans
+  `ControlMeView.tsx`) et **hérite** naturellement vers l'enfant
+  `.bubble-row` (comportement standard des custom properties CSS,
+  contrairement aux propriétés normales). Plafonné à 12 pour qu'une
+  conversation de 200 messages ne cascade pas sur plusieurs secondes.
+  `App.tsx` : la liste de messages est enveloppée dans un
+  `<div key={currentConv?.id} className="chat-messages">`
+  (`display: contents` — invisible pour le layout flex, sert uniquement de
+  frontière de remount) pour que changer de conversation **rejoue tout le
+  cascade** au lieu de ne réanimer que les messages au-delà de la longueur
+  de l'ancienne conversation (React réutilise les nœuds DOM à clé `i`
+  identique sinon).
+- **Indicateur de frappe et curseur de streaming**
+  (`MessageBubble.tsx`, nouvelle prop `streaming?: boolean`) : le
+  placeholder `"· · ·"` n'est plus injecté tel quel dans le HTML markdown
+  (impossible à animer proprement, ce n'est que du texte) — quand
+  `streaming && content === "· · ·"`, un vrai indicateur `.typing-dots` à
+  3 points rebondissants est rendu à la place. Une fois que du texte
+  réel commence à arriver, `.bubble-streaming::after` ajoute un curseur
+  clignotant en fin de bulle. Branché aux trois bulles "live" existantes
+  (chat de base, `AgentTranscript.tsx` de Codex) ; Control Me n'a pas
+  d'équivalent streaming token-par-token (ses événements sont des étapes
+  discrètes, pas des chunks), donc pas de prop `streaming` là — seul le
+  cascade `--i` s'applique à ses entrées.
+- **Transition de vue** : `.main`/`.codex`/`.controlme` (les trois racines
+  alternées dans `App.tsx` selon `view`) ont chacune `animation: view-in`
+  (fondu simple) — se déclenche naturellement puisque changer de vue
+  démonte/remonte un arbre de composants entièrement différent, aucun
+  changement JS nécessaire.
+- **Ouverture animée** : modales (`.modal-overlay`/`.modal`, couvre
+  Réglages/HuggingFaceBrowser/AskQuestion/l'avertissement anti-gel — une
+  seule paire de classes partagée par tous), toast de mise à jour
+  (`.update-toast`, rebond via `--ease-spring`), dropdown de modèle
+  (`.model-select-panel`, `transform-origin` différent selon qu'il s'ouvre
+  vers le haut ou le bas), panneaux Mémoire/Historique de Control Me
+  (`.controlme-memory-panel`), approbation inline et confirmation Control
+  Me (`.tool-approval-inline`/`.controlme-confirm` — cette dernière avec en
+  plus un halo ambré `confirm-glow` qui pulse en continu tant qu'elle est
+  affichée, pour attirer l'œil sur une décision qui attend une réponse).
+- **Détails Codex** : chevron de dossier dans `FileTree.tsx` (glyphe fixe
+  "▸" qui tourne à 90° via `transform` au lieu de swapper vers "▾" — même
+  traitement pour le chevron de `ModelSelect.tsx`, rotation 180°) ; cartes
+  d'outil (`.tool-card`) avec la même entrée en cascade que les bulles,
+  plus une transition de `border-color` pour que le passage
+  running→terminé ne soit plus un changement de couleur instantané ;
+  onglets d'éditeur (`.editor-tab`) avec hover ajouté (n'en avait aucun) et
+  bouton de fermeture avec feedback de clic.
+- **Accent de navigation** : `Sidebar.tsx` reçoit maintenant une prop
+  `view` (déjà présente dans `App.tsx`, jamais transmise avant) pour
+  surligner les boutons "Codex"/"Control Me" quand cette vue est active —
+  ils n'avaient jusque-là aucun état actif visible, contrairement aux
+  conversations. La conversation active a aussi gagné une barre d'accent
+  bleue (`box-shadow: inset`) en plus de son fond déjà existant.
+- **Scrollbar personnalisée** (`::-webkit-scrollbar` global) — la
+  scrollbar Windows par défaut de WebView2 tranchait visuellement avec le
+  reste de l'interface sombre.
+- Vérifié via `npx tsc --noEmit`, `cargo check` et `npm run build` (tsc +
+  vite, 0 erreur) — **pas de vérification visuelle possible dans cet
+  environnement** (pas d'accès GUI, voir les limitations déjà notées pour
+  le freeze de démarrage v0.3.2) : à confirmer par l'utilisateur après
+  installation que le rendu correspond à l'intention.
 
 ### Chat (base)
 - `src/api.ts` : appels Tauri (`invoke`) vers les commandes Rust.
@@ -1294,6 +1397,19 @@ l'utilisateur confirme qu'elle est bien dans `.env` local.
   sauvegarde automatique d'écraser un renommage manuel au message
   suivant). `npx tsc --noEmit` et `cargo check` passés à 0 erreur avant
   publication.
+- **2026-08-31** — v0.5.5 : passe d'animations sur toute l'app, demandée
+  explicitement ("il faut qu'il y ai des animations, dans l'app, il faut
+  que ca soit impressionant en terme d'interface"). CSS uniquement,
+  aucune dépendance ajoutée — voir "Animations et micro-interactions
+  (v0.5.5)" dans Architecture pour le détail technique complet (système
+  d'easing global, `prefers-reduced-motion`, micro-interactions de
+  boutons via une seule règle globale, cascade d'entrée des bulles/cartes
+  via une custom property `--i`, indicateur de frappe + curseur de
+  streaming, transitions de vue/modales/dropdowns/panneaux, accent de
+  navigation dans la Sidebar). `npx tsc --noEmit`, `cargo check` et
+  `npm run build` passés à 0 erreur. **Pas de vérification visuelle
+  possible dans cet environnement** (pas d'accès GUI) — à confirmer par
+  l'utilisateur après installation.
 
 ## Prochaines étapes (dans l'ordre du fichier de passation d'origine)
 

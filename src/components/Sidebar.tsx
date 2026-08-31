@@ -1,10 +1,11 @@
-import { useEffect, useState } from "react";
+import { useEffect, useState, type CSSProperties } from "react";
 import { searchConversations } from "../api";
 import type { ConversationMeta } from "../types";
 
 export default function Sidebar({
   conversations,
   currentId,
+  view,
   onNew,
   onSelect,
   onDelete,
@@ -16,6 +17,7 @@ export default function Sidebar({
 }: {
   conversations: ConversationMeta[];
   currentId: string | null;
+  view: "chat" | "codex" | "controlme";
   onNew: () => void;
   onSelect: (id: string) => void;
   onDelete: (id: string) => void;
@@ -86,10 +88,11 @@ export default function Sidebar({
       )}
 
       <div className="sidebar-list">
-        {filtered.map((conv) => (
+        {filtered.map((conv, i) => (
           <div
             key={conv.id}
             className={`sidebar-item ${conv.id === currentId ? "sidebar-item-active" : ""}`}
+            style={{ "--i": i } as CSSProperties}
           >
             {renamingId === conv.id ? (
               <input
@@ -128,10 +131,16 @@ export default function Sidebar({
         )}
       </div>
 
-      <button className="sidebar-install-btn" onClick={onOpenCodex}>
+      <button
+        className={`sidebar-install-btn ${view === "codex" ? "sidebar-nav-active" : ""}`}
+        onClick={onOpenCodex}
+      >
         Codex
       </button>
-      <button className="sidebar-install-btn" onClick={onOpenControlMe}>
+      <button
+        className={`sidebar-install-btn ${view === "controlme" ? "sidebar-nav-active" : ""}`}
+        onClick={onOpenControlMe}
+      >
         Control Me
       </button>
       <button className="sidebar-install-btn" onClick={onOpenInstall}>

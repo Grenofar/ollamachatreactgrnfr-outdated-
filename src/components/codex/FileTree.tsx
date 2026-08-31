@@ -174,8 +174,8 @@ export default function FileTree({
           style={{ paddingLeft: 6 + depth * 14 }}
           onClick={() => toggle(node)}
         >
-          <span className="tree-toggle">
-            {node.entry.is_dir ? (node.loading ? "…" : node.expanded ? "▾" : "▸") : ""}
+          <span className={`tree-toggle ${node.expanded ? "tree-toggle-expanded" : ""}`}>
+            {node.entry.is_dir ? (node.loading ? "…" : "▸") : ""}
           </span>
           <span className={node.entry.is_dir ? "tree-name-dir" : "tree-name-file"}>{node.entry.name}</span>
           {node.entry.is_dir && (

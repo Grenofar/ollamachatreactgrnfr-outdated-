@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState, type KeyboardEvent } from "react";
+import { useEffect, useRef, useState, type CSSProperties, type KeyboardEvent } from "react";
 import MessageBubble from "../MessageBubble";
 import SendButton from "../SendButton";
 import {
@@ -389,11 +389,11 @@ export default function ControlMeView({
         )}
         {entries.map((entry, i) =>
           entry.role === "system" ? (
-            <div key={i} className="controlme-step">
+            <div key={i} className="controlme-step" style={{ "--i": i } as CSSProperties}>
               {entry.content}
             </div>
           ) : (
-            <MessageBubble key={i} role={entry.role} content={entry.content} />
+            <MessageBubble key={i} role={entry.role} content={entry.content} style={{ "--i": i } as CSSProperties} />
           ),
         )}
         {pendingConfirmation && (

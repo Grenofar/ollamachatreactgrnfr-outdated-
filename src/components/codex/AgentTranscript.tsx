@@ -1,4 +1,4 @@
-import type { Ref } from "react";
+import type { CSSProperties, Ref } from "react";
 import { DiffEditor } from "@monaco-editor/react";
 import "../../monacoSetup";
 import MessageBubble from "../MessageBubble";
@@ -55,7 +55,7 @@ export default function AgentTranscript({
       {messages
         .filter((m) => m.role !== "system")
         .map((m, i) => (
-          <div key={i}>
+          <div key={i} style={{ "--i": i } as CSSProperties}>
             {m.content.trim() && (m.role === "user" || m.role === "assistant") && (
               <MessageBubble role={m.role} content={m.content} />
             )}
@@ -118,7 +118,7 @@ export default function AgentTranscript({
           </div>
         ))}
 
-      {isThinking && <MessageBubble role="assistant" content={streamingText || "· · ·"} />}
+      {isThinking && <MessageBubble role="assistant" content={streamingText || "· · ·"} streaming />}
     </div>
   );
 }

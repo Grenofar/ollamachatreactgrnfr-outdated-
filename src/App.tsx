@@ -1,4 +1,4 @@
-import { lazy, Suspense, useEffect, useRef, useState, type KeyboardEvent } from "react";
+import { lazy, Suspense, useEffect, useRef, useState, type CSSProperties, type KeyboardEvent } from "react";
 import { check, type Update } from "@tauri-apps/plugin-updater";
 import { relaunch } from "@tauri-apps/plugin-process";
 import "./App.css";
@@ -449,6 +449,7 @@ export default function App() {
       <Sidebar
         conversations={conversations}
         currentId={currentConv?.id ?? null}
+        view={view}
         onNew={handleNewConversation}
         onSelect={handleSelectConversation}
         onDelete={handleDeleteConversation}
@@ -484,7 +485,11 @@ export default function App() {
               <p>Choisis un modèle en bas et lance la discussion.</p>
             </div>
           ) : (
-            <>
+            // Keyed on the conversation id and set to display:contents (invisible
+            // to layout) purely so switching conversations forces a full remount
+            // of the message list — every bubble replays its entrance animation
+            // instead of only the ones past the previous conversation's length.
+            <div key={currentConv?.id ?? "empty"} className="chat-messages">
               {messages.map((m, i) =>
                 editingIndex === i ? (
                   <div key={i} className="message-edit">
@@ -502,7 +507,7 @@ export default function App() {
                     </div>
                   </div>
                 ) : (
-                  <div key={i} className="message-row">
+                  <div key={i} className="message-row" style={{ "--i": i } as CSSProperties}>
                     <MessageBubble role={m.role} content={m.content} />
                     <div className={`message-actions message-actions-${m.role}`}>
                       {m.role === "user" && !sending && (
@@ -517,8 +522,8 @@ export default function App() {
                   </div>
                 ),
               )}
-              {sending && <MessageBubble role="assistant" content={streamingText || "· · ·"} />}
-            </>
+              {sending && <MessageBubble role="assistant" content={streamingText || "· · ·"} streaming />}
+            </div>
           )}
         </div>
 

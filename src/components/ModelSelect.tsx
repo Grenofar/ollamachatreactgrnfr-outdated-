@@ -67,7 +67,7 @@ export default function ModelSelect({
           <span className="model-select-name">{current?.name ?? "Aucun modèle"}</span>
           {current && formatMeta(current) && <span className="model-select-meta">{formatMeta(current)}</span>}
         </span>
-        <span className="model-select-chevron">{open ? "▴" : "▾"}</span>
+        <span className={`model-select-chevron ${open ? "model-select-chevron-open" : ""}`}>▾</span>
       </button>
 
       {open && (

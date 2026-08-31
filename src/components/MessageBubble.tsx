@@ -1,4 +1,4 @@
-import { useMemo, type MouseEvent } from "react";
+import { useMemo, type CSSProperties, type MouseEvent } from "react";
 import { marked } from "marked";
 import DOMPurify from "dompurify";
 import { writeText } from "@tauri-apps/plugin-clipboard-manager";
@@ -42,11 +42,19 @@ function renderMarkdown(content: string): string {
 export default function MessageBubble({
   role,
   content,
+  streaming,
+  style,
 }: {
   role: "user" | "assistant" | "system";
   content: string;
+  /** True only for the single live bubble being streamed into — swaps the
+   * "· · ·" placeholder for an animated typing indicator and shows a
+   * blinking cursor once real text starts arriving. */
+  streaming?: boolean;
+  style?: CSSProperties;
 }) {
   const html = useMemo(() => renderMarkdown(content), [content]);
+  const isTypingPlaceholder = streaming && content.trim() === "· · ·";
 
   async function handleClick(e: MouseEvent<HTMLDivElement>) {
     const btn = (e.target as HTMLElement).closest(".code-copy-btn") as HTMLButtonElement | null;
@@ -65,12 +73,22 @@ export default function MessageBubble({
   }
 
   return (
-    <div className={`bubble-row bubble-row-${role}`}>
-      <div
-        className={`bubble bubble-${role} bubble-markdown`}
-        onClick={handleClick}
-        dangerouslySetInnerHTML={{ __html: html }}
-      />
+    <div className={`bubble-row bubble-row-${role}`} style={style}>
+      {isTypingPlaceholder ? (
+        <div className={`bubble bubble-${role} bubble-markdown bubble-typing`}>
+          <span className="typing-dots">
+            <span />
+            <span />
+            <span />
+          </span>
+        </div>
+      ) : (
+        <div
+          className={`bubble bubble-${role} bubble-markdown ${streaming ? "bubble-streaming" : ""}`}
+          onClick={handleClick}
+          dangerouslySetInnerHTML={{ __html: html }}
+        />
+      )}
     </div>
   );
 }
