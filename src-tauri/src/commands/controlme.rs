@@ -327,6 +327,20 @@ fn key_from_name(name: &str) -> Key {
         "alt" => Key::Alt,
         "shift" => Key::Shift,
         "meta" | "win" | "windows" | "cmd" | "super" => Key::Meta,
+        "capslock" | "caps" => Key::CapsLock,
+        "insert" => Key::Insert,
+        "f1" => Key::F1,
+        "f2" => Key::F2,
+        "f3" => Key::F3,
+        "f4" => Key::F4,
+        "f5" => Key::F5,
+        "f6" => Key::F6,
+        "f7" => Key::F7,
+        "f8" => Key::F8,
+        "f9" => Key::F9,
+        "f10" => Key::F10,
+        "f11" => Key::F11,
+        "f12" => Key::F12,
         other => other.chars().next().map(Key::Unicode).unwrap_or(Key::Space),
     }
 }
@@ -556,7 +570,7 @@ fn build_windows_ui_tools() -> Value {
         {
             "type": "function",
             "name": "type",
-            "description": "Tape du texte à l'endroit où se trouve le curseur/focus actuel.",
+            "description": "Tape du texte à l'endroit où se trouve le curseur/focus actuel — accents et emoji inclus, envoyés comme de vrais caractères Unicode (pas besoin de les décrire, les inclure directement dans le texte).",
             "parameters": {
                 "type": "object",
                 "properties": {
@@ -592,7 +606,7 @@ fn build_windows_ui_tools() -> Value {
         {
             "type": "function",
             "name": "press_key",
-            "description": "Appuie puis relâche une touche du clavier (ex. \"enter\", \"tab\", \"escape\", une lettre...).",
+            "description": "Appuie puis relâche une touche du clavier. Noms reconnus : \"enter\", \"tab\", \"escape\", \"backspace\", \"delete\", \"space\", \"up\"/\"down\"/\"left\"/\"right\", \"home\", \"end\", \"pageup\", \"pagedown\", \"insert\", \"capslock\", \"control\"/\"ctrl\", \"alt\", \"shift\", \"meta\"/\"windows\"/\"win\" (touche logo Windows), \"f1\" à \"f12\", ou une lettre/chiffre simple.",
             "parameters": {
                 "type": "object",
                 "properties": { "key": { "type": "string" } },
@@ -602,7 +616,7 @@ fn build_windows_ui_tools() -> Value {
         {
             "type": "function",
             "name": "key_down",
-            "description": "Maintient une touche enfoncée (à relâcher plus tard avec key_up) — utile pour maintenir Shift/Ctrl pendant une autre action.",
+            "description": "Maintient une touche enfoncée (à relâcher plus tard avec key_up) — utile pour maintenir Shift/Ctrl/Alt/Windows pendant une autre action, ou pour un raccourci qui doit rester actif plusieurs secondes. Mêmes noms de touche que press_key.",
             "parameters": {
                 "type": "object",
                 "properties": { "key": { "type": "string" } },
@@ -612,7 +626,7 @@ fn build_windows_ui_tools() -> Value {
         {
             "type": "function",
             "name": "key_up",
-            "description": "Relâche une touche précédemment maintenue avec key_down.",
+            "description": "Relâche une touche précédemment maintenue avec key_down. Mêmes noms de touche que press_key.",
             "parameters": {
                 "type": "object",
                 "properties": { "key": { "type": "string" } },
@@ -622,7 +636,7 @@ fn build_windows_ui_tools() -> Value {
         {
             "type": "function",
             "name": "hotkey",
-            "description": "Appuie sur une combinaison de touches simultanément (ex. [\"ctrl\", \"c\"]) puis les relâche dans l'ordre inverse.",
+            "description": "Appuie sur une combinaison de touches simultanément (ex. [\"control\", \"s\"] pour Ctrl+S, [\"control\", \"shift\", \"s\"] pour Ctrl+Maj+S, [\"meta\"] seule pour ouvrir le menu Démarrer) puis les relâche dans l'ordre inverse. Mêmes noms de touche que press_key.",
             "parameters": {
                 "type": "object",
                 "properties": { "keys": { "type": "array", "items": { "type": "string" } } },

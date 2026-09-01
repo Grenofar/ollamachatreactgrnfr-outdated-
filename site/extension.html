@@ -101,7 +101,7 @@
   </div>
 
   <script type="module">
-    import { supabase, renderAccountBar, avatarUrlFor, getProfile, onProfileChange } from "/account.js";
+    import { supabase, renderAccountBar, avatarUrlFor, getProfile, onProfileChange, escapeHtml } from "/account.js";
 
     const barMount = document.createElement("div");
     barMount.id = "account-bar-mount";
@@ -127,7 +127,7 @@
       if (!el) return;
       el.innerHTML =
         profile && loadedOwnerId && profile.id === loadedOwnerId
-          ? '<p style="margin-top: 24px;"><a href="/dev">Voir dans mon tableau de bord développeur →</a></p>'
+          ? '<p style="margin-top: 24px;"><a class="link-btn" href="/dev">Voir dans mon tableau de bord développeur →</a></p>'
           : "";
     });
 
@@ -170,18 +170,22 @@
       const authorAvatar = avatarUrlFor(ext.profiles, null);
       const installCount = installs ?? 0;
 
+      // Everything below sourced from ext/media (name, description, summary,
+      // thumbnail_url, media_url, version, the author's username/avatar) was
+      // set by whichever developer account published this extension —
+      // escaped before going into innerHTML, see escapeHtml in account.js.
       content.innerHTML = `
-        ${ext.thumbnail_url ? `<img class="hero-thumb" src="${ext.thumbnail_url}" alt="" />` : ""}
+        ${ext.thumbnail_url ? `<img class="hero-thumb" src="${escapeHtml(ext.thumbnail_url)}" alt="" />` : ""}
         <div class="ext-header">
-          <h1>${ext.name}</h1>
+          <h1>${escapeHtml(ext.name)}</h1>
           <span class="badge badge-target">${target}</span>
           <span class="badge ${ext.is_official ? "badge-official" : "badge-unofficial"}">${ext.is_official ? "Officielle" : "Non officielle"}</span>
         </div>
         <div class="author-row">
-          <img src="${authorAvatar}" alt="" />
-          <span>par @${ext.profiles?.username ?? "?"} — v${latest?.version ?? "?"}</span>
+          <img src="${escapeHtml(authorAvatar)}" alt="" />
+          <span>par @${escapeHtml(ext.profiles?.username ?? "?")} — v${escapeHtml(latest?.version ?? "?")}</span>
         </div>
-        ${ext.summary ? `<p class="summary">${ext.summary}</p>` : ""}
+        ${ext.summary ? `<p class="summary">${escapeHtml(ext.summary)}</p>` : ""}
 
         <div class="action-row">
           <button class="btn btn-primary" id="add-btn">Ajouter à l'app</button>
@@ -198,15 +202,15 @@
           demandée avant que quoi que ce soit ne soit réellement installé.
         </div>
 
-        ${ext.description ? `<h2>Description</h2><p class="description-text">${ext.description}</p>` : ""}
+        ${ext.description ? `<h2>Description</h2><p class="description-text">${escapeHtml(ext.description)}</p>` : ""}
 
         ${
           media && media.length > 0
             ? `<h2>Aperçus</h2><div class="media-grid">${media
                 .map((m) =>
                   m.media_type === "video"
-                    ? `<video src="${m.media_url}" controls></video>`
-                    : `<img src="${m.media_url}" alt="" />`,
+                    ? `<video src="${escapeHtml(m.media_url)}" controls></video>`
+                    : `<img src="${escapeHtml(m.media_url)}" alt="" />`,
                 )
                 .join("")}</div>`
             : ""
@@ -218,7 +222,7 @@
       loadedOwnerId = ext.owner_id;
       if (getProfile()?.id === ext.owner_id) {
         document.getElementById("owner-dashboard-link").innerHTML =
-          '<p style="margin-top: 24px;"><a href="/dev">Voir dans mon tableau de bord développeur →</a></p>';
+          '<p style="margin-top: 24px;"><a class="link-btn" href="/dev">Voir dans mon tableau de bord développeur →</a></p>';
       }
 
       document.getElementById("add-btn").addEventListener("click", async () => {

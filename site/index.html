@@ -383,9 +383,10 @@
           <p>Connaissances/instructions nommées que tu choisis de fournir à l'IA, locales ou publiées.</p>
         </div>
       </div>
-      <p style="margin-top: 16px;">
-        <a href="/extensions">Parcourir la marketplace</a> · <a href="/docs">Lire la documentation pour créer une extension</a>
-      </p>
+      <div style="display: flex; gap: 10px; margin-top: 16px; flex-wrap: wrap;">
+        <a class="link-btn" href="/extensions">Parcourir la marketplace</a>
+        <a class="link-btn" href="/docs">Lire la documentation</a>
+      </div>
     </section>
 
     <section>
@@ -400,8 +401,9 @@
   </div>
 
   <script type="module">
-    import { renderAccountBar, supabase } from "/account.js";
+    import { renderAccountBar, supabase, mountMobileNav } from "/account.js";
     renderAccountBar(document.getElementById("account-bar-mount"));
+    mountMobileNav(document.querySelector(".site-nav"));
 
     async function loadStats() {
       const { data, error } = await supabase.rpc("site_stats");

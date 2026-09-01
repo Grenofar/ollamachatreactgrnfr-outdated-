@@ -51,6 +51,24 @@ export function googleAvatarUrl(session) {
   return meta?.avatar_url || meta?.picture || null;
 }
 
+// Any text/URL stored by another user (extension name/description/summary/
+// thumbnail_url, a device name, etc.) is untrusted the moment it's read
+// back and interpolated into an innerHTML template — DB constraints don't
+// stop someone from setting extensions.name to "<img src=x onerror=...>"
+// via a direct API call, RLS only checks who's allowed to write a row, not
+// what's in it. Escaping via the browser's own textContent → innerHTML
+// round-trip (correct per the HTML spec, no regex to get subtly wrong)
+// before any such value goes into innerHTML/an attribute is what actually
+// stops that, not the never-a-real-risk-here SQL injection angle (every
+// query in this project goes through the parameterized supabase-js query
+// builder, values are always sent as separate parameters, never
+// string-concatenated into a query).
+export function escapeHtml(value) {
+  const div = document.createElement("div");
+  div.textContent = value ?? "";
+  return div.innerHTML;
+}
+
 export function avatarUrlFor(profile, session) {
   return (
     profile?.avatar_url ||
@@ -281,8 +299,132 @@ function ensureStyles() {
     .account-modal .status-error { color: #e08a8a; }
     .account-modal .status-ok { color: #7fd0a0; }
     .account-modal-actions { display: flex; justify-content: flex-end; gap: 8px; margin-top: 18px; }
+
+    /* -------------------------------------------------- site-wide polish
+       Every page loads account.js, so this is the one place that reaches
+       all of them without duplicating the same rules six times. Later in
+       the cascade than each page's own <head> <style> (appended at
+       runtime), and at equal specificity for plain element/class
+       selectors that ties resolve in source order — so these intentionally
+       override a page's own flat "body { background: var(--bg) }" already
+       declared everywhere, without needing !important. */
+    body {
+      background: radial-gradient(ellipse 1200px 600px at 50% -10%, #182029 0%, var(--bg, #0b0d10) 55%);
+      background-attachment: fixed;
+    }
+    a, .btn, button {
+      transition: background 0.15s ease, border-color 0.15s ease, color 0.15s ease,
+        transform 0.12s ease, box-shadow 0.15s ease, opacity 0.15s ease;
+    }
+    .btn:hover:not(:disabled), button:hover:not(:disabled) {
+      transform: translateY(-1px);
+    }
+    .btn:active:not(:disabled), button:active:not(:disabled) {
+      transform: translateY(0) scale(0.97);
+    }
+    .btn-primary:hover:not(:disabled) {
+      box-shadow: 0 4px 16px rgba(78, 138, 240, 0.35);
+    }
+    /* Plain <a> text used as a primary action reads as a dead link at a
+       glance — anywhere a page marks one with .link-btn it gets the same
+       pill treatment as .btn without needing that class's full JS wiring
+       (autostart/disabled state etc. that some real buttons carry). */
+    .link-btn {
+      display: inline-flex; align-items: center; gap: 6px;
+      padding: 8px 16px; border-radius: 8px;
+      border: 1px solid var(--border, #23272e);
+      background: var(--bg-raised, #14171b);
+      color: var(--text, #e8eaed) !important;
+      text-decoration: none; font-size: 0.85rem;
+    }
+    .link-btn:hover { border-color: var(--accent, #6ea8fe); }
+    section, .ext-card, .flow-item, .ext-explainer-item {
+      animation: site-fade-up 0.4s ease both;
+    }
+    @keyframes site-fade-up {
+      from { opacity: 0; transform: translateY(8px); }
+      to { opacity: 1; transform: translateY(0); }
+    }
+    @media (prefers-reduced-motion: reduce) {
+      *, *::before, *::after { animation-duration: 0.01ms !important; transition-duration: 0.01ms !important; }
+    }
+    /* Mobile gets a deliberately different header, not just a squeezed
+       desktop one: nav link labels collapse behind a single compact menu
+       button instead of wrapping/crowding the header next to the account
+       avatar and install button. */
+    @media (max-width: 640px) {
+      .site-nav { display: none; }
+      .site-header-inner { gap: 10px; }
+      .site-header-actions .btn { padding: 7px 12px; font-size: 0.8rem; }
+      .mobile-nav-toggle {
+        display: inline-flex !important;
+        align-items: center; justify-content: center;
+        width: 34px; height: 34px; border-radius: 8px;
+        border: 1px solid var(--border, #23272e);
+        background: var(--bg-raised, #14171b);
+        color: var(--text, #e8eaed);
+        font-size: 1rem; cursor: pointer;
+      }
+      .mobile-nav-menu {
+        position: absolute; top: 100%; left: 0; right: 0;
+        background: var(--bg-raised, #14171b);
+        border-bottom: 1px solid var(--border, #23272e);
+        display: flex; flex-direction: column; padding: 8px 20px;
+      }
+      /* Same cascade-origin gotcha as .account-menu above: an author-level
+         "display" beats the browser's default [hidden] rule regardless of
+         specificity, so this needs its own explicit override too. */
+      .mobile-nav-menu[hidden] { display: none; }
+      .mobile-nav-menu a {
+        padding: 12px 4px; color: var(--text, #e8eaed); text-decoration: none;
+        border-bottom: 1px solid var(--border, #23272e); font-size: 0.9rem;
+      }
+      .mobile-nav-menu a:last-child { border-bottom: none; }
+    }
+    .mobile-nav-toggle { display: none; }
   `;
   document.head.appendChild(style);
+}
+
+// Collapses a desktop nav (an element matching navSelector, e.g. ".site-nav")
+// into a single toggle button + dropdown on narrow viewports — called by
+// pages that have a header nav (currently just index.html). Genuinely
+// different mobile layout rather than the same links just wrapping/shrinking.
+export function mountMobileNav(navEl) {
+  if (!navEl || navEl.dataset.mobileNavMounted) return;
+  navEl.dataset.mobileNavMounted = "1";
+  ensureStyles();
+  const links = Array.from(navEl.querySelectorAll("a"));
+  if (links.length === 0) return;
+
+  const toggle = document.createElement("button");
+  toggle.className = "mobile-nav-toggle";
+  toggle.setAttribute("aria-label", "Menu");
+  toggle.textContent = "☰";
+
+  const menu = document.createElement("div");
+  menu.className = "mobile-nav-menu";
+  menu.hidden = true;
+  for (const link of links) {
+    const clone = document.createElement("a");
+    clone.href = link.href;
+    clone.textContent = link.textContent;
+    menu.appendChild(clone);
+  }
+
+  toggle.addEventListener("click", () => {
+    menu.hidden = !menu.hidden;
+  });
+  document.addEventListener("click", (e) => {
+    if (!toggle.contains(e.target) && !menu.contains(e.target)) menu.hidden = true;
+  });
+
+  navEl.insertAdjacentElement("afterend", toggle);
+  const header = toggle.closest("header") ?? toggle.parentElement;
+  if (header) {
+    header.style.position = header.style.position || "relative";
+    header.appendChild(menu);
+  }
 }
 
 function avatarImg(profile, size, session) {

@@ -70,8 +70,22 @@
     padding: 14px 16px;
     overflow-x: auto;
     font-size: 0.83rem;
+    position: relative;
   }
   pre code { background: none; border: none; padding: 0; color: var(--text); }
+  .copy-btn {
+    position: absolute;
+    top: 10px;
+    right: 10px;
+    padding: 5px 12px;
+    border-radius: 6px;
+    border: 1px solid var(--border);
+    background: var(--bg);
+    color: var(--text-dim);
+    font-size: 0.75rem;
+    cursor: pointer;
+  }
+  .copy-btn:hover { color: var(--text); border-color: var(--accent); }
   .note {
     background: var(--bg-raised);
     border: 1px solid var(--border);
@@ -95,8 +109,6 @@
   }
   .fn-sig { font-family: Consolas, Menlo, monospace; color: var(--ok); font-size: 0.92rem; }
   .fn-desc { font-size: 0.86rem; margin-top: 6px; }
-  .fn-maps-to { font-size: 0.78rem; color: var(--text-dim); margin-top: 4px; }
-  .fn-maps-to code { color: var(--accent); }
   @media (max-width: 800px) {
     .toc { display: none; }
   }
@@ -108,10 +120,13 @@
       <a href="#intro">Vue d'ensemble</a>
       <a href="#manifest">Le manifeste</a>
       <a href="#champs">Champs de publication</a>
+      <a href="#fichier">Écrire un fichier d'extension</a>
       <a href="#bibliotheque">Bibliothèque de fonctions</a>
       <a href="#bibliotheque-controlme">— pour Control Me</a>
       <a href="#bibliotheque-chat">— pour le Chat/Codex</a>
+      <a href="#commandes-perso">Commandes personnalisées</a>
       <a href="#exemples">Exemples complets</a>
+      <a href="#prompt-ia">Prompt pour une IA</a>
       <a href="#securite">Sécurité et revue</a>
       <a href="#publier">Publier</a>
     </nav>
@@ -121,24 +136,24 @@
       <p>
         Tout ce qu'il faut pour écrire, tester et publier une extension pour Ollama Chat React —
         du format exact attendu à une bibliothèque de fonctions documentées pour décrire ce que
-        ton extension doit faire.
+        ton extension doit faire, jusqu'à un prompt tout prêt à donner à une IA pour qu'elle
+        t'en écrive une.
       </p>
 
       <h2 id="intro">Vue d'ensemble</h2>
       <p>
         Une extension ajoute des <strong>instructions</strong> au modèle — au chat de base
         (et à Codex, qui partage le même modèle) ou à Control Me, selon la cible choisie. Elle ne
-        contient <strong>ni code ni script exécuté</strong> : l'app n'a pas de bac à sable pour ça,
-        donc plutôt que de faire semblant, le système reste volontairement déclaratif. Ce que tu
-        écris est simplement ajouté au prompt système du modèle au moment où l'utilisateur active
-        ton extension.
+        contient <strong>ni code ni script exécuté</strong> : ce que tu écris est ajouté au prompt
+        système du modèle au moment où l'utilisateur active ton extension, rien de plus. C'est un
+        choix assumé, pas une limite temporaire — ça évite d'exécuter du code tiers non vérifié
+        sur le PC de quelqu'un d'autre.
       </p>
       <p>
-        Concrètement, ça veut dire que la puissance d'une extension vient entièrement de la
-        qualité de ses instructions : plus tu es précis sur ce que le modèle doit savoir, quels
-        libellés chercher à l'écran, quel raccourci utiliser, quel ton adopter, etc., plus elle
-        sera fiable. La section <a href="#bibliotheque">Bibliothèque de fonctions</a> ci-dessous te
-        donne un vocabulaire précis et déjà connu du modèle pour décrire des actions.
+        Ça ne veut pas dire que tu es limité au vocabulaire déjà documenté ci-dessous : une
+        extension peut définir ses <a href="#commandes-perso">propres commandes nommées</a>,
+        propres à elle, en plus de la bibliothèque commune — c'est ce qui permet d'aller au-delà
+        d'un simple ajout de contexte et de vraiment créer quelque chose de nouveau.
       </p>
 
       <h2 id="manifest">Le manifeste</h2>
@@ -148,7 +163,10 @@
       </p>
       <pre><code>{
   "target": "controlme",
-  "system_prompt_addition": "…le texte que tu écris dans le champ Contenu…"
+  "system_prompt_addition": "…le texte que tu écris dans le champ Contenu…",
+  "custom_commands": [
+    { "name": "ouvre_playlist(nom)", "description": "Ouvre une playlist par son nom exact" }
+  ]
 }</code></pre>
       <table>
         <tr><th>Champ</th><th>Valeurs</th><th>Effet</th></tr>
@@ -168,6 +186,12 @@
           <td>Injecté tel quel — pas de parsing spécial, pas de syntaxe obligatoire au-delà du bon
           sens (voir la bibliothèque ci-dessous pour un vocabulaire recommandé).</td>
         </tr>
+        <tr>
+          <td><code>custom_commands</code></td>
+          <td>optionnel, tableau de <code>{name, description}</code></td>
+          <td>Un vocabulaire propre à ton extension, en plus de la bibliothèque commune — voir
+          <a href="#commandes-perso">Commandes personnalisées</a>.</td>
+        </tr>
       </table>
       <p>
         Publier une nouvelle version d'une extension existante (même nom, nouveau numéro de
@@ -185,20 +209,37 @@
         <tr><td>Photo d'impression</td><td>10 Mo, image</td><td>La miniature utilisée dans la grille de recherche et en haut de la page — la première chose vue.</td></tr>
         <tr><td>Photos/vidéos de démonstration</td><td>10 Mo chacune, plusieurs possibles</td><td>Galerie affichée sur la page, pour montrer concrètement ce que l'extension fait.</td></tr>
         <tr><td>Cible</td><td>chat / controlme</td><td>Voir <a href="#manifest">le manifeste</a> ci-dessus.</td></tr>
+        <tr><td>Contenu</td><td>écrit directement ou importé depuis un fichier .txt/.md</td><td>Le texte réellement ajouté au prompt système. Voir <a href="#fichier">Écrire un fichier d'extension</a> et la bibliothèque ci-dessous.</td></tr>
+        <tr><td>Commandes personnalisées</td><td>optionnel, autant que voulu</td><td>Voir <a href="#commandes-perso">Commandes personnalisées</a>.</td></tr>
         <tr><td>Version</td><td>texte libre, ex. <code>1.0.0</code></td><td>Un numéro croissant suffit — aucune contrainte de format imposée.</td></tr>
-        <tr><td>Contenu</td><td>—</td><td>Le texte réellement ajouté au prompt système. Voir la bibliothèque ci-dessous.</td></tr>
       </table>
+
+      <h2 id="fichier">Écrire un fichier d'extension</h2>
+      <p>
+        Pour un contenu long ou complexe, écris-le d'abord comme un simple fichier texte
+        (<code>.txt</code> ou <code>.md</code>) dans un éditeur normal, sur ton PC — un dossier
+        de travail avec un fichier par extension, comme n'importe quel petit projet. Le formulaire
+        de publication accepte de l'<strong>importer directement</strong> (bouton « Importer un
+        fichier » à côté du champ Contenu) plutôt que de tout coller dans une case de texte : le
+        fichier est simplement lu et son contenu devient le <code>system_prompt_addition</code>
+        publié — pas de format spécial à respecter dans le fichier lui-même, juste du texte
+        clair, si possible organisé avec les fonctions de la bibliothèque ci-dessous citées entre
+        parenthèses.
+      </p>
+      <div class="note">
+        Une structure qui marche bien pour un fichier un peu long : un paragraphe de contexte
+        (« tu aides à contrôler X »), puis une liste d'instructions courtes, une par ligne,
+        chacune citant la fonction correspondante. Plus court et plus lisible qu'un seul gros
+        paragraphe.
+      </div>
 
       <h2 id="bibliotheque">Bibliothèque de fonctions</h2>
       <p>
         Le contenu d'une extension reste du texte libre — il n'y a pas de vrai interpréteur qui
         exécute une syntaxe. Ce qui suit est une <strong>convention de vocabulaire</strong> : une
         liste de fonctions nommées, avec leurs paramètres exacts, que tu peux citer directement
-        dans le champ Contenu pour décrire précisément une action au modèle. Chaque fonction
-        correspond à une capacité réellement câblée dans l'app (les mêmes outils que le modèle
-        utilise déjà, juste documentés ici sous un nom simple à écrire). Utiliser ce vocabulaire
-        rend tes instructions plus fiables qu'une description en prose libre, parce que le modèle
-        reconnaît directement à quel outil chaque fonction correspond.
+        dans le champ Contenu pour décrire précisément une action au modèle. Utiliser ce
+        vocabulaire rend tes instructions plus fiables qu'une description en prose libre.
       </p>
       <div class="note">
         <strong>Comment s'en servir concrètement :</strong> écris tes instructions normalement, et
@@ -211,121 +252,153 @@
       <h3 id="bibliotheque-controlme">Pour une extension Control Me (<code>target: "controlme"</code>)</h3>
       <p>
         Les coordonnées sont toujours <strong>normalisées de 0 à 999</strong> sur la largeur et la
-        hauteur de l'écran (0 = bord gauche/haut, 999 = bord droit/bas) — c'est le même repère que
-        celui déjà utilisé par l'outil de contrôle intégré, quelle que soit la résolution réelle de
-        l'écran de l'utilisateur.
+        hauteur de l'écran (0 = bord gauche/haut, 999 = bord droit/bas), quelle que soit la
+        résolution réelle de l'écran de l'utilisateur.
       </p>
 
       <div class="fn-block">
         <div class="fn-sig">clique(x, y)</div>
         <div class="fn-desc">Clic gauche simple à la position donnée.</div>
-        <div class="fn-maps-to">→ action <code>click</code></div>
       </div>
       <div class="fn-block">
         <div class="fn-sig">double_clique(x, y) / triple_clique(x, y) / clique_droit(x, y) / clique_milieu(x, y)</div>
         <div class="fn-desc">Variantes de clic — double/triple clic, clic droit (menu contextuel), clic molette.</div>
-        <div class="fn-maps-to">→ <code>double_click</code> / <code>triple_click</code> / <code>right_click</code> / <code>middle_click</code></div>
       </div>
       <div class="fn-block">
         <div class="fn-sig">deplace(x, y)</div>
         <div class="fn-desc">Déplace le curseur sans cliquer — utile avant un survol qui affiche un tooltip/menu.</div>
-        <div class="fn-maps-to">→ <code>move</code></div>
       </div>
       <div class="fn-block">
         <div class="fn-sig">glisse(x1, y1, x2, y2)</div>
-        <div class="fn-desc">Glisser-déposer d'un point à un autre (déplacer un fichier, une fenêtre, un curseur de réglage…).</div>
-        <div class="fn-maps-to">→ <code>drag_and_drop</code></div>
+        <div class="fn-desc">Glisser-déposer : clique et reste enfoncé au premier point, se déplace jusqu'au second, puis relâche (déplacer un fichier, une fenêtre, un curseur de réglage…).</div>
       </div>
       <div class="fn-block">
         <div class="fn-sig">tape("texte")</div>
-        <div class="fn-desc">Tape du texte au clavier à l'endroit où se trouve le focus (clique d'abord sur le bon champ).</div>
-        <div class="fn-maps-to">→ <code>type</code></div>
+        <div class="fn-desc">Tape du texte au clavier à l'endroit où se trouve le focus (clique d'abord sur le bon champ) — accents et emoji fonctionnent directement, inclus tels quels dans le texte.</div>
       </div>
       <div class="fn-block">
-        <div class="fn-sig">touche("Entrée" | "Échap" | "Tab" | "Suppr" | …)</div>
-        <div class="fn-desc">Appuie une seule touche nommée.</div>
-        <div class="fn-maps-to">→ <code>press_key</code></div>
+        <div class="fn-sig">touche("Entrée" | "Échap" | "Tab" | "Suppr" | "Windows" | "VerrMaj" | "F1"…"F12" | …)</div>
+        <div class="fn-desc">Appuie une seule touche nommée — y compris la touche logo Windows et le verrouillage majuscule.</div>
       </div>
       <div class="fn-block">
         <div class="fn-sig">maintiens("Maj") / relache("Maj")</div>
         <div class="fn-desc">Maintient ou relâche une touche indépendamment (pour une sélection au clavier, un tir maintenu dans un jeu, etc.) — toujours relâcher ce qui a été maintenu avant la fin.</div>
-        <div class="fn-maps-to">→ <code>key_down</code> / <code>key_up</code></div>
       </div>
       <div class="fn-block">
-        <div class="fn-sig">raccourci("Ctrl+S")</div>
-        <div class="fn-desc">Combinaison de touches pressées puis relâchées ensemble.</div>
-        <div class="fn-maps-to">→ <code>hotkey</code></div>
+        <div class="fn-sig">raccourci("Ctrl+S") / raccourci("Ctrl+Maj+S") / raccourci("Windows")</div>
+        <div class="fn-desc">Combinaison de plusieurs touches pressées ensemble puis relâchées dans l'ordre inverse — autant de touches que nécessaire.</div>
       </div>
       <div class="fn-block">
         <div class="fn-sig">molette(x, y, delta)</div>
         <div class="fn-desc">Fait défiler à la position donnée — delta positif = vers le bas.</div>
-        <div class="fn-maps-to">→ <code>scroll</code></div>
       </div>
       <div class="fn-block">
-        <div class="fn-sig">attend(ms)</div>
+        <div class="fn-sig">attend(secondes)</div>
         <div class="fn-desc">Pause explicite avant l'action suivante — utile après avoir lancé une app qui met du temps à s'ouvrir.</div>
-        <div class="fn-maps-to">→ <code>wait</code></div>
       </div>
       <div class="fn-block">
         <div class="fn-sig">lit_interface()</div>
-        <div class="fn-desc">Lit la structure d'accessibilité Windows de la fenêtre au premier plan (labels, types, positions déjà normalisées) — à préférer à une capture d'écran pour localiser précisément un élément dans une fenêtre standard (pas un jeu ou un canvas dessiné à la main).</div>
-        <div class="fn-maps-to">→ <code>read_ui_elements</code></div>
+        <div class="fn-desc">Lit la structure d'accessibilité de la fenêtre au premier plan (labels, types, positions déjà normalisées) — à préférer à une capture d'écran pour localiser précisément un élément dans une fenêtre standard (pas un jeu ou un canvas dessiné à la main).</div>
       </div>
       <div class="fn-block">
         <div class="fn-sig">lit_base_connaissances()</div>
-        <div class="fn-desc">Lit le contenu du dossier de connaissances locales de l'utilisateur (fichiers .txt/.json/.sql), s'il en a configuré un.</div>
-        <div class="fn-maps-to">→ <code>read_knowledge_base</code></div>
+        <div class="fn-desc">Lit le contenu du dossier de connaissances locales de l'utilisateur, s'il en a configuré un.</div>
       </div>
       <div class="fn-block">
         <div class="fn-sig">retiens(fait, categorie)</div>
         <div class="fn-desc">Mémorise durablement un fait appris sur l'utilisateur pendant la session, pour les sessions futures.</div>
-        <div class="fn-maps-to">→ <code>remember_fact</code></div>
       </div>
 
       <h3 id="bibliotheque-chat">Pour une extension Chat/Codex (<code>target: "chat"</code>)</h3>
       <p>
-        Le chat de base et Codex ont déjà leur propre jeu d'outils fixe (lecture/écriture de
-        fichiers, commandes PowerShell, questions à l'utilisateur) — une extension ciblant
-        <code>"chat"</code> ne peut pas ajouter de nouvel outil, seulement du <strong>contexte et
-        des instructions</strong> qui influencent comment le modèle utilise ceux qui existent
-        déjà. Cite-les directement par leur nom si tu veux orienter leur usage :
+        Le chat de base et Codex ont déjà accès à un jeu fixe de capacités (lecture/écriture de
+        fichiers, exécution de commandes, questions à l'utilisateur) — une extension ciblant
+        <code>"chat"</code> ne peut pas ajouter de nouvelle capacité technique à Codex lui-même,
+        seulement du <strong>contexte et des instructions</strong> qui influencent comment le
+        modèle utilise ce qui existe déjà (style de réponse, priorités, conventions à respecter,
+        étapes à toujours suivre avant/après une modification…).
       </p>
-      <table>
-        <tr><th>Nom de l'outil</th><th>Ce qu'il fait</th></tr>
-        <tr><td><code>read_file</code></td><td>Lit un fichier texte (chemin absolu).</td></tr>
-        <tr><td><code>list_dir</code></td><td>Liste le contenu d'un dossier (un niveau).</td></tr>
-        <tr><td><code>write_file</code></td><td>Crée ou écrase un fichier entièrement.</td></tr>
-        <tr><td><code>edit_file</code></td><td>Remplace un passage précis d'un fichier existant.</td></tr>
-        <tr><td><code>run_powershell_command</code></td><td>Exécute une commande PowerShell.</td></tr>
-        <tr><td><code>ask_user_question</code></td><td>Pose une question à l'utilisateur et attend sa réponse.</td></tr>
-      </table>
       <p>
-        Exemple d'instruction utile ici : « Avant toute modification d'un fichier de configuration,
-        préfère <code>edit_file</code> à <code>write_file</code> pour ne changer que la ligne
-        concernée » — ça reste une préférence textuelle, pas une nouvelle capacité.
+        Exemple d'instruction utile ici : « Avant toute modification d'un fichier de
+        configuration, ne change que la ligne concernée plutôt que de réécrire tout le fichier,
+        et explique en une phrase pourquoi juste avant. »
       </p>
+
+      <h2 id="commandes-perso">Commandes personnalisées</h2>
+      <p>
+        La bibliothèque ci-dessus est <strong>commune à toutes les extensions</strong>. Le champ
+        <code>custom_commands</code> (ou la section « Commandes personnalisées » du formulaire de
+        publication) te permet d'aller plus loin : définir un <strong>vocabulaire propre à ton
+        extension</strong>, avec un nom et une description, que tu réutilises ensuite dans ton
+        propre texte comme s'il s'agissait d'une vraie fonction. C'est la façon de créer quelque
+        chose qui dépasse un simple ajout de contexte — un mini-langage propre à ta situation.
+      </p>
+      <p>Exemple pour une extension qui gère une playlist musicale :</p>
+      <pre><code>{
+  "name": "ouvre_playlist(nom)",
+  "description": "Cherche la playlist par son nom exact dans la barre latérale et l'ouvre en un clic."
+}</code></pre>
+      <p>
+        Une fois déclarée, cite-la dans le champ Contenu exactement comme les fonctions de la
+        bibliothèque commune : « Pour écouter une playlist demandée par l'utilisateur, commence
+        par <code>ouvre_playlist(nom)</code>, puis... ». Le modèle reçoit la définition et le nom
+        en même temps — pas besoin de la ré-expliquer à chaque fois dans le texte principal.
+      </p>
+      <div class="note">
+        Une commande personnalisée reste du texte, pas du code — elle donne un nom court à une
+        <strong>suite d'instructions déjà décrites ailleurs dans ton texte</strong> (ou une
+        combinaison des fonctions de la bibliothèque commune), elle n'exécute rien de nouveau
+        par elle-même.
+      </div>
 
       <h2 id="exemples">Exemples complets</h2>
       <h3>Extension Control Me — assistant Spotify</h3>
       <pre><code>{
   "target": "controlme",
-  "system_prompt_addition": "Tu aides l'utilisateur à contrôler Spotify (application de bureau Windows). La barre de recherche se trouve généralement en haut de la fenêtre — utilise lit_interface() pour la localiser précisément avant de cliquer, plutôt que de deviner sa position. Pour lancer une recherche : clique(x, y) sur la barre, tape(\"nom de la chanson\"), touche(\"Entrée\"). Le raccourci raccourci(\"Ctrl+Espace\") met en pause/reprend la lecture sans avoir besoin de chercher le bouton à l'écran."
+  "system_prompt_addition": "Tu aides l'utilisateur à contrôler Spotify (application de bureau Windows). La barre de recherche se trouve généralement en haut de la fenêtre — utilise lit_interface() pour la localiser précisément avant de cliquer, plutôt que de deviner sa position. Pour lancer une recherche : clique(x, y) sur la barre, tape(\"nom de la chanson\"), touche(\"Entrée\"). Le raccourci raccourci(\"Ctrl+Espace\") met en pause/reprend la lecture. Pour ouvrir une playlist demandée par nom, utilise ouvre_playlist(nom).",
+  "custom_commands": [
+    { "name": "ouvre_playlist(nom)", "description": "Cherche la playlist par son nom exact dans la barre latérale et l'ouvre en un clic." }
+  ]
 }</code></pre>
       <h3>Extension Chat — style de revue de code</h3>
       <pre><code>{
   "target": "chat",
-  "system_prompt_addition": "Quand on te demande de revoir du code, structure toujours ta réponse en trois parties : Bugs potentiels, Lisibilité, Suggestions optionnelles. Si tu utilises edit_file pour appliquer un correctif, explique en une phrase pourquoi juste avant de l'appeler."
+  "system_prompt_addition": "Quand on te demande de revoir du code, structure toujours ta réponse en trois parties : Bugs potentiels, Lisibilité, Suggestions optionnelles. Avant toute modification d'un fichier de configuration, ne change que la ligne concernée plutôt que de réécrire tout le fichier."
 }</code></pre>
+
+      <h2 id="prompt-ia">Prompt pour une IA</h2>
+      <p>
+        Plutôt que d'écrire une extension à la main, tu peux coller le prompt ci-dessous dans une
+        IA conversationnelle (Claude, ChatGPT…) suivi de la description de ce que tu veux — elle
+        connaîtra alors le format exact, le vocabulaire disponible et pourra te générer un JSON
+        de manifeste prêt à publier.
+      </p>
+      <pre id="ai-prompt-block"><button class="copy-btn" id="copy-prompt-btn">Copier</button><code id="ai-prompt-text">Tu m'aides à écrire une extension pour "Ollama Chat React", une app de bureau Windows avec un chat local (Ollama), un éditeur de code agentique (Codex), et un contrôle d'ordinateur par IA (Control Me). Une extension est un fichier texte libre ajouté au prompt système du modèle, sans code exécuté. Format de sortie attendu, un JSON :
+
+{
+  "target": "chat" ou "controlme",
+  "system_prompt_addition": "le texte des instructions",
+  "custom_commands": [ { "name": "...", "description": "..." } ]  // optionnel
+}
+
+Si target = "controlme", décris les actions avec ce vocabulaire (coordonnées normalisées 0-999) :
+clique(x,y), double_clique(x,y), triple_clique(x,y), clique_droit(x,y), clique_milieu(x,y), deplace(x,y), glisse(x1,y1,x2,y2), tape("texte"), touche("nom"), maintiens("touche")/relache("touche"), raccourci("Touche1+Touche2..."), molette(x,y,delta), attend(secondes), lit_interface(), lit_base_connaissances(), retiens(fait, categorie).
+Noms de touches valides : Entrée, Échap, Tab, Suppr, flèches, Début, Fin, PageUp/PageDown, Windows, VerrMaj, Ctrl, Alt, Maj, F1 à F12, ou une lettre/chiffre simple. Le texte tapé (tape()) accepte les accents et les emoji directement.
+
+Si target = "chat", décris seulement du contexte/des préférences de comportement (pas de nouvel outil possible) : style de réponse, conventions à respecter, priorités.
+
+custom_commands sert à définir un vocabulaire propre à CETTE extension (un nom court réutilisable dans le texte, qui référence une suite d'instructions déjà décrites) — pas du code exécuté, juste un raccourci de rédaction.
+
+Voici ce que je veux que mon extension fasse : [DÉCRIS ICI CE QUE TU VEUX]</code></pre>
 
       <h2 id="securite">Sécurité et revue</h2>
       <p>
-        Avant publication, le contenu est envoyé à Gemini 3.7 avec pour instruction de détecter
+        Avant publication, le contenu est examiné par une IA avec pour instruction de détecter
         toute tentative de manipulation cachée du modèle (vol de données, désactivation de
-        garde-fous, incitation à des actions dangereuses...). Un verdict <code>unsafe</code>
-        bloque la publication — rien n'est enregistré. Un verdict <code>safe</code> publie
-        l'extension, mais elle reste marquée <strong>non officielle</strong> (badge orange) tant
-        qu'aucune revue humaine explicite n'a eu lieu : ce n'est qu'une IA qui a regardé, pas une
-        personne.
+        garde-fous, incitation à des actions dangereuses...). Un verdict "non sûr" bloque la
+        publication — rien n'est enregistré. Un verdict "sûr" publie l'extension, mais elle reste
+        marquée <strong>non officielle</strong> (badge orange) tant qu'aucune revue humaine
+        explicite n'a eu lieu : ce n'est qu'une IA qui a regardé, pas une personne.
       </p>
       <div class="note">
         <strong>Ce que la revue ne garantit pas :</strong> une extension jugée sûre peut quand même
@@ -337,8 +410,8 @@
       <h2 id="publier">Publier</h2>
       <ol>
         <li>Active le mode développeur depuis le menu de ton compte (en haut à droite de n'importe quelle page du site).</li>
-        <li>Ouvre <a href="/dev">l'espace développeur</a>, remplis le formulaire de publication.</li>
-        <li>Fournis une clé API Gemini (Google AI Studio) — elle sert uniquement à l'examen de sécurité, jamais stockée.</li>
+        <li>Ouvre <a href="/dev">l'espace développeur</a>, remplis le formulaire de publication (directement, ou en important un fichier — voir <a href="#fichier">ci-dessus</a>).</li>
+        <li>Fournis une clé API Gemini (Google AI Studio) — elle sert à l'examen de sécurité, et reste enregistrée uniquement dans ton navigateur pour ne pas avoir à la retaper.</li>
         <li>Une fois publiée, ton extension apparaît immédiatement dans <a href="/extensions">la marketplace</a>, avec sa propre page.</li>
         <li>Le bouton « Ajouter » de sa page installe l'extension automatiquement dans l'app de l'utilisateur qui clique, sans étape manuelle de sa part.</li>
       </ol>
@@ -355,6 +428,12 @@
     barMount.style.zIndex = "20";
     document.body.prepend(barMount);
     renderAccountBar(barMount);
+
+    document.getElementById("copy-prompt-btn").addEventListener("click", (e) => {
+      navigator.clipboard.writeText(document.getElementById("ai-prompt-text").textContent).catch(() => {});
+      e.target.textContent = "Copié !";
+      setTimeout(() => (e.target.textContent = "Copier"), 1500);
+    });
   </script>
 </body>
 </html>

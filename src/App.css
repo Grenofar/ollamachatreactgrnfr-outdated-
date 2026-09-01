@@ -54,6 +54,7 @@ button {
    selector on its own). */
 :where(button):hover:not(:disabled) {
   background: #383838;
+  transform: translateY(-1px);
 }
 
 :where(button):active:not(:disabled) {

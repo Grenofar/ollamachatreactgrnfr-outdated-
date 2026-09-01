@@ -154,6 +154,45 @@ pas devenir obsolète.
   fonctions nommées (`clique()`, `tape()`, `raccourci()`...) pour décrire
   précisément une action Control Me dans le texte d'une extension. Voir
   "Marketplace v0.7" dans Architecture pour le détail technique complet.
+- **[FAIT] v0.7.1 : passe UI/sécurité sur le site + nouvelles commandes
+  clavier Control Me.** Vrai bug XSS stocké trouvé et corrigé (nom/
+  description/résumé/photo d'une extension, pseudo/avatar d'un auteur —
+  injectés sans échappement dans `innerHTML` sur les pages marketplace,
+  n'importe quel compte développeur pouvait y placer du HTML/JS actif) ;
+  nouvel export `escapeHtml()` dans `account.js`, appliqué partout où du
+  contenu venant d'un autre compte est affiché. Formulaire de publication
+  (`/dev`) enrichi : champs fichier restylés (le natif ne se stylait pas),
+  contenu importable depuis un `.txt`/`.md` en plus de la saisie directe,
+  nouveau champ **commandes personnalisées** (`manifest.custom_commands`)
+  pour qu'une extension définisse son propre vocabulaire au-delà de la
+  bibliothèque commune, clé API Gemini mémorisée dans le navigateur
+  (`localStorage`, plus besoin de la retaper), et repli automatique et
+  silencieux vers `gemini-3.6-flash` si `gemini-3.7-flash` échoue à
+  l'examen de sécurité (3.7 visiblement sujet à des limites de débit en
+  usage réel). `docs.html` retravaillée : les annotations révélant les
+  noms d'outils internes exacts (`click`, `read_ui_elements`...) sont
+  retirées (demande explicite de ne pas exposer comment le chat/Control
+  Me sont construits en interne), nouvelle section sur les commandes
+  personnalisées, et un prompt copiable prêt à coller dans une IA
+  (Claude, ChatGPT...) pour qu'elle génère une extension valide. Passe
+  UI générale via `account.js` (chargé par toutes les pages) : fond en
+  dégradé au lieu d'une couleur plate, transitions/hover sur tous les
+  boutons et liens (`.link-btn` pour les liens texte qui agissaient
+  comme actions principales), animations d'entrée, et un vrai menu
+  mobile (`mountMobileNav`) qui remplace la nav du header par un bouton
+  compact plutôt que de la laisser se tasser — repéré au passage le même
+  bug de cascade CSS `[hidden]`/`display` que le correctif précédent sur
+  `.account-menu`, corrigé préventivement sur le nouveau menu mobile
+  avant publication. Control Me gagne des noms de touche manquants
+  (`capslock`, `insert`, `f1`-`f12` — `windows`/`ctrl`/`shift`/`alt`
+  existaient déjà, vérifié dans le code avant de conclure qu'ils
+  manquaient) et des descriptions d'outils plus explicites sur les
+  combinaisons de touches et le texte/emoji (déjà supporté par enigo côté
+  Windows via de vrais surrogate pairs UTF-16, vérifié dans son code
+  source — aucun changement Rust nécessaire pour ça, seulement la
+  documentation). `cargo check`/`npx tsc --noEmit` à 0 erreur, JS de
+  chaque page vérifié avec `node --check`. Voir "Passe UI/sécurité et
+  commandes clavier (v0.7.1)" dans Architecture pour le détail complet.
 
 ## Architecture
 
@@ -2275,6 +2314,166 @@ avec leur documentation/code source lus avant d'écrire quoi que ce soit
   que Windows route effectivement vers l'app) — à tester explicitement
   par l'utilisateur après build + déploiement Vercel + exécution de la
   migration SQL.
+
+### Passe UI/sécurité et commandes clavier (v0.7.1)
+
+Demande dense groupant plusieurs sujets indépendants : boutons moches dans
+l'espace développeur, absence de champ "code"/vocabulaire propre à une
+extension, mémorisation de la clé Gemini, repli automatique 3.7→3.6,
+amélioration générale de la marketplace, ne pas révéler dans la doc
+comment le chat/Control Me sont construits, un prompt prêt pour une IA,
+un "système anti-injection SQL"/défense des données "impénétrable", un
+upload de fichier pour le contenu d'une extension, un site mobile
+réellement différent du site desktop, plus d'animations/hover partout
+(site et app), et de nouvelles commandes clavier pour Control Me (touche
+Windows, VerrMaj, Ctrl, combinaisons, glisser-déposer, emoji).
+
+**Audit sécurité fait avant d'écrire quoi que ce soit** de nouveau, pour
+savoir quoi construire réellement plutôt que de deviner : grep systématique
+de tous les appels réseau du site (`site/*.html`). Résultat, à l'opposé de
+la prémisse "SQL injection" de la demande : **aucune requête de ce projet
+ne construit jamais de SQL par concaténation de chaîne** — tout passe par
+le query builder paramétré de `supabase-js` (`.eq()`, `.select()`,
+`.insert()`...) ou par des fonctions RPC à paramètres typés (`uuid`, etc.),
+donc l'injection SQL classique n'est structurellement pas possible ici,
+pas juste peu probable. En revanche, un **vrai problème de sécurité
+existait ailleurs** : `extensions.name`/`description`/`summary`/
+`thumbnail_url` et `profiles.username`/`avatar_url` sont écrits par
+n'importe quel compte développeur (RLS contrôle qui a le droit d'écrire
+une ligne, pas ce qu'elle contient) puis réinjectés **sans échappement**
+dans des templates `innerHTML` sur `extensions.html`/`extension.html`/
+`dev.html` — un nom d'extension `<img src=x onerror=...>` se serait
+exécuté chez **n'importe quel visiteur** de la marketplace, pas seulement
+chez son auteur. Corrigé avec un nouvel export `escapeHtml()` dans
+`account.js` (round-trip `textContent` → `innerHTML`, fiable par
+construction, pas une regex à avoir tort dessus) appliqué à chaque valeur
+de ce type avant interpolation. `controlremote.html` était déjà épargné
+(rendu du chat déjà en `textContent` pur depuis sa conception, voir
+Journal — vérifié par grep plutôt que supposé). C'est ce correctif, pas
+un système "anti-injection" séparé, qui répond réellement à la demande de
+sécurité — présenté comme tel plutôt que de prétendre construire quelque
+chose d'"impénétrable" (aucun système ne l'est ; ce qui est vrai, c'est
+que la classe de bug la plus probable ici — XSS stocké côté marketplace —
+est maintenant couverte).
+
+- **Espace développeur (`site/dev.html`)** :
+  - **Champs fichier restylés** : un `<input type="file">` natif ne se
+    laisse pas styliser directement dans aucun navigateur — pattern
+    standard repris ici : l'input reste dans le DOM et reste focusable/
+    activable au clavier (`.file-input-hidden`, positionné hors écran via
+    `clip`/`position:absolute`, **pas** `display:none` qui casserait
+    l'activation clavier/lecteur d'écran), un `<label for="...">` normal
+    et stylé sert de déclencheur visuel, un `<span>` affiche le nom du
+    fichier choisi une fois sélectionné.
+  - **Contenu importable depuis un fichier** : deux boutons ("Écrire
+    directement" / "Importer un fichier") basculent entre la `<textarea>`
+    existante et un nouveau champ fichier (`.txt`/`.md`, lu via
+    `file.text()`) qui **remplit** cette même textarea — un seul champ
+    reste la source de vérité envoyée à la publication, le fichier n'est
+    qu'une façon plus confortable de le remplir pour un contenu long
+    écrit d'abord dans un éditeur normal.
+  - **Commandes personnalisées** (`custom_commands`) : répond à la partie
+    la plus ouverte de la demande ("créer une toute nouvelle chose, avec
+    des commandes embarquées", "ajouter une fonctionnalité de plus qu'à
+    Control Me/Skill/Chat"). Décision de scope explicite, cohérente avec
+    celle déjà prise en v0.6.3 (pas de code arbitraire exécuté, aucun bac
+    à sable dans ce projet) : plutôt que de construire un vrai moteur
+    d'extension avec de nouvelles capacités techniques (un chantier de
+    plusieurs semaines, contredirait la décision de sécurité déjà prise
+    et déjà communiquée), le manifeste gagne un champ optionnel
+    `custom_commands: [{name, description}]` — une extension peut définir
+    **son propre vocabulaire nommé**, réutilisable dans son propre texte
+    comme les fonctions de la bibliothèque commune, sans que ce soit du
+    code exécuté (toujours du texte, juste un raccourci de rédaction que
+    le modèle reçoit avec sa définition). Répétable dans le formulaire
+    (`+ Ajouter une commande`, lignes name/description supprimables),
+    stocké tel quel dans `manifest.custom_commands`, affiché nulle part
+    de spécial côté install (fait juste partie du JSON que
+    `import_marketplace_extension` récupère).
+  - **Clé Gemini mémorisée** (`localStorage`, clé
+    `ollamachat_dev_gemini_key`) : n'introduit pas de nouvelle exposition
+    — cette clé part déjà en clair vers l'API Google à chaque examen de
+    sécurité (`x-goog-api-key`), la garder aussi en local ne fait
+    qu'éviter de la retaper, documenté comme tel dans le champ lui-même
+    plutôt que présenté comme un vrai changement de posture de sécurité.
+  - **Repli 3.7→3.6 silencieux** : `reviewSafety()` essaie
+    `gemini-3.7-flash`, et sur **n'importe quel échec** (pas seulement un
+    429 identifié précisément — un timeout, une erreur 5xx ou de format
+    auraient le même symptôme côté développeur) retente automatiquement
+    avec `gemini-3.6-flash` sans jamais montrer l'erreur du premier essai
+    à l'utilisateur ; seul un échec du **second** essai est encore
+    affiché normalement. Complète la doc/`dev.html` déjà remaniées pour
+    ne plus citer "Gemini 3.7" nommément dans les textes visibles
+    (l'app/le site continuent d'utiliser le modèle qu'il faut, seul le
+    message montré au développeur ne fige plus un numéro de version
+    précis qui peut changer).
+
+- **`site/docs.html`** : les blocs `.fn-maps-to` qui affichaient
+  explicitement "→ correspond à l'action `click`/`read_ui_elements`/..."
+  (les noms exacts des outils internes envoyés à Gemini) sont retirés —
+  demande explicite de ne pas exposer comment le chat/Control Me sont
+  construits en interne. La bibliothèque de fonctions reste identique
+  côté lecteur (même noms `clique()`/`tape()`/...), juste sans révéler à
+  quoi ça correspond dans le code. Nouvelle section **Commandes
+  personnalisées** (exemple complet, playlist Spotify) et nouvelle section
+  **Prompt pour une IA** : un bloc de texte copiable (bouton "Copier",
+  `navigator.clipboard`) à coller dans Claude/ChatGPT/etc. avant de
+  décrire ce qu'on veut, qui connaît déjà le format JSON exact, le
+  vocabulaire disponible et les noms de touches valides — pour quelqu'un
+  qui préfère faire écrire l'extension par une IA plutôt qu'à la main.
+
+- **Passe UI site-wide, via `account.js`** (chargé par toutes les pages,
+  donc le seul endroit qui les touche toutes sans dupliquer la même règle
+  six fois) :
+  - Fond en dégradé (`radial-gradient`) plutôt qu'une couleur plate,
+    transitions sur tous les boutons/liens (`transform` léger au survol,
+    `scale` au clic), `.link-btn` pour styliser un `<a>` texte qui sert
+    d'action principale comme un vrai bouton (utilisé sur la landing et
+    la page d'extension — "plus de texte cliquable" au sens littéral :
+    moins de liens qui ressemblent à du texte simple) sans lui donner
+    toute la logique JS d'un vrai `.btn`.
+  - Animation d'entrée légère (`site-fade-up`) sur les blocs de contenu
+    principaux, respectant `prefers-reduced-motion` (accessibilité, même
+    discipline que la passe d'animations de l'app en v0.5.5).
+  - **Vrai menu mobile** (`mountMobileNav`, appelé depuis `index.html` sur
+    `.site-nav`) plutôt qu'une version desktop juste comprimée : sous
+    640px, les liens de nav disparaissent au profit d'un bouton compact
+    (`☰`) qui déroule un panneau — demandé explicitement ("que la version
+    mobile du site ne soit pas la même que la version ordi"). **Repéré et
+    corrigé avant publication** : ce nouveau menu (`.mobile-nav-menu`)
+    aurait eu exactement le même bug de cascade CSS que le correctif
+    précédent sur `.account-menu` (un `display: flex` d'auteur qui bat
+    silencieusement le `[hidden] { display: none }` du navigateur, quelle
+    que soit la spécificité) — `.mobile-nav-menu[hidden] { display: none;
+    }` ajouté préventivement plutôt que découvert après coup.
+
+- **`src-tauri/src/commands/controlme.rs`** : `key_from_name()` avait déjà
+  `meta`/`win`/`windows`/`cmd`/`super` → touche logo Windows et
+  `control`/`ctrl`/`alt`/`shift` (vérifié dans le code avant de conclure
+  quoi que ce soit manquait — la demande listait ces touches comme si
+  elles n'existaient pas). Réellement absents et ajoutés :
+  `capslock`/`caps`, `insert`, `f1` à `f12`. `hotkey` (combinaisons
+  multi-touches, ex. Ctrl+Maj+S) et `drag_and_drop` (clic maintenu d'un
+  point à un autre) existaient déjà eux aussi — seules leurs descriptions
+  d'outils (côté mode "Windows UI", `build_windows_ui_tools()`) ont été
+  enrichies avec des exemples concrets pour que Gemini les utilise plus
+  fiablement. **Emoji dans `tape()`/`type`** : déjà fonctionnel sans
+  changement Rust — vérifié dans le code source d'enigo
+  (`enigo-0.6.1/src/win/win_impl.rs`) que `Keyboard::text()` encode déjà
+  correctement les caractères hors du plan de base (la plupart des emoji)
+  en paires de substituts UTF-16 avant l'envoi via `SendInput`, donc
+  aucun changement de code n'était nécessaire — seulement documenté
+  explicitement dans la description de l'outil et dans `docs.html`.
+  `cargo check` à 0 erreur.
+
+- Pas de vérification GUI possible dans cet environnement pour la partie
+  site (comme pour la v0.7 elle-même) ni pour les nouvelles touches
+  Control Me (nécessite une vraie session avec clé Gemini) — à confirmer
+  par l'utilisateur : boutons de fichier cliquables et lisibles, bascule
+  contenu texte/fichier, ajout/suppression de commandes personnalisées,
+  clé Gemini effectivement mémorisée entre deux visites, menu mobile sous
+  640px de large, et qu'une combinaison comme Ctrl+Maj+S ou la touche
+  Windows fonctionne bien en conditions réelles.
 
 ### Les 6 outils de l'agent
 1. `read_file` — lecture texte (limite 5 Mo), chemin absolu

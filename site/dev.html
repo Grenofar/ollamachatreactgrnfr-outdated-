@@ -46,7 +46,7 @@
   .note strong { color: var(--warn); }
   form { display: flex; flex-direction: column; gap: 10px; }
   label { font-size: 0.82rem; color: var(--text-dim); margin-top: 6px; }
-  input[type="text"], input[type="password"], input[type="file"], textarea, select {
+  input[type="text"], input[type="password"], textarea, select {
     background: var(--bg-raised);
     border: 1px solid var(--border);
     color: var(--text);
@@ -74,6 +74,7 @@
   .btn-primary { color: #ffffff; background: var(--accent-strong); border-color: transparent; font-weight: 600; }
   .btn-primary:hover { background: var(--accent); }
   .btn:disabled { opacity: 0.5; cursor: default; }
+  .btn-small { padding: 6px 12px; font-size: 0.8rem; }
   .status { font-size: 0.85rem; min-height: 1.2em; }
   .status-error { color: var(--danger); }
   .status-ok { color: var(--ok); }
@@ -92,6 +93,81 @@
   .ext-meta { font-size: 0.78rem; color: var(--text-dim); margin-top: 4px; }
   .ext-stats { font-size: 0.78rem; color: var(--accent); margin-top: 6px; }
   #locked, #onboard-hint { display: none; }
+
+  /* Native <input type="file"> can't be styled directly across browsers —
+     standard pattern: hide it (not display:none, that breaks keyboard/
+     screen-reader activation — visually hidden but still focusable) and
+     drive it from a normal styled <label> that forwards the click. */
+  .file-field { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+  .file-input-hidden {
+    position: absolute;
+    width: 1px; height: 1px;
+    padding: 0; margin: -1px;
+    overflow: hidden;
+    clip: rect(0, 0, 0, 0);
+    white-space: nowrap;
+    border: 0;
+  }
+  .file-label {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    padding: 8px 16px;
+    border-radius: 8px;
+    border: 1px solid var(--border);
+    background: var(--bg-raised);
+    color: var(--text);
+    font-size: 0.85rem;
+    cursor: pointer;
+    transition: background 0.15s ease, border-color 0.15s ease;
+  }
+  .file-label:hover { background: #1c2026; border-color: var(--accent); }
+  .file-label:has(+ .file-input-hidden:focus-visible) { outline: 2px solid var(--accent); outline-offset: 2px; }
+  .file-name { font-size: 0.8rem; color: var(--text-dim); }
+  .file-name.has-file { color: var(--ok); }
+
+  .content-mode-row { display: flex; gap: 8px; }
+  .content-mode-row button {
+    flex: 1;
+    padding: 8px 12px;
+    border-radius: 8px;
+    border: 1px solid var(--border);
+    background: var(--bg-raised);
+    color: var(--text-dim);
+    font-size: 0.82rem;
+    cursor: pointer;
+    transition: all 0.15s ease;
+  }
+  .content-mode-row button.active { background: var(--accent-strong); color: #fff; border-color: transparent; }
+
+  .command-row {
+    display: grid;
+    grid-template-columns: 1fr 2fr auto;
+    gap: 8px;
+    align-items: start;
+  }
+  .command-row input { width: 100%; }
+  .command-remove {
+    padding: 8px 10px;
+    border-radius: 8px;
+    border: 1px solid var(--border);
+    background: var(--bg-raised);
+    color: var(--danger);
+    cursor: pointer;
+    transition: background 0.15s ease, transform 0.1s ease;
+  }
+  .command-remove:hover { background: #3a2020; }
+  .command-remove:active { transform: scale(0.92); }
+  .command-list { display: flex; flex-direction: column; gap: 8px; margin-bottom: 4px; }
+
+  .spinner {
+    width: 14px; height: 14px;
+    border: 2px solid rgba(255,255,255,0.4);
+    border-top-color: #fff;
+    border-radius: 50%;
+    animation: spin 0.7s linear infinite;
+  }
+  @keyframes spin { to { transform: rotate(360deg); } }
 </style>
 </head>
 <body>
@@ -112,11 +188,12 @@
       <div class="note">
         <strong>Comment ça marche :</strong> le contenu est ajouté au prompt système du modèle
         (chat de base ou Control Me, selon la cible choisie) — pas de code exécuté, pas d'accès
-        direct au système. Avant publication, Gemini 3.7 analyse le contenu ; s'il le juge à
+        direct au système. Avant publication, une IA analyse le contenu ; si elle le juge à
         risque (instructions cachées, tentative de manipulation de l'IA...), la publication est
         refusée. Une fois publiée, une extension reste marquée <strong>non officielle</strong>
         (orange) sauf revue manuelle explicite — les utilisateurs sont prévenus avant
-        d'installer. Détail complet et exemples : <a href="/docs">documentation</a>.
+        d'installer. Détail complet, exemples et vocabulaire de commandes :
+        <a href="/docs">documentation</a>.
       </div>
 
       <form id="publish-form">
@@ -134,10 +211,18 @@
         <textarea id="ext-description" style="min-height: 80px;" placeholder="Ce que fait cette extension, en détail"></textarea>
 
         <label>Photo d'impression (miniature affichée dans la grille et en haut de la page — 10 Mo max)</label>
-        <input type="file" id="ext-thumbnail" accept="image/*" />
+        <div class="file-field">
+          <label class="file-label" for="ext-thumbnail">Choisir une image</label>
+          <input class="file-input-hidden" type="file" id="ext-thumbnail" accept="image/*" />
+          <span class="file-name" id="ext-thumbnail-name">Aucun fichier</span>
+        </div>
 
         <label>Photos/vidéos de démonstration (plusieurs possibles, 10 Mo max chacune)</label>
-        <input type="file" id="ext-media" accept="image/*,video/mp4,video/webm" multiple />
+        <div class="file-field">
+          <label class="file-label" for="ext-media">Choisir des fichiers</label>
+          <input class="file-input-hidden" type="file" id="ext-media" accept="image/*,video/mp4,video/webm" multiple />
+          <span class="file-name" id="ext-media-name">Aucun fichier</span>
+        </div>
 
         <label>Cible</label>
         <select id="ext-target">
@@ -145,14 +230,28 @@
           <option value="controlme">Control Me</option>
         </select>
 
+        <label>Contenu (ajouté au prompt système)</label>
+        <div class="content-mode-row">
+          <button type="button" id="content-mode-text" class="active">Écrire directement</button>
+          <button type="button" id="content-mode-file">Importer un fichier (.txt/.md)</button>
+        </div>
+        <div class="file-field" id="content-file-row" hidden>
+          <label class="file-label" for="ext-content-file">Choisir un fichier</label>
+          <input class="file-input-hidden" type="file" id="ext-content-file" accept=".txt,.md,text/plain,text/markdown" />
+          <span class="file-name" id="ext-content-file-name">Aucun fichier</span>
+        </div>
+        <textarea id="ext-content" placeholder="Instructions/contexte que cette extension ajoute au modèle…" required></textarea>
+
+        <label>Commandes personnalisées (optionnel) — un vocabulaire propre à ton extension, en plus de celui déjà documenté</label>
+        <div class="command-list" id="command-list"></div>
+        <button type="button" class="btn btn-small" id="add-command-btn">+ Ajouter une commande</button>
+
         <label>Version</label>
         <input type="text" id="ext-version" placeholder="1.0.0" required />
 
-        <label>Contenu (ajouté au prompt système)</label>
-        <textarea id="ext-content" placeholder="Instructions/contexte que cette extension ajoute au modèle…" required></textarea>
-
-        <label>Clé API Gemini (nécessaire pour l'examen de sécurité avant publication, jamais stockée)</label>
+        <label>Clé API Gemini (nécessaire pour l'examen de sécurité avant publication)</label>
         <input type="password" id="gemini-key" placeholder="Clé obtenue sur Google AI Studio" />
+        <div class="char-count" style="text-align: left;">Enregistrée uniquement dans ce navigateur (localStorage), jamais envoyée ailleurs qu'à Google.</div>
 
         <button type="submit" class="btn btn-primary" id="publish-btn">Examiner et publier</button>
         <div class="status" id="publish-status"></div>
@@ -169,6 +268,7 @@
       renderAccountBar,
       onProfileChange,
       getProfile,
+      escapeHtml,
     } from "/account.js";
 
     const barMount = document.createElement("div");
@@ -182,6 +282,7 @@
 
     const GEMINI_ENDPOINT = "https://generativelanguage.googleapis.com/v1beta/interactions";
     const MEDIA_BUCKET = "extension-media";
+    const GEMINI_KEY_STORAGE = "ollamachat_dev_gemini_key";
 
     const locked = document.getElementById("locked");
     const lockedHint = document.getElementById("locked-hint");
@@ -193,6 +294,95 @@
     const myExtensionsEl = document.getElementById("my-extensions");
     const summaryInput = document.getElementById("ext-summary");
     const summaryCount = document.getElementById("summary-count");
+    const geminiKeyInput = document.getElementById("gemini-key");
+    const contentTextarea = document.getElementById("ext-content");
+    const contentModeTextBtn = document.getElementById("content-mode-text");
+    const contentModeFileBtn = document.getElementById("content-mode-file");
+    const contentFileRow = document.getElementById("content-file-row");
+    const contentFileInput = document.getElementById("ext-content-file");
+    const contentFileName = document.getElementById("ext-content-file-name");
+    const commandListEl = document.getElementById("command-list");
+
+    // Convenience only — this key already leaves the browser on every
+    // review call anyway (straight to Google, see reviewSafety below), so
+    // keeping it in localStorage doesn't create a new exposure, it just
+    // saves retyping it each publish. Per-browser/per-device, never sent
+    // to our own Supabase project.
+    const savedKey = localStorage.getItem(GEMINI_KEY_STORAGE);
+    if (savedKey) geminiKeyInput.value = savedKey;
+
+    // ------------------------------------------------------------ file inputs
+
+    function wireFileNamePreview(inputId, nameId, formatter) {
+      const input = document.getElementById(inputId);
+      const nameEl = document.getElementById(nameId);
+      input.addEventListener("change", () => {
+        const files = Array.from(input.files ?? []);
+        if (files.length === 0) {
+          nameEl.textContent = "Aucun fichier";
+          nameEl.classList.remove("has-file");
+        } else {
+          nameEl.textContent = formatter ? formatter(files) : files[0].name;
+          nameEl.classList.add("has-file");
+        }
+      });
+    }
+    wireFileNamePreview("ext-thumbnail", "ext-thumbnail-name");
+    wireFileNamePreview("ext-media", "ext-media-name", (files) =>
+      files.length === 1 ? files[0].name : `${files.length} fichiers`,
+    );
+
+    contentModeTextBtn.addEventListener("click", () => {
+      contentModeTextBtn.classList.add("active");
+      contentModeFileBtn.classList.remove("active");
+      contentFileRow.hidden = true;
+      contentTextarea.hidden = false;
+    });
+    contentModeFileBtn.addEventListener("click", () => {
+      contentModeFileBtn.classList.add("active");
+      contentModeTextBtn.classList.remove("active");
+      contentFileRow.hidden = false;
+      contentTextarea.hidden = true;
+    });
+    contentFileInput.addEventListener("change", async () => {
+      const file = contentFileInput.files?.[0];
+      if (!file) {
+        contentFileName.textContent = "Aucun fichier";
+        contentFileName.classList.remove("has-file");
+        return;
+      }
+      contentFileName.textContent = file.name;
+      contentFileName.classList.add("has-file");
+      // Read immediately into the (hidden) textarea — it stays the single
+      // source of truth for what gets published, the file picker is just a
+      // friendlier way to fill it for a long/complex extension written
+      // elsewhere first.
+      contentTextarea.value = await file.text();
+    });
+
+    // --------------------------------------------------------- custom commands
+
+    function addCommandRow(name = "", description = "") {
+      const row = document.createElement("div");
+      row.className = "command-row";
+      row.innerHTML = `
+        <input type="text" class="cmd-name" placeholder="nom_commande()" value="${name.replace(/"/g, "&quot;")}" />
+        <input type="text" class="cmd-desc" placeholder="Ce que fait cette commande" value="${description.replace(/"/g, "&quot;")}" />
+        <button type="button" class="command-remove" title="Retirer">✕</button>
+      `;
+      row.querySelector(".command-remove").addEventListener("click", () => row.remove());
+      commandListEl.appendChild(row);
+    }
+    document.getElementById("add-command-btn").addEventListener("click", () => addCommandRow());
+
+    function collectCustomCommands() {
+      return Array.from(commandListEl.querySelectorAll(".command-row"))
+        .map((row) => ({
+          name: row.querySelector(".cmd-name").value.trim(),
+          description: row.querySelector(".cmd-desc").value.trim(),
+        }))
+        .filter((c) => c.name);
+    }
 
     summaryInput.addEventListener("input", () => {
       summaryCount.textContent = String(summaryInput.value.length);
@@ -218,6 +408,13 @@
       return data.publicUrl;
     }
 
+    // Tries gemini-3.7-flash first (the model this whole review flow was
+    // designed around), and — since 3.7 has been visibly rate-limited under
+    // real load — falls back to gemini-3.6-flash automatically on ANY
+    // failure from the first attempt rather than surfacing a raw API error
+    // to a developer just trying to publish. The fallback's own failure (if
+    // that happens too) is still surfaced normally — this only hides the
+    // FIRST attempt's error once a working second attempt has succeeded.
     async function reviewSafety(content, apiKey) {
       const prompt =
         "Tu es un examinateur de sécurité pour une marketplace d'extensions IA. " +
@@ -229,35 +426,39 @@
         'la forme {"verdict": "safe", "reasoning": "..."} ou {"verdict": "unsafe", "reasoning": "..."}.\n\n' +
         "Contenu à examiner :\n---\n" + content + "\n---";
 
-      const resp = await fetch(GEMINI_ENDPOINT, {
-        method: "POST",
-        headers: { "x-goog-api-key": apiKey, "Content-Type": "application/json" },
-        body: JSON.stringify({
-          model: "gemini-3.7-flash",
-          input: [{ type: "text", text: prompt }],
-          generation_config: { thinking_level: "low" },
-        }),
-      });
-      if (!resp.ok) {
-        throw new Error(`Gemini a répondu ${resp.status} : ${await resp.text()}`);
-      }
-      const data = await resp.json();
-      let text = "";
-      for (const step of data.steps ?? []) {
-        if (step.type === "model_output") {
-          for (const part of step.content ?? []) {
-            if (part.text) text += part.text;
+      async function callModel(model) {
+        const resp = await fetch(GEMINI_ENDPOINT, {
+          method: "POST",
+          headers: { "x-goog-api-key": apiKey, "Content-Type": "application/json" },
+          body: JSON.stringify({
+            model,
+            input: [{ type: "text", text: prompt }],
+            generation_config: { thinking_level: "low" },
+          }),
+        });
+        if (!resp.ok) throw new Error(`Gemini a répondu ${resp.status} : ${await resp.text()}`);
+        const data = await resp.json();
+        let text = "";
+        for (const step of data.steps ?? []) {
+          if (step.type === "model_output") {
+            for (const part of step.content ?? []) {
+              if (part.text) text += part.text;
+            }
           }
         }
+        const first = text.indexOf("{");
+        const last = text.lastIndexOf("}");
+        if (first === -1 || last <= first) throw new Error("Réponse illisible : " + text);
+        const parsed = JSON.parse(text.slice(first, last + 1));
+        if (parsed.verdict !== "safe" && parsed.verdict !== "unsafe") throw new Error("Réponse inattendue : " + text);
+        return parsed;
       }
-      const first = text.indexOf("{");
-      const last = text.lastIndexOf("}");
-      if (first === -1 || last <= first) throw new Error("Réponse de Gemini illisible : " + text);
-      const parsed = JSON.parse(text.slice(first, last + 1));
-      if (parsed.verdict !== "safe" && parsed.verdict !== "unsafe") {
-        throw new Error("Réponse de Gemini inattendue : " + text);
+
+      try {
+        return await callModel("gemini-3.7-flash");
+      } catch {
+        return await callModel("gemini-3.6-flash");
       }
-      return parsed;
     }
 
     async function loadMyExtensions() {
@@ -291,11 +492,11 @@
         card.className = "ext-card";
         card.innerHTML = `
           <div class="ext-card-header">
-            <strong><a href="/extension.html?id=${ext.id}" style="color: inherit;">${ext.name}</a></strong>
+            <strong><a href="/extension.html?id=${encodeURIComponent(ext.id)}" style="color: inherit;">${escapeHtml(ext.name)}</a></strong>
             <span class="badge ${ext.is_official ? "badge-official" : "badge-unofficial"}">${ext.is_official ? "Officielle" : "Non officielle"}</span>
           </div>
-          <div class="ext-meta">${ext.description || ""}</div>
-          <div class="ext-meta">${versions.length} version(s) — dernière : ${versions[0]?.version ?? "—"}</div>
+          <div class="ext-meta">${escapeHtml(ext.description || "")}</div>
+          <div class="ext-meta">${versions.length} version(s) — dernière : ${escapeHtml(versions[0]?.version ?? "—")}</div>
           <div class="ext-stats">
             ${ext.page_view_count ?? 0} visite(s) de la page · ${ext.install_click_count ?? 0} clic(s) sur Ajouter ·
             <span class="install-count-${ext.id}">…</span> installation(s) confirmée(s)
@@ -322,8 +523,8 @@
       e.preventDefault();
       const profile = getProfile();
       if (!profile) return;
-      const apiKey = document.getElementById("gemini-key").value.trim();
-      const content = document.getElementById("ext-content").value.trim();
+      const apiKey = geminiKeyInput.value.trim();
+      const content = contentTextarea.value.trim();
       const name = document.getElementById("ext-name").value.trim();
       const description = document.getElementById("ext-description").value.trim();
       const summary = summaryInput.value.trim();
@@ -331,13 +532,17 @@
       const version = document.getElementById("ext-version").value.trim();
       const thumbnailFile = document.getElementById("ext-thumbnail").files?.[0] ?? null;
       const mediaFiles = Array.from(document.getElementById("ext-media").files ?? []);
+      const customCommands = collectCustomCommands();
       if (!apiKey || !content || !name || !version) {
         setStatus(publishStatus, "Remplis au minimum le nom, la version, le contenu et la clé API.", false);
         return;
       }
 
+      localStorage.setItem(GEMINI_KEY_STORAGE, apiKey);
+
       publishBtn.disabled = true;
-      setStatus(publishStatus, "Examen de sécurité en cours (Gemini)…");
+      publishBtn.innerHTML = '<span class="spinner"></span> Examen de sécurité en cours…';
+      setStatus(publishStatus, "");
       try {
         const verdict = await reviewSafety(content, apiKey);
         if (verdict.verdict === "unsafe") {
@@ -360,14 +565,14 @@
         }
 
         if (thumbnailFile) {
-          setStatus(publishStatus, "Envoi de la photo d'impression…");
+          publishBtn.innerHTML = '<span class="spinner"></span> Envoi de la photo…';
           const url = await uploadExtensionFile(extensionId, thumbnailFile, "thumbnail");
           const { error } = await supabase.from("extensions").update({ thumbnail_url: url }).eq("id", extensionId);
           if (error) throw error;
         }
 
         if (mediaFiles.length > 0) {
-          setStatus(publishStatus, `Envoi de ${mediaFiles.length} fichier(s) de démonstration…`);
+          publishBtn.innerHTML = `<span class="spinner"></span> Envoi de ${mediaFiles.length} fichier(s)…`;
           for (let i = 0; i < mediaFiles.length; i++) {
             const file = mediaFiles[i];
             const url = await uploadExtensionFile(extensionId, file, "media");
@@ -381,24 +586,29 @@
           }
         }
 
-        setStatus(publishStatus, "Publication de la version…");
+        publishBtn.innerHTML = '<span class="spinner"></span> Publication de la version…';
+        const manifest = { target, system_prompt_addition: content };
+        if (customCommands.length > 0) manifest.custom_commands = customCommands;
         const { error: versionError } = await supabase.from("extension_versions").insert({
           extension_id: extensionId,
           version,
-          manifest: { target, system_prompt_addition: content },
+          manifest,
           safety_verdict: "safe",
           safety_reasoning: verdict.reasoning,
         });
         if (versionError) throw versionError;
 
-        setStatus(publishStatus, "Publiée — jugée sûre par Gemini : " + verdict.reasoning, true);
+        setStatus(publishStatus, "Publiée avec succès.", true);
         publishForm.reset();
+        commandListEl.innerHTML = "";
         summaryCount.textContent = "0";
+        geminiKeyInput.value = apiKey;
         await loadMyExtensions();
       } catch (err) {
         setStatus(publishStatus, err.message || String(err), false);
       } finally {
         publishBtn.disabled = false;
+        publishBtn.textContent = "Examiner et publier";
       }
     });
 

@@ -131,7 +131,7 @@
   </div>
 
   <script type="module">
-    import { supabase, renderAccountBar, avatarUrlFor } from "/account.js";
+    import { supabase, renderAccountBar, avatarUrlFor, escapeHtml } from "/account.js";
 
     const barMount = document.createElement("div");
     barMount.id = "account-bar-mount";
@@ -182,23 +182,26 @@
       for (const ext of filtered) {
         const card = document.createElement("a");
         card.className = "ext-card";
-        card.href = `/extension.html?id=${ext.id}`;
+        card.href = `/extension.html?id=${encodeURIComponent(ext.id)}`;
         const authorAvatar = avatarUrlFor(ext.profiles, null);
+        // Every one of these fields is set by whichever developer account
+        // published this extension — never trust it into innerHTML as-is,
+        // see escapeHtml's own comment in account.js for why.
         card.innerHTML = `
           ${
             ext.thumbnail_url
-              ? `<img class="ext-card-thumb" src="${ext.thumbnail_url}" alt="" />`
+              ? `<img class="ext-card-thumb" src="${escapeHtml(ext.thumbnail_url)}" alt="" />`
               : `<div class="ext-card-thumb-placeholder">Pas d'aperçu</div>`
           }
           <div class="ext-card-body">
             <div class="ext-card-title-row">
-              <strong>${ext.name}</strong>
+              <strong>${escapeHtml(ext.name)}</strong>
               <span class="badge ${ext.is_official ? "badge-official" : "badge-unofficial"}">${ext.is_official ? "Officielle" : "Non officielle"}</span>
             </div>
-            <p class="ext-card-summary">${ext.summary || ext.description || ""}</p>
+            <p class="ext-card-summary">${escapeHtml(ext.summary || ext.description || "")}</p>
             <div class="ext-card-author">
-              <img src="${authorAvatar}" alt="" />
-              <span>@${ext.profiles?.username ?? "?"}</span>
+              <img src="${escapeHtml(authorAvatar)}" alt="" />
+              <span>@${escapeHtml(ext.profiles?.username ?? "?")}</span>
             </div>
           </div>
         `;
