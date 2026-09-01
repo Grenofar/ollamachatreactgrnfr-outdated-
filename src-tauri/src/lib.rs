@@ -20,8 +20,8 @@ use commands::remote::{clear_remote_code, generate_remote_code, resume_remote_on
 use commands::settings::{load_settings, save_settings};
 use commands::shell::{cancel_shell_command, run_powershell_command, ShellCancelFlag};
 use commands::skills::{
-    delete_skill, download_skill, extract_skill_from_transcript, list_public_skills, list_skills, load_skill,
-    open_skills_folder, publish_skill, save_new_skill, unpublish_skill, update_skill,
+    delete_skill, download_skill, extract_skill_from_transcript, import_marketplace_extension, list_public_skills,
+    list_skills, load_skill, open_skills_folder, publish_skill, save_new_skill, unpublish_skill, update_skill,
 };
 use commands::watchdog::{close_app, spawn_watchdog_thread, Watchdog};
 use commands::SUPABASE_ANON_KEY;
@@ -190,6 +190,7 @@ pub fn run() {
             download_skill,
             list_public_skills,
             extract_skill_from_transcript,
+            import_marketplace_extension,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

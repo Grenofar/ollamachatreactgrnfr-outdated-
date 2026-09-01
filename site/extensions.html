@@ -1,0 +1,198 @@
+<!doctype html>
+<html lang="fr">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Marketplace d'extensions</title>
+<meta name="description" content="Parcours et installe des extensions créées par la communauté pour Ollama Chat React." />
+<style>
+  :root {
+    color-scheme: dark;
+    --bg: #0b0d10;
+    --bg-raised: #14171b;
+    --border: #23272e;
+    --text: #e8eaed;
+    --text-dim: #9aa0a6;
+    --accent: #6ea8fe;
+    --accent-strong: #4c86e0;
+    --warn: #e0b666;
+    --danger: #e08a8a;
+    --ok: #7fd0a0;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    background: var(--bg);
+    color: var(--text);
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+    line-height: 1.5;
+  }
+  .wrap { max-width: 760px; margin: 0 auto; padding: 40px 20px 64px; }
+  .back-link { display: inline-block; color: var(--text-dim); text-decoration: none; font-size: 0.85rem; margin-bottom: 20px; }
+  .back-link:hover { color: var(--text); }
+  h1 { font-size: 1.5rem; margin: 0 0 8px; }
+  p { color: var(--text-dim); margin: 0 0 12px; }
+  .note {
+    background: var(--bg-raised);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    padding: 14px 16px;
+    font-size: 0.88rem;
+    color: var(--text-dim);
+    margin-bottom: 20px;
+  }
+  .note strong { color: var(--warn); }
+  .search-row input {
+    width: 100%;
+    background: var(--bg-raised);
+    border: 1px solid var(--border);
+    color: var(--text);
+    border-radius: 8px;
+    padding: 10px 12px;
+    font-size: 0.9rem;
+    margin-bottom: 16px;
+  }
+  .ext-card {
+    background: var(--bg-raised);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    padding: 14px 16px;
+    margin-bottom: 12px;
+  }
+  .ext-card-header { display: flex; align-items: center; gap: 10px; }
+  .ext-card-header strong { flex: 1; }
+  .badge { font-size: 0.7rem; padding: 2px 8px; border-radius: 8px; }
+  .badge-official { background: #1f3a24; color: var(--ok); }
+  .badge-unofficial { background: #3a2f1f; color: var(--warn); }
+  .badge-target { background: #1c2634; color: var(--accent); }
+  .ext-meta { font-size: 0.78rem; color: var(--text-dim); margin-top: 4px; }
+  .ext-actions { display: flex; align-items: center; gap: 10px; margin-top: 10px; }
+  .id-box {
+    font-family: Consolas, Menlo, monospace;
+    font-size: 0.78rem;
+    background: var(--bg);
+    border-radius: 6px;
+    padding: 4px 8px;
+    color: var(--text-dim);
+    flex: 1;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  .btn {
+    display: inline-flex;
+    align-items: center;
+    padding: 6px 14px;
+    border-radius: 8px;
+    border: 1px solid var(--border);
+    background: var(--bg);
+    color: var(--text);
+    font-size: 0.82rem;
+    cursor: pointer;
+  }
+  .btn-primary { color: #ffffff; background: var(--accent-strong); border-color: transparent; font-weight: 600; }
+  .empty { color: var(--text-dim); }
+</style>
+</head>
+<body>
+  <div class="wrap">
+    <a class="back-link" href="/">← Ollama Chat React</a>
+    <h1>Marketplace d'extensions</h1>
+    <p>Extensions publiées par la communauté — ajoutent du contexte au chat de base ou à Control Me.</p>
+    <div class="note">
+      <strong>Sécurité :</strong> chaque extension est examinée par une IA (Gemini) avant publication,
+      mais ce n'est pas une revue humaine. Toute extension reste marquée <strong>non officielle</strong>
+      jusqu'à une revue manuelle explicite. Installe uniquement ce dont tu fais confiance à l'auteur —
+      c'est à tes risques et périls, l'app n'est pas responsable du contenu d'une extension tierce.
+    </div>
+
+    <div class="search-row">
+      <input type="text" id="search-input" placeholder="Rechercher une extension…" />
+    </div>
+
+    <div id="list"></div>
+  </div>
+
+  <script type="module">
+    import { supabase, renderAccountBar } from "/account.js";
+
+    const barMount = document.createElement("div");
+    barMount.id = "account-bar-mount";
+    barMount.style.position = "fixed";
+    barMount.style.top = "16px";
+    barMount.style.right = "20px";
+    barMount.style.zIndex = "20";
+    document.body.prepend(barMount);
+    renderAccountBar(barMount);
+
+    const listEl = document.getElementById("list");
+    const searchInput = document.getElementById("search-input");
+    let allExtensions = [];
+
+    async function load() {
+      listEl.innerHTML = '<p class="empty">Chargement…</p>';
+      const { data, error } = await supabase
+        .from("extensions")
+        .select("id, name, description, is_official, owner_id, extension_versions(version, manifest, created_at), profiles(username)")
+        .order("created_at", { ascending: false });
+      if (error) {
+        listEl.innerHTML = `<p class="empty">Erreur de chargement : ${error.message}</p>`;
+        return;
+      }
+      // Only extensions with at least one published version are real —
+      // an extension row with zero versions would mean the safety review
+      // rejected every attempt so far.
+      allExtensions = (data ?? []).filter((e) => (e.extension_versions ?? []).length > 0);
+      render();
+    }
+
+    async function installCount(extensionId) {
+      const { data } = await supabase.rpc("extension_install_count", { p_extension_id: extensionId });
+      return data ?? 0;
+    }
+
+    function render() {
+      const query = searchInput.value.trim().toLowerCase();
+      const filtered = allExtensions.filter(
+        (e) => !query || e.name.toLowerCase().includes(query) || (e.description || "").toLowerCase().includes(query),
+      );
+      listEl.innerHTML = "";
+      if (filtered.length === 0) {
+        listEl.innerHTML = '<p class="empty">Aucune extension pour l\'instant.</p>';
+        return;
+      }
+      for (const ext of filtered) {
+        const versions = (ext.extension_versions ?? []).sort((a, b) => (a.created_at < b.created_at ? 1 : -1));
+        const latest = versions[0];
+        const target = latest?.manifest?.target === "chat" ? "Chat de base" : "Control Me";
+        const card = document.createElement("div");
+        card.className = "ext-card";
+        card.innerHTML = `
+          <div class="ext-card-header">
+            <strong>${ext.name}</strong>
+            <span class="badge badge-target">${target}</span>
+            <span class="badge ${ext.is_official ? "badge-official" : "badge-unofficial"}">${ext.is_official ? "Officielle" : "Non officielle"}</span>
+          </div>
+          <div class="ext-meta">${ext.description || ""}</div>
+          <div class="ext-meta">par @${ext.profiles?.username ?? "?"} — v${latest?.version ?? "?"} — <span class="install-count">…</span> installation(s)</div>
+          <div class="ext-actions">
+            <span class="id-box">${ext.id}</span>
+            <button class="btn" data-copy="${ext.id}">Copier l'identifiant</button>
+          </div>
+        `;
+        const countEl = card.querySelector(".install-count");
+        installCount(ext.id).then((n) => (countEl.textContent = String(n)));
+        card.querySelector("[data-copy]").addEventListener("click", (e) => {
+          navigator.clipboard.writeText(ext.id).catch(() => {});
+          e.target.textContent = "Copié !";
+          setTimeout(() => (e.target.textContent = "Copier l'identifiant"), 1200);
+        });
+        listEl.appendChild(card);
+      }
+    }
+
+    searchInput.addEventListener("input", render);
+    load();
+  </script>
+</body>
+</html>

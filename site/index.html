@@ -203,9 +203,83 @@
     --accent-strong: #4c86e0;
     --warn: #e0b666;
   }
+
+  /* -------------------------------------------------------- account bar */
+  #account-bar-mount {
+    position: fixed;
+    top: 16px;
+    right: 20px;
+    z-index: 20;
+  }
+  .account-login-btn {
+    padding: 8px 16px;
+    font-size: 0.85rem;
+    cursor: pointer;
+  }
+  .account-bar { position: relative; }
+  .account-avatar { cursor: pointer; display: block; border: 2px solid var(--border); }
+  .account-menu {
+    position: absolute;
+    top: 42px;
+    right: 0;
+    background: var(--bg-raised);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    padding: 8px;
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+    min-width: 180px;
+    box-shadow: 0 8px 24px rgba(0, 0, 0, 0.3);
+  }
+  .account-menu-header {
+    font-size: 0.8rem;
+    color: var(--text-dim);
+    padding: 6px 8px 8px;
+    border-bottom: 1px solid var(--border);
+    margin-bottom: 4px;
+  }
+  .account-menu a, .account-menu button {
+    background: transparent;
+    border: none;
+    color: var(--text);
+    text-align: left;
+    padding: 8px;
+    border-radius: 6px;
+    font-size: 0.85rem;
+    text-decoration: none;
+    cursor: pointer;
+  }
+  .account-menu a:hover, .account-menu button:hover { background: var(--bg); }
+  .account-onboarding {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    background: var(--bg-raised);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    padding: 8px 10px;
+    font-size: 0.85rem;
+  }
+  .account-onboarding input {
+    background: var(--bg);
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    color: var(--text);
+    padding: 6px 8px;
+    font-size: 0.85rem;
+    width: 140px;
+  }
+  .account-onboarding button {
+    padding: 6px 12px;
+    font-size: 0.85rem;
+    cursor: pointer;
+  }
+  .account-error { color: var(--warn); font-size: 0.78rem; }
 </style>
 </head>
 <body>
+  <div id="account-bar-mount"></div>
 
   <div class="wrap">
     <div class="center">
@@ -348,7 +422,26 @@
     <section class="center">
       <a class="btn btn-primary" href="/controlremote">Ouvrir l'interface</a>
     </section>
+
+    <section>
+      <h2>Extensions</h2>
+      <p>
+        Des skills et extensions créés par la communauté, installables directement dans l'app —
+        chaque extension est examinée par une IA avant publication. Tu peux aussi publier les
+        tiennes depuis un espace développeur.
+      </p>
+    </section>
+
+    <section class="center">
+      <a class="btn" href="/extensions">Parcourir les extensions</a>
+      <a class="btn" href="/dev" style="margin-left: 10px;">Espace développeur</a>
+    </section>
   </div>
+
+  <script type="module">
+    import { renderAccountBar } from "/account.js";
+    renderAccountBar(document.getElementById("account-bar-mount"));
+  </script>
 
   <script>
     // Anon key: meant to be public (Supabase's own design, gated by Row

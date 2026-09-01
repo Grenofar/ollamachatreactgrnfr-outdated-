@@ -3,6 +3,7 @@ import {
   deleteSkill,
   downloadSkill,
   extractSkillFromTranscript,
+  importMarketplaceExtension,
   listControlMeSessions,
   listPublicSkills,
   listSkills,
@@ -48,6 +49,8 @@ export default function SkillsView({ settings }: { settings: Settings }) {
   const [publicSkills, setPublicSkills] = useState<PublicSkillMeta[] | null>(null);
   const [importCode, setImportCode] = useState("");
   const [importing, setImporting] = useState(false);
+  const [marketplaceId, setMarketplaceId] = useState("");
+  const [importingMarketplace, setImportingMarketplace] = useState(false);
 
   function refreshSkills() {
     listSkills()
@@ -223,6 +226,33 @@ export default function SkillsView({ settings }: { settings: Settings }) {
     }
   }
 
+  // Marketplace extensions (accounts_marketplace_migration.sql) are a
+  // separate system from skill sharing above (share_code, no accounts) —
+  // this is the bridge: fetch the extension's latest reviewed version and
+  // materialize it locally as a normal skill, same end result either way.
+  async function handleImportMarketplace() {
+    const id = marketplaceId.trim();
+    if (!id) return;
+    if (
+      !window.confirm(
+        "Fais-tu confiance à ce créateur ? Une extension non officielle n'a été vérifiée que par une IA, pas par une personne — l'installer se fait à tes risques et périls, l'app n'est pas responsable de son contenu. Continuer ?",
+      )
+    ) {
+      return;
+    }
+    setImportingMarketplace(true);
+    setSkillsError(null);
+    try {
+      await importMarketplaceExtension(id);
+      setMarketplaceId("");
+      refreshSkills();
+    } catch (e) {
+      setSkillsError(String(e));
+    } finally {
+      setImportingMarketplace(false);
+    }
+  }
+
   const query = search.trim().toLowerCase();
   const filteredSkills = (skills ?? []).filter(
     (s) => !query || s.name.toLowerCase().includes(query) || s.description.toLowerCase().includes(query),
@@ -306,6 +336,23 @@ export default function SkillsView({ settings }: { settings: Settings }) {
               <input value={importCode} onChange={(e) => setImportCode(e.target.value)} placeholder="Code partagé" />
               <button onClick={handleImportByCode} disabled={importing || !importCode.trim()}>
                 {importing ? "Import…" : "Importer"}
+              </button>
+            </div>
+
+            <label>Installer une extension de la marketplace (site → Espace développeur)</label>
+            <div className="modal-hint">
+              Copie l'identifiant de l'extension depuis le site — seules les extensions ciblant Control Me
+              s'installent automatiquement pour l'instant. Non officielle = vérifiée seulement par une IA,
+              pas par une personne.
+            </div>
+            <div className="modal-actions">
+              <input
+                value={marketplaceId}
+                onChange={(e) => setMarketplaceId(e.target.value)}
+                placeholder="Identifiant de l'extension"
+              />
+              <button onClick={handleImportMarketplace} disabled={importingMarketplace || !marketplaceId.trim()}>
+                {importingMarketplace ? "Installation…" : "Installer"}
               </button>
             </div>
           </div>

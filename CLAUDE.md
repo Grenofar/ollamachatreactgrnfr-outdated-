@@ -108,6 +108,34 @@ pas devenir obsolète.
   remplace le simple lien texte par une vraie section "Interface pour
   appareil connecté" expliquant ce qu'on peut y faire ; Skills réordonné
   au-dessus d'Extensions dans la Sidebar.
+- [FAIT, v1 volontairement scopée] v0.6.3 : premier vrai système de
+  comptes de ce projet (Google OAuth via Supabase Auth, configuré par
+  l'utilisateur lui-même côté dashboard Supabase) — profils (pseudo public
+  unique, photo recadrée automatiquement), appareils multiples nommables/
+  changeables depuis le site, bascule "compte développeur" (interrupteur
+  animé), espace développeur (`/dev`) pour publier des extensions avec
+  examen de sécurité automatique par Gemini 3.7 avant publication
+  (refusée si jugée dangereuse), marketplace publique (`/extensions`,
+  recherche, badge officiel/non-officiel, compteur d'installations), et
+  côté app une commande pour installer une extension Control Me depuis la
+  marketplace avec double confirmation (confiance au créateur + à tes
+  risques et périls, app non responsable). Voir "Comptes et marketplace
+  d'extensions (v0.6.3)" dans Architecture pour le détail complet,
+  notamment **la décision assumée de ne PAS exécuter de code arbitraire**
+  dans cette version — un vrai bac à sable (WASM) serait un chantier de
+  plusieurs semaines à lui seul, pas construit ce soir ; une extension est
+  pour l'instant un ajout déclaratif au prompt système, dans le même
+  esprit que les skills existants, avec la même revue Gemini. Deux vrais
+  bugs trouvés et corrigés en relisant le code avant publication (pas
+  après) : la jointure PostgREST `extensions → profiles` aurait échoué (clé
+  étrangère manquante, corrigée dans la migration avant qu'elle ne soit
+  jamais exécutée) et l'upload d'avatar aurait été systématiquement
+  rejeté par une policy Storage mal alignée avec le chemin de fichier
+  utilisé. `cargo check`/`npx tsc --noEmit` passés à 0 erreur. **Aucune
+  vérification de bout en bout possible dans cet environnement**
+  (connexion Google réelle, upload Storage, appel Gemini de revue —
+  aucun testable sans navigateur) — à tester explicitement par
+  l'utilisateur après exécution de la migration SQL.
 
 ## Architecture
 
@@ -1880,6 +1908,156 @@ inchangé — ce correctif n'ajoute qu'une deuxième façon de reconnaître
 l'intention du modèle, la même mécanique d'exécution que le filet
 markdown existant prend le relais ensuite.
 
+### Comptes et marketplace d'extensions (v0.6.3)
+
+Demande explicite, la plus large de tout ce projet à ce jour : un vrai
+système de comptes (login Google), profils (pseudo public unique, photo
+de profil), plusieurs appareils par compte (nommables, on peut changer
+entre eux depuis le site), une bascule "compte développeur", et un espace
+développeur pour publier des extensions — examinées par une IA (Gemini
+3.7) avant publication, refusées si jugées dangereuses, marquées "non
+officielle" par défaut, installables avec une double confirmation
+(confiance au créateur + à ses risques et périls).
+
+**Décision de scope tranchée avant de coder, communiquée à l'utilisateur
+plutôt que devinée en silence** : "un vrai système de plugins" a été
+choisi explicitement (via `AskUserQuestion`, entre une version allégée —
+juste un annuaire de skills — et un vrai moteur d'exécution de code
+tiers). Mais **exécuter du code arbitraire uploadé** exigerait un vrai
+bac à sable (aucun n'existe dans ce projet — l'app tourne avec les droits
+complets de l'utilisateur, accès fichiers/PowerShell sans restriction) :
+la seule façon responsable de le faire serait un runtime WASM
+(wasmtime), avec une API de capacités explicite (l'extension ne peut
+appeler que ce que l'hôte expose volontairement) — un chantier
+d'architecture de plusieurs semaines à lui seul, pas quelque chose à
+improviser en une nuit même avec l'accord de l'utilisateur pour "le vrai
+système". Décision assumée : **v1 reste déclarative** — une extension est
+un ajout de texte au prompt système (cible "chat" ou "controlme"), dans
+le même esprit que les skills déjà en place, jamais du code exécuté. La
+revue Gemini porte sur CE texte (tentative de manipulation de l'IA,
+contenu trompeur), un problème beaucoup plus tractable pour une IA que
+"ce code est-il sûr à exécuter". Le schéma (`extension_versions.manifest`
+en `jsonb`) est conçu pour pouvoir grossir vers un vrai type d'extension
+"code" plus tard sans tout reconstruire, si un runtime sandboxé est
+construit un jour — pas promis, juste pas fermé.
+
+- **`supabase/accounts_marketplace_migration.sql`** (nouveau, **à
+  exécuter par l'utilisateur**, comme toute migration précédente ; exige
+  aussi d'activer manuellement le fournisseur Google dans Auth >
+  Providers côté dashboard Supabase — fait par l'utilisateur en parallèle
+  de cette session) : cinq tables.
+  - `profiles` (id = auth.users.id, `username` unique avec contrainte de
+    format strict `^[a-z0-9_]{3,24}$` — évite les usurpations visuelles
+    sur un pseudo affiché publiquement comme auteur —, `avatar_url`,
+    `is_developer`). Lecture publique (anon+authenticated), écriture
+    limitée à sa propre ligne.
+  - `devices` (appareils appairés, rattachés à un compte — voir plus
+    bas). Entièrement privé, aucune policy publique.
+  - `extensions` (métadonnées : nom, description, `is_official`).
+    **`is_official` protégée colonne par colonne** — RLS seule ne peut
+    pas restreindre une colonne dans une ligne qu'on a par ailleurs le
+    droit de modifier (une policy s'applique à la ligne entière), donc
+    `revoke update on extensions from authenticated` suivi de
+    `grant update (name, description) to authenticated` : le propriétaire
+    peut modifier nom/description, jamais le badge officiel — seule la
+    clé `service_role`, à la main, après revue humaine, le peut. Publier
+    exige `profiles.is_developer = true` (vérifié par sous-requête RLS
+    directement, pas seulement côté app).
+  - `extension_versions` (contenu réellement versionné, immuable une fois
+    publié — même posture que `app_releases`/
+    `controlme_knowledge_shares` : aucune policy update/delete pour
+    `authenticated`). `manifest jsonb` porte `{target, system_prompt_addition}`.
+    `safety_verdict`/`safety_reasoning` gardent une trace du verdict
+    Gemini qui a permis la publication (une ligne n'existe que si le
+    verdict était "safe" — un verdict "unsafe" n'insère jamais rien,
+    refusé entièrement côté site avant le moindre appel à Supabase).
+  - `extension_installs` (une ligne par paire extension/appareil,
+    upsert — empêche un même appareil de gonfler artificiellement le
+    compteur en désinstallant/réinstallant) + fonction
+    `extension_install_count(uuid)` en `security definer` pour exposer un
+    compte public sans avoir besoin d'une policy `select` large sur la
+    table elle-même (qui aurait permis à n'importe qui de lister quel
+    appareil a installé quoi).
+  - **Deux vrais bugs trouvés et corrigés avant publication, pas après**
+    (relecture systématique du SQL/JS avant de considérer le travail
+    fini, cohérent avec la discipline du reste de cette session) :
+    (1) `extensions.owner_id`/`devices.owner_id` référençaient
+    `auth.users(id)` — PostgREST a besoin d'une clé étrangère **directe**
+    entre deux tables pour les joindre via la syntaxe d'imbrication
+    (`extensions.html` fait `select("...,profiles(username)")`) ; même si
+    `profiles.id` référence lui-même `auth.users(id)` (mêmes valeurs au
+    final), l'absence de FK directe `extensions → profiles` aurait fait
+    échouer cette requête avec une erreur "no relationship found".
+    Corrigé en pointant directement vers `profiles(id)`. (2) la policy
+    Storage pour les avatars vérifie
+    `(storage.foldername(name))[1] = auth.uid()` (convention Supabase
+    standard, dossier par utilisateur) mais `account.js` construisait un
+    chemin plat `{id}.jpg` (zéro segment de dossier) — l'upload aurait
+    été systématiquement rejeté par RLS. Corrigé en utilisant
+    `{id}/avatar.jpg`.
+- **`site/account.js`** (nouveau) : module partagé chargé par les quatre
+  pages du site (`index.html`, `controlremote.html`, `dev.html`,
+  `extensions.html`) — client Supabase unique pour l'auth (distinct du
+  client Realtime déjà écrit à la main dans `controlremote.html`, qui
+  reste inchangé), `signInWithGoogle`/`signOut`, `onProfileChange`
+  (pattern pub/sub simple, pas de framework), `claimUsername`/
+  `updateUsername`/`setDeveloper`/`uploadAvatar`, `listDevices`/
+  `renameDevice`/`attachDevice`. `renderAccountBar(container)` monte une
+  barre de compte (bouton "Se connecter" / avatar + menu déroulant)
+  réutilisée identiquement sur les quatre pages.
+- **`site/dev.html`** (nouveau) : espace développeur. Interrupteur animé
+  "Mode développeur" (`<input type="checkbox">` caché + `<span>` stylé en
+  glissière, transition CSS — pas de librairie d'animation, cohérent avec
+  la préférence déjà établie du projet). Recadrage d'avatar : un simple
+  crop carré centré via `<canvas>` (pas de recadrage interactif par
+  glisser-déposer — hors budget de temps ce soir, documenté comme
+  simplification plutôt que caché) redimensionné à 256px, encodé en JPEG.
+  Formulaire de publication : nom/description/cible/version/contenu + la
+  clé API Gemini de l'utilisateur (jamais stockée, utilisée une seule
+  fois pour l'appel de revue) → `reviewSafety()` appelle directement
+  `generativelanguage.googleapis.com/v1beta/interactions` depuis le
+  navigateur (même modèle "clé API personnelle de l'utilisateur, jamais
+  fournie par l'app" que Control Me) avec un prompt de revue de sécurité
+  dédié, extrait un JSON `{verdict, reasoning}` de la réponse ; seul un
+  verdict `"safe"` déclenche l'insertion dans `extensions`/
+  `extension_versions`.
+- **`site/extensions.html`** (nouveau) : marketplace publique, recherche
+  côté client sur nom/description, badge cible (Chat de base/Control Me)
+  et officiel/non-officiel, compteur d'installations (via la fonction
+  `security definer`), bouton "Copier l'identifiant" — pas de bouton
+  "Installer" qui agirait directement depuis le site : l'installation
+  réelle se fait côté app (voir plus bas), le site ne fait que fournir
+  l'identifiant à coller.
+- **Pont site → app** : `src-tauri/src/commands/skills.rs` gagne
+  `import_marketplace_extension(extension_id)` — récupère la dernière
+  version publiée d'une extension (lecture publique `anon`, aucune
+  authentification nécessaire côté app) et la matérialise comme un skill
+  local ordinaire, réutilisant entièrement l'infrastructure skills déjà
+  en place plutôt que d'inventer un second concept "extension installée"
+  séparé. **Seules les extensions ciblant `"controlme"` s'installent
+  ainsi** — une cible `"chat"` modifierait le prompt système du chat de
+  base, ce qui n'est pas sûr à faire silencieusement sans que
+  l'utilisateur ne relise le contenu d'abord ; retourne une erreur claire
+  plutôt que de le faire quand même. Câblé dans `SkillsView.tsx`
+  (`importMarketplaceExtension`) avec la double confirmation demandée
+  explicitement, combinée en une seule boîte de dialogue `window.confirm`
+  couvrant à la fois "fais-tu confiance à ce créateur" et "à tes risques
+  et périls, l'app n'est pas responsable" — plutôt que deux popups
+  natives successives, jugé moins pénible pour un résultat équivalent
+  (les deux avertissements sont bien montrés, l'utilisateur doit
+  explicitement valider pour continuer).
+- `cargo check`/`npx tsc --noEmit` passés à 0 erreur après correction des
+  deux bugs ci-dessus. **Aucune vérification de bout en bout possible
+  dans cet environnement** — ni le flux OAuth Google réel, ni l'upload
+  Storage, ni l'appel de revue Gemini n'ont pu être testés contre de
+  vraies interactions navigateur. À tester explicitement par
+  l'utilisateur après exécution de la migration : connexion Google,
+  choix de pseudo, upload de photo, activation du mode développeur,
+  publication d'une extension (avec un contenu manifestement sûr, puis
+  avec un contenu délibérément suspect pour vérifier que Gemini la
+  refuse), installation depuis l'app via l'identifiant copié, gestion des
+  appareils (renommer, changer).
+
 ### Les 6 outils de l'agent
 1. `read_file` — lecture texte (limite 5 Mo), chemin absolu
 2. `list_dir` — listing un niveau, chemin absolu
@@ -2866,6 +3044,34 @@ l'utilisateur confirme qu'elle est bien dans `.env` local.
   l'utilisateur (comptes/profils/marketplace d'extensions avec examen de
   sécurité par IA) — chantier bien plus large, pas mélangé à ces
   correctifs.
+- **2026-09-01** — v0.6.3 : premier système de comptes de ce projet
+  (Google OAuth via Supabase Auth, configuré par l'utilisateur lui-même
+  côté dashboard pendant cette session), demandé en réponse directe à
+  `AskUserQuestion` sur la portée du "vrai système de plugins" — choix
+  explicite du chemin le plus large plutôt que la version allégée
+  proposée en option recommandée. Décision de scope tranchée avant de
+  coder, communiquée plutôt que devinée en silence : pas d'exécution de
+  code arbitraire dans cette version (aucun bac à sable n'existe dans ce
+  projet, un vrai le serait un chantier de plusieurs semaines à lui
+  seul) — une extension reste un ajout déclaratif au prompt système,
+  revu par Gemini 3.7 avant publication, dans le même esprit que les
+  skills déjà en place. Construit : profils (pseudo public unique, photo
+  recadrée), appareils multiples (nommables, changeables depuis le
+  site), bascule développeur animée, espace développeur (`/dev`) avec
+  publication+revue de sécurité, marketplace publique (`/extensions`),
+  pont app-side pour installer une extension Control Me comme skill
+  local avec double confirmation. Voir "Comptes et marketplace
+  d'extensions (v0.6.3)" dans Architecture pour le détail technique
+  complet. Deux vrais bugs trouvés et corrigés **avant** publication
+  (relecture systématique du SQL/JS écrit, pas juste "ça compile") :
+  jointure PostgREST `extensions → profiles` qui aurait échoué faute de
+  clé étrangère directe, et policy Storage d'avatar mal alignée avec le
+  chemin de fichier utilisé (upload aurait toujours été rejeté).
+  `cargo check`/`npx tsc --noEmit` passés à 0 erreur. **Aucune
+  vérification de bout en bout possible dans cet environnement** — flux
+  OAuth Google, upload Storage, appel de revue Gemini, aucun testable
+  sans navigateur — à tester explicitement par l'utilisateur après
+  exécution de `supabase/accounts_marketplace_migration.sql`.
 
 ## Prochaines étapes (dans l'ordre du fichier de passation d'origine)
 

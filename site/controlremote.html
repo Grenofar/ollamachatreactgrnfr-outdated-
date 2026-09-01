@@ -294,9 +294,79 @@
       --ok: #1f7a45;
     }
   }
+
+  /* -------------------------------------------------------- account bar */
+  #account-bar-mount {
+    position: fixed;
+    top: 16px;
+    right: 20px;
+    z-index: 20;
+  }
+  .account-login-btn { padding: 8px 16px; font-size: 0.85rem; cursor: pointer; }
+  .account-bar { position: relative; }
+  .account-avatar { cursor: pointer; display: block; border: 2px solid var(--border); }
+  .account-menu {
+    position: absolute;
+    top: 42px;
+    right: 0;
+    background: var(--bg-raised);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    padding: 8px;
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+    min-width: 180px;
+    box-shadow: 0 8px 24px rgba(0, 0, 0, 0.3);
+  }
+  .account-menu-header {
+    font-size: 0.8rem;
+    color: var(--text-dim);
+    padding: 6px 8px 8px;
+    border-bottom: 1px solid var(--border);
+    margin-bottom: 4px;
+  }
+  .account-menu a, .account-menu button {
+    background: transparent;
+    border: none;
+    color: var(--text);
+    text-align: left;
+    padding: 8px;
+    border-radius: 6px;
+    font-size: 0.85rem;
+    text-decoration: none;
+    cursor: pointer;
+  }
+  .account-menu a:hover, .account-menu button:hover { background: var(--bg); }
+  .account-onboarding {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    background: var(--bg-raised);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    padding: 8px 10px;
+    font-size: 0.85rem;
+  }
+  .account-onboarding input {
+    background: var(--bg);
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    color: var(--text);
+    padding: 6px 8px;
+    font-size: 0.85rem;
+    width: 140px;
+  }
+  .account-onboarding button { padding: 6px 12px; font-size: 0.85rem; cursor: pointer; }
+  .account-error { color: var(--warn); font-size: 0.78rem; }
+  .device-list { display: flex; flex-direction: column; gap: 6px; }
+  .device-row { display: flex; align-items: center; gap: 8px; background: var(--bg); border-radius: 8px; padding: 6px 10px; }
+  .device-row-name { flex: 1; font-size: 0.85rem; }
+  .device-row input { background: var(--bg-raised); border: 1px solid var(--border); border-radius: 6px; color: var(--text); padding: 4px 6px; font-size: 0.85rem; }
 </style>
 </head>
 <body>
+  <div id="account-bar-mount"></div>
 
   <div class="wrap">
     <a class="back-link" href="/">← Ollama Chat React</a>
@@ -332,8 +402,14 @@
       <div class="status-bar">
         <span class="status-dot" id="status-dot"></span>
         <span class="status-text" id="status-text">Connexion…</span>
+        <button class="btn" id="devices-btn" hidden>Mes appareils</button>
         <button class="btn" id="memory-btn">Mémoire</button>
         <button class="btn btn-danger" id="disconnect-btn">Se déconnecter</button>
+      </div>
+
+      <div class="memory-panel" id="devices-panel" hidden>
+        <div class="memory-empty" id="devices-empty">Aucun appareil enregistré sur ce compte.</div>
+        <div class="device-list" id="devices-list"></div>
       </div>
 
       <div class="tab-bar">
@@ -401,6 +477,9 @@
 
   <script type="module">
     import { createClient } from "https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/+esm";
+    import { renderAccountBar, onProfileChange, listDevices, renameDevice, attachDevice } from "/account.js";
+
+    renderAccountBar(document.getElementById("account-bar-mount"));
 
     const SUPABASE_URL = "https://cihuwuiyziarnghethbi.supabase.co";
     const SUPABASE_ANON_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImNpaHV3dWl5emlhcm5naGV0aGJpIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODgwNjM3OTQsImV4cCI6MjEwMzYzOTc5NH0.AkAe00Vzu4506nHSjh2bl99x5hZUSejZRm3pJwVuGtI";
@@ -459,6 +538,56 @@
     const skillsPanel = document.getElementById("skills-panel");
     const skillsEmpty = document.getElementById("skills-empty");
     const skillsList = document.getElementById("skills-list");
+    const devicesBtn = document.getElementById("devices-btn");
+    const devicesPanel = document.getElementById("devices-panel");
+    const devicesEmpty = document.getElementById("devices-empty");
+    const devicesList = document.getElementById("devices-list");
+
+    let loggedIn = false;
+    let currentCode = null;
+
+    onProfileChange((profile) => {
+      loggedIn = !!profile;
+      devicesBtn.hidden = !loggedIn;
+      if (!loggedIn) devicesPanel.hidden = true;
+    });
+
+    async function renderDevices() {
+      const devices = await listDevices().catch(() => []);
+      devicesList.innerHTML = "";
+      devicesEmpty.hidden = devices.length > 0;
+      for (const d of devices) {
+        const row = document.createElement("div");
+        row.className = "device-row";
+        const nameSpan = document.createElement("span");
+        nameSpan.className = "device-row-name";
+        nameSpan.textContent = d.name + (d.pairing_code === currentCode ? " (actuel)" : "");
+        nameSpan.style.cursor = "pointer";
+        nameSpan.title = "Cliquer pour se connecter à cet appareil";
+        nameSpan.onclick = () => {
+          if (d.pairing_code === currentCode) return;
+          disconnect();
+          codeInput.value = d.pairing_code;
+          pairForm.requestSubmit();
+        };
+        const renameBtn = document.createElement("button");
+        renameBtn.textContent = "Renommer";
+        renameBtn.onclick = async () => {
+          const next = prompt("Nouveau nom pour cet appareil :", d.name);
+          if (next && next.trim()) {
+            await renameDevice(d.id, next.trim()).catch(() => {});
+            renderDevices();
+          }
+        };
+        row.append(nameSpan, renameBtn);
+        devicesList.appendChild(row);
+      }
+    }
+
+    devicesBtn.addEventListener("click", () => {
+      devicesPanel.hidden = !devicesPanel.hidden;
+      if (!devicesPanel.hidden) renderDevices();
+    });
 
     let channel = null;
     let hostOnline = false;
@@ -657,6 +786,7 @@
     // simply not running yet isn't a "wrong guess" and shouldn't burn
     // through the ban counter for someone using their own saved pairing.
     function connectToCode(code, isReconnect) {
+      currentCode = code;
       const ch = supabase.channel("remote:" + code, {
         config: {
           broadcast: { self: false, ack: false },
@@ -676,6 +806,11 @@
           if (timeoutHandle) clearTimeout(timeoutHandle);
           localStorage.setItem(LS_CODE, code);
           localStorage.removeItem(LS_ATTEMPTS);
+          // Auto-registers this pairing under the logged-in account so it
+          // shows up in "Mes appareils" next time, on any browser/device —
+          // upserted by pairing_code, so reconnecting never creates a
+          // duplicate row (see account.js's attachDevice).
+          if (loggedIn) attachDevice(code, "Mon PC").catch(() => {});
         }
       });
 

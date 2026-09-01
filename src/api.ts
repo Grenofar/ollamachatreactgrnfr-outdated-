@@ -215,3 +215,5 @@ export const extractSkillFromTranscript = (
   existingContent: string,
   transcript: string,
 ) => invoke<string>("extract_skill_from_transcript", { apiKey, model, existingContent, transcript });
+export const importMarketplaceExtension = (extensionId: string) =>
+  invoke<Skill>("import_marketplace_extension", { extensionId });

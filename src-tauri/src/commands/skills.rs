@@ -378,3 +378,67 @@ pub async fn extract_skill_from_transcript(
     }
     Ok(out)
 }
+
+// Bridges the new accounts/marketplace system (extensions/extension_versions,
+// see supabase/accounts_marketplace_migration.sql — a real Postgres table
+// with RLS, unlike skills' own controlme_knowledge_shares) into the
+// already-working local skill infrastructure, rather than building a
+// second, separate "installed extension" concept from scratch. Only
+// "controlme"-targeted extensions materialize as a skill right now — a
+// "chat"-targeted one would need to alter the base chat's own system
+// prompt, which isn't safe to do silently on import without the user
+// reviewing it first; not built this pass, scoped out deliberately.
+// extension_id doubles as the "code" a user copies from the site's
+// marketplace page and pastes here — no separate share_code needed since
+// this table's id is already a public, anon-readable UUID.
+#[tauri::command]
+pub async fn import_marketplace_extension(app: AppHandle, extension_id: String) -> Result<Skill, String> {
+    let client = reqwest::Client::new();
+
+    let ext_resp = client
+        .get(format!(
+            "{SUPABASE_URL}/rest/v1/extensions?select=name,description&id=eq.{}",
+            extension_id.trim()
+        ))
+        .header("apikey", SUPABASE_ANON_KEY)
+        .header("Authorization", format!("Bearer {SUPABASE_ANON_KEY}"))
+        .send()
+        .await
+        .map_err(|e| format!("Impossible de contacter Supabase : {e}"))?;
+    if !ext_resp.status().is_success() {
+        return Err(format!("Extension introuvable ({})", ext_resp.status()));
+    }
+    let ext_rows: Vec<Value> = ext_resp.json().await.map_err(|e| e.to_string())?;
+    let ext_row = ext_rows.first().ok_or_else(|| "Aucune extension ne correspond à cet identifiant.".to_string())?;
+    let name = ext_row["name"].as_str().unwrap_or("Extension importée").to_string();
+    let description = ext_row["description"].as_str().unwrap_or("").to_string();
+
+    let version_resp = client
+        .get(format!(
+            "{SUPABASE_URL}/rest/v1/extension_versions?select=manifest&extension_id=eq.{}&order=created_at.desc&limit=1",
+            extension_id.trim()
+        ))
+        .header("apikey", SUPABASE_ANON_KEY)
+        .header("Authorization", format!("Bearer {SUPABASE_ANON_KEY}"))
+        .send()
+        .await
+        .map_err(|e| format!("Impossible de contacter Supabase : {e}"))?;
+    if !version_resp.status().is_success() {
+        return Err(format!("Impossible de récupérer la version ({})", version_resp.status()));
+    }
+    let version_rows: Vec<Value> = version_resp.json().await.map_err(|e| e.to_string())?;
+    let version_row = version_rows.first().ok_or_else(|| "Cette extension n'a aucune version publiée.".to_string())?;
+    let manifest = &version_row["manifest"];
+    let target = manifest["target"].as_str().unwrap_or("controlme");
+    if target != "controlme" {
+        return Err(
+            "Cette extension cible le chat de base — pas encore installable automatiquement, seules les extensions Control Me le sont pour l'instant.".to_string(),
+        );
+    }
+    let content = manifest["system_prompt_addition"].as_str().unwrap_or("").to_string();
+    if content.trim().is_empty() {
+        return Err("Cette extension n'a aucun contenu.".to_string());
+    }
+
+    save_new_skill(app, name, description, content)
+}
