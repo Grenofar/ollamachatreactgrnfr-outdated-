@@ -353,6 +353,14 @@
       </div>
 
       <div id="controlme-panel" hidden>
+        <div class="footer-actions" style="margin-top: 0; margin-bottom: 12px;">
+          <button class="btn" id="skills-toggle-btn">Skills</button>
+        </div>
+        <div class="memory-panel" id="skills-panel" hidden>
+          <div class="memory-empty" id="skills-empty">Aucun skill disponible.</div>
+          <div class="memory-list" id="skills-list"></div>
+        </div>
+
         <div class="screen-frame">
           <img id="screen-img" hidden alt="Écran distant" />
           <span class="screen-placeholder" id="screen-placeholder">En attente de l'écran…</span>
@@ -432,11 +440,17 @@
     const memoryEmpty = document.getElementById("memory-empty");
     const memoryList = document.getElementById("memory-list");
     const memoryClearBtn = document.getElementById("memory-clear-btn");
+    const skillsToggleBtn = document.getElementById("skills-toggle-btn");
+    const skillsPanel = document.getElementById("skills-panel");
+    const skillsEmpty = document.getElementById("skills-empty");
+    const skillsList = document.getElementById("skills-list");
 
     let channel = null;
     let hostOnline = false;
     let capabilities = { chat: true, controlme: true }; // optimistic until the app confirms
     let activeTab = "chat";
+    let skillsLoaded = false;
+    let activeSkillIds = [];
     let modelsLoaded = false;
     let chatMessages = []; // { role, content } — sent whole each time, mirrors the desktop app's own contract
     let chatStreamDiv = null;
@@ -470,6 +484,35 @@
       controlMePanel.hidden = tab !== "controlme";
       if (tab === "chat" && !modelsLoaded && channel) {
         channel.send({ type: "broadcast", event: "list_models", payload: {} });
+      }
+      if (tab === "controlme" && !skillsLoaded && channel) {
+        channel.send({ type: "broadcast", event: "list_skills", payload: {} });
+      }
+    }
+
+    function renderSkills(skills) {
+      skillsLoaded = true;
+      skillsList.innerHTML = "";
+      const has = Array.isArray(skills) && skills.length > 0;
+      skillsEmpty.hidden = has;
+      if (!has) return;
+      for (const s of skills) {
+        const label = document.createElement("label");
+        label.className = "memory-entry";
+        label.style.display = "flex";
+        label.style.gap = "8px";
+        label.style.cursor = "pointer";
+        const checkbox = document.createElement("input");
+        checkbox.type = "checkbox";
+        checkbox.checked = activeSkillIds.includes(s.id);
+        checkbox.addEventListener("change", () => {
+          activeSkillIds = checkbox.checked ? [...activeSkillIds, s.id] : activeSkillIds.filter((id) => id !== s.id);
+        });
+        const text = document.createElement("span");
+        text.textContent = s.name + (s.description ? " — " + s.description : "");
+        label.appendChild(checkbox);
+        label.appendChild(text);
+        skillsList.appendChild(label);
       }
     }
 
@@ -537,6 +580,11 @@
       chatModelSelect.innerHTML = '<option value="">Chargement des modèles…</option>';
       renderMemory([]);
       memoryPanel.hidden = true;
+      skillsLoaded = false;
+      activeSkillIds = [];
+      skillsList.innerHTML = "";
+      skillsEmpty.hidden = false;
+      skillsPanel.hidden = true;
     }
 
     function renderMemory(entries) {
@@ -653,6 +701,8 @@
         renderModels(payload.models);
       });
 
+      ch.on("broadcast", { event: "skills" }, ({ payload }) => renderSkills(payload.skills));
+
       // Chat mirror events (chat_*, prefixed on the Rust side to avoid
       // colliding with Control Me's own step/message/done/error/cancelled
       // names on this shared channel).
@@ -749,7 +799,7 @@
       const text = instructionInput.value.trim();
       if (!text || !channel) return;
       appendMessage("user", text);
-      channel.send({ type: "broadcast", event: "instruction", payload: { text } });
+      channel.send({ type: "broadcast", event: "instruction", payload: { text, active_skill_ids: activeSkillIds } });
       instructionInput.value = "";
       setRunning(true);
     });
@@ -778,6 +828,13 @@
 
     memoryBtn.addEventListener("click", () => {
       memoryPanel.hidden = !memoryPanel.hidden;
+    });
+
+    skillsToggleBtn.addEventListener("click", () => {
+      skillsPanel.hidden = !skillsPanel.hidden;
+      if (!skillsPanel.hidden && !skillsLoaded && channel) {
+        channel.send({ type: "broadcast", event: "list_skills", payload: {} });
+      }
     });
 
     memoryClearBtn.addEventListener("click", () => {

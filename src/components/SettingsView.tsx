@@ -21,7 +21,7 @@ const EXTENSIONS = [
   {
     id: "skills",
     name: "DB skill for Control Me",
-    description: "Skills nommés et décrits, gérés depuis l'espace Extensions.",
+    description: "Skills nommés et décrits, gérés depuis leur propre espace Skills (Sidebar).",
     hasSettings: false,
   },
 ];

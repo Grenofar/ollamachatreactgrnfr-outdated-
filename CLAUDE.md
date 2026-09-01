@@ -56,6 +56,35 @@ pas devenir obsolète.
 - [FAIT] v0.5.7 : Control Me pilotable **à distance depuis le site** (`site/controlremote.html`, lien depuis la landing) — code de jumelage à 12 chiffres généré dans l'app, écran live + chat + mémoire + bouton Arrêter côté navigateur, tout via Supabase **Realtime** (Broadcast + Presence, aucune table Postgres, client WebSocket écrit à la main côté Rust) — voir "Control Me à distance depuis le site (v0.5.7)" et "Mémoire visible depuis le site distant (v0.5.7)" dans Architecture > Control Me, y compris le modèle de sécurité (code = mot de passe partagé, protection anti-brute-force côté navigateur assumée comme non absolue). Réglages **entièrement refaits en page pleine** à sections (Général/Modèles + Installer un modèle/Control Me/Mises à jour), `SettingsModal.tsx` supprimé au profit de `SettingsView.tsx`, bouton "Installer un modèle" déplacé de la Sidebar vers Réglages — voir "Réglages en page pleine (v0.5.7)". Deux correctifs Control Me au passage : `key_down` qui ne faisait rien (bug réel d'enigo, `release_keys_when_dropped`) et `read_ui_elements` qui n'apportait plus son gain de vitesse (capturait quand même un screenshot inutile) — voir "Correctifs de vitesse et de fiabilité (v0.5.7)". Nouveau **mode de perception "Windows UI"** (toggle Réglages > Control Me, `capture` vs `windows_ui`) : `computer_use` entièrement retiré et remplacé par des outils `function` personnalisés reproduisant le même jeu d'actions — plus aucune capture d'écran envoyée, juste du texte d'accessibilité, mais perte du garde-fou `require_confirmation` (propre au protocole `computer_use`) — voir "Mode de perception Windows UI (v0.5.7)". Nouvelle **extension "DB ready for Control Me"** (espace Extensions dédié, Sidebar) : dossier local caché (`.txt`/`.json`/`.sql` uniquement, validation qui refuse le dossier en bloc si un seul fichier a un autre type) que Control Me peut lire comme base de connaissances via un nouvel outil `read_knowledge_base`, plus un flux de **publication publique via Supabase** (première écriture `anon` de tout ce projet, jusqu'ici strictement lecture seule — RLS et implications documentées explicitement) — voir "Base de connaissances Control Me (v0.5.7)".
 - [FAIT] v0.5.8 : correctif critique — générer un code de jumelage à distance (ou simplement relancer l'app avec un code déjà enregistré) faisait planter l'app **définitivement**, à chaque lancement, signalé par l'utilisateur juste après la publication de la v0.5.7. `remote.rs` appelait `tokio::spawn` directement au lieu de `tauri::async_runtime::spawn` ; appelé depuis le thread principal (hook `setup()`, via `resume_remote_on_startup`), `tokio::spawn` panique faute de runtime "entré" sur ce thread — panic sur le thread principal = tout le processus meurt, et comme le code reste dans `settings.json`, ça se reproduisait à chaque démarrage — voir "Panic de démarrage sur le thread principal (v0.5.8)" dans Architecture > Control Me. Extensions restructuré en hub léger : Codex et Control Me apparaissent maintenant comme des cartes dans l'espace Extensions (bouton "Ouvrir", en plus de leur bouton Sidebar dédié qui reste) avec un interrupteur Activer/Désactiver réversible (masque juste l'entrée Sidebar, rien n'est réellement désinstallé — un seul binaire, pas de vrais modules indépendants), plus un bouton unique "Tout mettre à jour" (pas de fausse mise à jour par extension, une seule vraie mise à jour existe : l'app entière) — voir "Extensions : hub léger (v0.5.8)" dans Architecture. Correctif CSS global : plusieurs boutons ajoutés au fil des dernières versions (approbation inline Codex, en-tête/confirmation Control Me, tout l'espace Extensions) n'étaient couverts par aucun sélecteur et s'affichaient avec le chrome brut du navigateur — corrigé par un style de base sur l'élément `button` global (`:where()` pour les variantes `:hover`/`:disabled`/`:active`, afin de ne jamais l'emporter sur un sélecteur de classe plus spécifique déjà existant) — voir "Correctif CSS boutons non stylés (v0.5.8)" dans Architecture.
 - [FAIT] v0.6.0 : session de travail autonome de nuit (l'utilisateur a donné une longue liste de demandes puis est allé se coucher, en demandant explicitement de poser toute question tout de suite ou de continuer seul sinon — aucune ambiguïté bloquante identifiée, tout implémenté avec des décisions de scope documentées ci-dessous plutôt que deviné en silence). Contenu, dans l'ordre de priorité suivi : (1) site distant en 404 — lien `/controlremote` sans extension, `cleanUrls` manquant dans `vercel.json`, corrigé ; (2) **vrai bug Ctrl+S dans Codex** trouvé (closure figée dans `EditorPane.tsx`, pas juste le souci WebView2 déjà corrigé en v0.3.4 — voir "Ctrl+S enregistrait du contenu périmé (v0.6.0)") ; (3) le petit cmd qui flashait au démarrage — `get_system_ram_gb` (et les autres process PowerShell) sans `CREATE_NO_WINDOW`, corrigé ; (4) **Réglages/Extensions restructurés** : Control Me n'a plus sa propre section Réglages, ses réglages (modèle/clé API/mode de perception) sont maintenant sous une icône ⚙ sur sa carte dans Réglages > Extensions, qui gagne aussi le bouton "Tout mettre à jour" (déplacé depuis l'espace Extensions, qui gagne à la place une recherche) et une case pour désactiver le popup de mise à jour — voir "Réglages/Extensions restructurés (v0.6.0)" ; (5) **refonte complète de "DB ready" en "DB skill for Control Me"** : skills multiples nommés+décrits (plus un seul tas de fichiers), sélection de quel(s) skill(s) fournir avant une session Control Me, bouton "Extraire les informations" (l'IA résume une session passée en mise à jour du skill), navigateur de skills publics en plus du code, "Désinstaller" qui supprime réellement le fichier local (contrairement à Codex/Control Me) — voir "DB skill for Control Me (v0.6.0)" ; (6) **refonte complète du contrôle à distance** : un seul code de jumelage (Réglages > Appareils connectés, plus de section dédiée à Control Me) donne accès à un chat avec le modèle Ollama du PC **et** à Control Me (si activé) depuis le même onglet du site, relayés sur le même canal Realtime — voir "Chat distant unifié avec Control Me (v0.6.0)" ; (7) mode Windows UI branché automatiquement pour toute session Control Me déclenchée à distance, avec vérification explicite qu'aucun appel LLM n'a lieu pour la simple lecture de l'interface — voir la même section ; (8) markdown rendu dans les entrées "étape" de Control Me (texte brut avant, astérisques/backticks affichés tels quels). **Scope volontairement pas couvert, documenté plutôt que deviné** : pas de vrai système générique d'espace Sidebar par extension installée (juste l'espace Skills existant, bien organisé) ; pas de système de skills pour Codex (uniquement Control Me, comme nommé) ; passe d'animations générale limitée aux nouveaux panneaux (réutilisation de `panel-open` existant), pas une repasse complète de l'app.
+- [FAIT] v0.6.1 : **le contrôle à distance depuis le site n'avait, en réalité,
+  jamais fonctionné depuis son introduction en v0.5.7** — signalé par
+  l'utilisateur ("même si je mets le bon code, ça dit que le code est
+  incorrect"), corrigé et **vérifié empiriquement pour de vrai cette
+  fois** (pas juste par lecture de code) en connectant un client
+  `@supabase/supabase-js` réel à côté d'une reproduction du client Rust
+  et en diffant ce que chacun envoie réellement sur le fil. Trois bugs
+  distincts dans `remote.rs`, tous corrigés : mauvaise version de
+  protocole (`vsn=1.0.0` au lieu de `2.0.0`, le join n'obtenait jamais la
+  moindre réponse) ; payload de join incomplet (`postgres_changes`/
+  `private` manquants, silencieusement rejeté) ; **aucun message de
+  présence "track" explicite envoyé** après le join (l'app rejoignait le
+  canal mais n'apparaissait jamais dans la présence, donc "hôte" restait
+  invisible pour le site) ; et **les broadcasts utilisent un format
+  binaire propriétaire**, pas du JSON texte comme tout le reste du
+  protocole — ni l'envoi ni la réception ne géraient ce format, donc même
+  une fois la connexion établie, rien (écran, chat, étapes Control Me)
+  n'aurait pu passer. Voir "Le vrai bug du contrôle à distance : protocole
+  Realtime jamais fonctionnel (v0.6.1)" dans Architecture pour le détail
+  technique complet, la méthode de découverte, et la portée de ce que ça
+  implique pour les versions précédentes. Deux demandes complémentaires
+  traitées dans la même passe : "DB skill for Control Me" a maintenant son
+  propre espace dédié dans la Sidebar (`SkillsView.tsx`, extrait de
+  `ExtensionsView.tsx` qui ne garde plus que les cartes Codex/Control Me)
+  plutôt que d'être une carte parmi d'autres ; et la sélection de skill(s)
+  avant une session Control Me, jusque-là seulement disponible dans l'app
+  locale, fonctionne maintenant aussi depuis l'onglet Control Me du site
+  (nouveau broadcast `list_skills`/`skills`, case à cocher par skill,
+  inclus dans le broadcast `instruction`).
 
 ## Architecture
 
@@ -1599,6 +1628,168 @@ Extensions restructurés (v0.6.0)" pour le renommage de la section en
   bascule automatique vers l'onglet Chat si Control Me est désactivé,
   onglet Control Me toujours fonctionnel comme avant.
 
+### Le vrai bug du contrôle à distance : protocole Realtime jamais fonctionnel (v0.6.1)
+
+Retour utilisateur après premier vrai test : "ya un bug meme si je mets le
+bon code, ca mets comme quoi le code est incorrect". Jusqu'ici, chaque
+version touchant `remote.rs` (v0.5.7 pour sa création, v0.5.8 pour le
+correctif de crash, v0.6.0 pour l'ajout du chat) n'avait pu être
+**"vérifiée" que par lecture attentive de la documentation Realtime** —
+jamais testée contre un vrai client, faute d'accès GUI dans cet
+environnement. Ce test utilisateur était la toute première confrontation
+réelle du protocole, et il a révélé que **la fonctionnalité entière
+n'avait jamais marché**, depuis son introduction.
+
+**Méthode de découverte — la différence cette fois** : plutôt que de
+continuer à deviner à partir de la doc, installation dans le scratchpad
+d'une vraie instance de `@supabase/supabase-js` (via `npm install`) pour
+servir de référence de comportement, et écriture d'un client WebSocket
+brut en Node (l'API `WebSocket` native, disponible depuis Node 22+)
+reproduisant *exactement* ce que `remote.rs` envoie sur le fil. Les deux
+tournés l'un à côté de l'autre contre le vrai serveur Supabase Realtime
+du projet, en interceptant et loggant chaque trame envoyée/reçue de
+chaque côté (y compris en patchant `globalThis.WebSocket` pour sniffer ce
+que la vraie librairie envoie réellement, plutôt que de faire confiance
+à sa documentation). Quatre bugs distincts trouvés et corrigés, chacun
+vérifié individuellement en le reproduisant puis en confirmant qu'il
+disparaît :
+
+1. **`vsn=1.0.0` au lieu de `vsn=2.0.0`** dans l'URL de connexion
+   WebSocket. Un `phx_join` envoyé avec `vsn=1.0.0` est accepté par le
+   serveur au niveau TCP/WebSocket (la connexion reste ouverte,
+   `readyState` passe bien à `OPEN`) mais **n'obtient jamais la moindre
+   réponse** — pas de `phx_reply`, pas d'erreur, pas de fermeture,
+   silence total y compris après 20+ secondes d'attente. Repéré en
+   sniffant l'URL que le vrai client `supabase-js` construit lui-même :
+   `vsn=2.0.0`, jamais `1.0.0` — la doc/les souvenirs qui avaient mené au
+   choix initial de `1.0.0` étaient simplement obsolètes ou faux.
+2. **Payload de join incomplet.** Même avec `vsn=2.0.0`, un payload de
+   join sans les champs `postgres_changes: []` et `private: false` (que
+   `remote.rs` n'envoyait pas) obtient le même silence total qu'avec le
+   mauvais `vsn` — le serveur semble exiger la présence de ces champs
+   pour traiter le join, même s'ils ne servent à rien pour un canal
+   Broadcast/Presence pur sans Postgres Changes. Corrigé en envoyant
+   exactement le payload que le vrai client envoie (sniffé, pas deviné) :
+   `{broadcast: {...}, presence: {enabled: false, key: "host"}, postgres_changes: [], private: false}`
+   — noter au passage que `presence.enabled` vaut `false` chez le vrai
+   client (pas `true` comme envoyé jusqu'ici), voir point suivant pour
+   pourquoi ce n'est pas contradictoire.
+3. **Aucun message de présence "track" explicite envoyé après le join.**
+   Le champ `presence.key` dans le payload de join réserve seulement une
+   *identité* pour la présence — il ne fait strictement rien tout seul.
+   Le vrai client envoie un message séparé après confirmation du join :
+   `[join_ref, ref, topic, "presence", {type:"presence", event:"track", payload:{...}}]`.
+   Sans ce message, `run_connection` rejoignait le canal avec succès
+   (une fois les deux bugs précédents corrigés) mais **n'apparaissait
+   jamais dans `presence_diff`/`presence_state`** — donc `hostOnline`
+   restait `false` indéfiniment côté site, qui abandonnait après le
+   timeout de 8s et affichait "code invalide ou appareil hors ligne" —
+   **exactement le symptôme rapporté**, alors que le code était pourtant
+   correct. `run_connection` attend maintenant explicitement le
+   `phx_reply` du join (boucle avec timeout de 10s) avant d'envoyer ce
+   message de track — même séquencement que le vrai client.
+4. **Les broadcasts utilisent un format binaire propriétaire, pas du
+   JSON texte.** Le plus gros des quatre, et celui qui aurait cassé
+   *tout le reste* même après avoir corrigé les trois premiers : lire le
+   vrai code source de `@supabase/realtime-js`
+   (`serializer.ts`, installé dans le scratchpad, pas deviné) révèle que
+   `channel.send({type:"broadcast", ...})` n'envoie **jamais** de JSON
+   texte — toujours une trame binaire "userBroadcastPush" (kind `3`) :
+   un en-tête de 7 octets (kind, puis les longueurs en octets de
+   join_ref/ref/topic/event/metadata, puis le type d'encodage) suivi des
+   octets bruts de chaque champ puis du payload JSON. Et en réception, le
+   serveur relaie un broadcast aux autres abonnés dans un format binaire
+   **différent** ("userBroadcast", kind `4`, sans join_ref/ref puisque
+   non pertinents pour un abonné qui n'a pas poussé le message). Une
+   trame JSON texte portant `event: "broadcast"` est tout simplement
+   **ignorée sans erreur** par le serveur — jamais délivrée à personne.
+   `handle_incoming` ne traitait jusque-là que `Message::Text`
+   (`let Message::Text(text) = msg else { return };`) — toute trame
+   binaire entrante (donc **tous** les broadcasts envoyés par le site :
+   `instruction`, `stop`, `chat_message`...) était silencieusement
+   jetée. Et `build_broadcast` construisait du JSON texte — donc tout ce
+   que l'app tentait d'envoyer au site (écran, étapes, messages,
+   mémoire...) ne partait jamais nulle part non plus. Corrigé par
+   `build_broadcast` (encodage kind 3) et un nouveau
+   `decode_broadcast_binary` (décodage kind 4) dans `remote.rs`, tous
+   deux vérifiés **byte pour byte** en comparant leur sortie/entrée avec
+   les vraies trames capturées du client officiel — pas juste "ça
+   compile".
+
+**Vérification finale, complète et bidirectionnelle, effectuée pour de
+vrai** (pas juste "par lecture de code" comme pour tout le reste de cette
+fonctionnalité jusqu'ici) : un client Node reproduisant exactement le
+comportement corrigé de `remote.rs` connecté en parallèle d'un vrai
+client `supabase-js`, contre le vrai serveur Supabase Realtime du projet
+— présence confirmée dans les deux sens (`{"host":[...], "viewer-final":[...]}`),
+broadcast host→viewer reçu et décodé correctement par le vrai client
+(`ch.on("broadcast", {event:"step"}, ...)` déclenché avec le bon
+payload), broadcast viewer→host décodé correctement par la reproduction
+Rust-équivalente
+(`{"event":"instruction","payload":{"text":"bonjour depuis le viewer"}}`,
+exactement ce que le vrai client avait envoyé). C'est la toute première
+fois dans ce projet que cette fonctionnalité est confirmée fonctionner de
+bout en bout autrement que par la lecture de sa propre implémentation.
+
+**Portée de ce que ça implique** : toutes les versions depuis la v0.5.7
+documentaient "aucune vérification de bout en bout possible dans cet
+environnement" pour Control Me à distance — ce n'était pas une prudence
+excessive, c'était littéralement vrai, et la fonctionnalité n'a jamais
+marché avant ce correctif, malgré plusieurs passes de "vérification par
+lecture de documentation" qui semblaient raisonnables sur le moment.
+**Leçon pour ce projet** : pour un protocole réseau bas niveau
+réimplémenté à la main (plutôt qu'une librairie officielle), la
+documentation ne suffit pas — quand une vraie implémentation de
+référence existe (ici `@supabase/supabase-js`), l'installer et sniffer
+ce qu'elle envoie réellement sur le fil est la seule vérification qui
+compte, dès que c'est possible de le faire (ça l'était depuis le début
+dans cet environnement — `npm install` fonctionne très bien en dehors du
+build Tauri lui-même — mais ça n'avait jamais été fait avant ce
+correctif).
+
+`cargo check` passé à 0 erreur après chaque correctif. Deux demandes
+complémentaires traitées dans la même passe, une fois le protocole
+réparé et vérifiable :
+
+- **Skills dans leur propre espace Sidebar** (`src/components/SkillsView.tsx`,
+  nouveau) : tout le CRUD de skills (créer/éditer/publier/parcourir/
+  importer/extraire) déplacé hors de `ExtensionsView.tsx` (qui ne garde
+  plus que les cartes Codex/Control Me + leur interrupteur/recherche)
+  vers son propre bouton Sidebar "Skills" — retour explicite de
+  l'utilisateur ("db skill for control me doit etre une interface
+  accessible depuis l'espace ou se trouve codex et parametre"), même
+  leçon déjà apprise une fois avec "DB ready" avant sa refonte en
+  skills (voir "Extensions : vrai espace Sidebar" plus haut) —
+  réappliquée un niveau plus haut cette fois : une carte parmi d'autres
+  dans un espace partagé reste trop peu visible pour une fonctionnalité
+  avec sa propre interface de création.
+- **Sélection de skill(s) depuis le site** : jusqu'ici local-app-only
+  (voir "DB skill for Control Me (v0.6.0)" — décision de scope
+  explicitement révisée ici). Nouveau broadcast entrant `list_skills`
+  (site → app, `handle_broadcast_event` appelle directement
+  `skills::list_skills`, déjà une commande Tauri ordinaire donc
+  appelable sans IPC) et sortant `skills` (réponse, liste
+  id/nom/description). Le payload du broadcast `instruction` gagne un
+  champ `active_skill_ids` (tableau d'ids), lu côté Rust et transmis à
+  `run_control_me_core` exactement comme le fait déjà `ControlMeView.tsx`
+  localement — `spawn_remote_instruction` et `run_control_me_core`
+  n'avaient besoin d'aucun changement de logique, juste de faire
+  transiter ce paramètre au lieu de toujours passer un vecteur vide.
+  Site (`site/controlremote.html`) : bouton "Skills" dans l'onglet
+  Control Me, panneau à cases à cocher (réutilise le style visuel
+  `.memory-panel`/`.memory-entry` déjà en place), demandé à l'ouverture
+  de l'onglet ou du panneau si pas encore chargé.
+
+**Aucune vérification GUI de bout en bout possible dans cet
+environnement** pour la partie app-locale de ces deux derniers points
+(espace Skills, sélection distante) — seul le protocole Realtime
+lui-même a pu être vérifié empiriquement cette fois, pas l'interface
+React/le rendu réel. À tester par l'utilisateur : jumelage (devrait
+maintenant réussir avec le bon code), écran + chat + Control Me
+fonctionnels sur le site, sélection de skill(s) visible et effective
+dans l'onglet Control Me du site, nouvel espace Skills dans la Sidebar de
+l'app.
+
 ### Les 6 outils de l'agent
 1. `read_file` — lecture texte (limite 5 Mo), chemin absolu
 2. `list_dir` — listing un niveau, chemin absolu
@@ -2524,6 +2715,42 @@ l'utilisateur confirme qu'elle est bien dans `.env` local.
   simultanément tous absents ici) — à tester explicitement par
   l'utilisateur au réveil, point par point (chaque section Architecture
   liste précisément quoi vérifier).
+- **2026-09-01** — v0.6.1 : retour utilisateur juste après le réveil et
+  premier vrai test du contrôle à distance ("ya un bug meme si je mets
+  le bon code, ca mets comme quoi le code est incorrect") — a mené à la
+  découverte que **cette fonctionnalité entière n'avait jamais
+  fonctionné depuis son introduction en v0.5.7**, malgré plusieurs
+  passes de "vérification" par lecture de documentation à chaque
+  version qui l'a touchée depuis. Cette fois, vérification empirique
+  réelle : installation d'une vraie instance de `@supabase/supabase-js`
+  dans le scratchpad pour servir de référence de comportement, client
+  WebSocket brut en Node reproduisant `remote.rs`, les deux tournés
+  côte à côte contre le vrai serveur Realtime en sniffant chaque trame.
+  Quatre bugs distincts trouvés et corrigés : mauvaise version de
+  protocole (`vsn=1.0.0` au lieu de `2.0.0`), payload de join
+  incomplet, absence de message de présence "track" explicite après le
+  join, et le plus gros — les broadcasts utilisent un format binaire
+  propriétaire que ni l'envoi ni la réception ne géraient (tout passait
+  en JSON texte, silencieusement ignoré par le serveur). Voir "Le vrai
+  bug du contrôle à distance : protocole Realtime jamais fonctionnel
+  (v0.6.1)" dans Architecture pour le détail technique complet et la
+  méthode de découverte. Vérifié de bout en bout pour de vrai cette
+  fois (présence + broadcast dans les deux sens, contre le vrai
+  serveur) — pas juste "ça compile". Deux demandes complémentaires
+  traitées dans la même passe : "DB skill for Control Me" a gagné son
+  propre espace Sidebar (`SkillsView.tsx`, extrait d'`ExtensionsView.tsx`)
+  au lieu d'être une carte parmi d'autres — retour utilisateur direct
+  sur ce point, même leçon déjà apprise une fois avec "DB ready" ; et
+  la sélection de skill(s) avant une session Control Me fonctionne
+  maintenant aussi depuis le site (jusque-là local-app-only par
+  décision de scope explicite en v0.6.0, révisée ici sur demande).
+  `cargo check`/`npx tsc --noEmit` passés à 0 erreur. **Seule la partie
+  protocole Realtime a pu être vérifiée empiriquement dans cet
+  environnement** (via le harnais Node) — l'espace Skills et le
+  panneau de sélection sur le site restent non testés visuellement
+  (pas d'accès GUI) — à confirmer par l'utilisateur : jumelage réussi
+  avec le bon code, écran/chat/Control Me fonctionnels sur le site,
+  sélection de skill(s) visible et effective depuis le site.
 
 ## Prochaines étapes (dans l'ordre du fichier de passation d'origine)
 

@@ -140,14 +140,61 @@ fn build_heartbeat(msg_ref: &str) -> Message {
     Message::Text(json!([Value::Null, msg_ref, "phoenix", "heartbeat", {}]).to_string().into())
 }
 
-fn build_broadcast(join_ref: &str, msg_ref: &str, topic: &str, event: &str, payload: Value) -> Message {
-    build_frame(
-        join_ref,
-        msg_ref,
-        topic,
-        "broadcast",
-        json!({ "event": event, "type": "broadcast", "payload": payload }),
-    )
+// Broadcast pushes use a dedicated BINARY frame format ("userBroadcastPush",
+// kind 3), not a plain JSON text push like every other message type here —
+// a real thing discovered only by reading @supabase/realtime-js's actual
+// serializer.ts source and diffing it against a hand-rolled JSON attempt
+// that the server silently swallowed (no error, just never delivered).
+// Layout: kind(1) + joinRef_len(1) + ref_len(1) + topic_len(1) +
+// event_len(1) + metadata_len(1) + encoding(1) = 7-byte header, then the
+// raw bytes of joinRef/ref/topic/event/metadata back to back, then the
+// JSON-encoded payload. Metadata is always empty here (we never configure
+// allowedMetadataKeys, matching the client's own default of `[]`).
+fn build_broadcast(join_ref: &str, msg_ref: &str, topic: &str, event: &str, payload: &Value) -> Message {
+    let join_ref_b = join_ref.as_bytes();
+    let ref_b = msg_ref.as_bytes();
+    let topic_b = topic.as_bytes();
+    let event_b = event.as_bytes();
+    let payload_json = serde_json::to_vec(payload).unwrap_or_default();
+
+    let mut bytes = Vec::with_capacity(7 + join_ref_b.len() + ref_b.len() + topic_b.len() + event_b.len() + payload_json.len());
+    bytes.push(3u8); // KINDS.userBroadcastPush
+    bytes.push(join_ref_b.len() as u8);
+    bytes.push(ref_b.len() as u8);
+    bytes.push(topic_b.len() as u8);
+    bytes.push(event_b.len() as u8);
+    bytes.push(0u8); // metadata length — always empty
+    bytes.push(1u8); // JSON_ENCODING
+    bytes.extend_from_slice(join_ref_b);
+    bytes.extend_from_slice(ref_b);
+    bytes.extend_from_slice(topic_b);
+    bytes.extend_from_slice(event_b);
+    bytes.extend_from_slice(&payload_json);
+    Message::Binary(bytes.into())
+}
+
+// The server's own outgoing broadcast frames use a DIFFERENT binary layout
+// (kind 4, "userBroadcast") — no joinRef/ref fields at all, since a
+// delivered broadcast doesn't need them. Layout: kind(1) + topic_len(1) +
+// event_len(1) + metadata_len(1) + encoding(1) = 5-byte header, then
+// topic/event/metadata bytes, then the JSON payload.
+fn decode_broadcast_binary(bytes: &[u8]) -> Option<(String, Value)> {
+    if bytes.first() != Some(&4u8) || bytes.len() < 5 {
+        return None;
+    }
+    let topic_len = bytes[1] as usize;
+    let event_len = bytes[2] as usize;
+    let metadata_len = bytes[3] as usize;
+    // topic is always our own single channel's own topic here — skipped
+    // over rather than decoded, callers don't need it.
+    let mut offset = 5usize.checked_add(topic_len)?;
+    let event_end = offset.checked_add(event_len)?;
+    let event = String::from_utf8(bytes.get(offset..event_end)?.to_vec()).ok()?;
+    offset = event_end.checked_add(metadata_len)?;
+    let payload_bytes = bytes.get(offset..)?;
+    let payload: Value =
+        if payload_bytes.is_empty() { Value::Null } else { serde_json::from_slice(payload_bytes).unwrap_or(Value::Null) };
+    Some((event, payload))
 }
 
 fn extract_viewer_keys(payload: &Value) -> HashSet<String> {
@@ -177,7 +224,7 @@ fn emit_viewer_status(app: &AppHandle, connected: bool) {
 fn push_memory(app: &AppHandle, out_tx: &UnboundedSender<Message>, join_ref: &str, ref_counter: &Arc<AtomicU64>, topic: &str) {
     let entries = load_memory(app).unwrap_or_default();
     let r = ref_counter.fetch_add(1, Ordering::SeqCst).to_string();
-    let _ = out_tx.send(build_broadcast(join_ref, &r, topic, "memory", json!({ "entries": entries })));
+    let _ = out_tx.send(build_broadcast(join_ref, &r, topic, "memory", &json!({ "entries": entries })));
 }
 
 // Tells a freshly-joined site viewer which tabs it can actually offer —
@@ -195,7 +242,7 @@ fn push_capabilities(app: &AppHandle, out_tx: &UnboundedSender<Message>, join_re
         &r,
         topic,
         "capabilities",
-        json!({ "chat": true, "controlme": controlme_enabled }),
+        &json!({ "chat": true, "controlme": controlme_enabled }),
     ));
 }
 
@@ -219,21 +266,82 @@ impl Drop for MirrorGuard<'_> {
 
 async fn run_connection(app: &AppHandle, topic: &str) -> Result<(), String> {
     let host = SUPABASE_URL.trim_start_matches("https://").trim_start_matches("http://");
-    let url = format!("wss://{host}/realtime/v1/websocket?apikey={SUPABASE_ANON_KEY}&vsn=1.0.0");
+    // vsn=2.0.0, not 1.0.0 — the real bug behind "code correct mais dit
+    // incorrect" (v0.6.0 hotfix). Confirmed empirically, not from docs: a
+    // vsn=1.0.0 join to this Supabase Realtime instance gets connected but
+    // never receives a single reply frame for phx_join (no error, no
+    // timeout close, just silence) — so the host side never actually
+    // joins, presence never shows "host", and every viewer join times out
+    // looking like a wrong code. A raw WebSocket join with the exact same
+    // payload succeeds instantly once vsn=2.0.0 is used instead — verified
+    // by connecting a hand-rolled client alongside the real
+    // @supabase/supabase-js library and diffing what each actually sends
+    // on the wire, not assumed from documentation this time.
+    let url = format!("wss://{host}/realtime/v1/websocket?apikey={SUPABASE_ANON_KEY}&vsn=2.0.0");
     let (ws_stream, _) = connect_async(&url).await.map_err(|e| e.to_string())?;
     let (mut write, mut read) = ws_stream.split();
 
     let ref_counter = Arc::new(AtomicU64::new(1));
     let join_ref = ref_counter.fetch_add(1, Ordering::SeqCst).to_string();
 
+    // postgres_changes/private, and presence.enabled: false, are not
+    // optional extras — a join payload missing them (as this one originally
+    // did) gets silently dropped by the server with zero reply, same
+    // failure mode as the wrong vsn above. Matched byte-for-byte against
+    // what the real client actually sends (sniffed on the wire), not
+    // assumed from the protocol docs.
     let join_payload = json!({
         "config": {
             "broadcast": { "ack": false, "self": false },
-            "presence": { "enabled": true, "key": HOST_PRESENCE_KEY }
+            "presence": { "enabled": false, "key": HOST_PRESENCE_KEY },
+            "postgres_changes": [],
+            "private": false
         }
     });
     write
         .send(build_frame(&join_ref, &join_ref, topic, "phx_join", join_payload))
+        .await
+        .map_err(|e| e.to_string())?;
+
+    // The join payload's presence.key only reserves our identity for
+    // presence — it does NOT itself make us show up in presence_state/
+    // presence_diff. That requires a separate explicit "track" push after
+    // the join succeeds, exactly like the real client's channel.track()
+    // does — without this, the host joins fine but never actually appears
+    // in presence, so every viewer times out waiting for it exactly as if
+    // the code were wrong. Waits for the join's own phx_reply first (same
+    // sequencing the real client uses) rather than sending track blind.
+    let join_deadline = tokio::time::Instant::now() + Duration::from_secs(10);
+    loop {
+        let remaining = join_deadline.saturating_duration_since(tokio::time::Instant::now());
+        if remaining.is_zero() {
+            return Err("Timeout en attendant la confirmation de connexion Realtime (phx_join)".to_string());
+        }
+        let next = match tokio::time::timeout(remaining, read.next()).await {
+            Ok(Some(Ok(m))) => m,
+            Ok(Some(Err(e))) => return Err(e.to_string()),
+            Ok(None) => return Err("Connexion Realtime fermée avant confirmation du join".to_string()),
+            Err(_) => return Err("Timeout en attendant la confirmation de connexion Realtime (phx_join)".to_string()),
+        };
+        let Message::Text(text) = &next else { continue };
+        let Ok(parsed) = serde_json::from_str::<Value>(text) else { continue };
+        let Some(arr) = parsed.as_array() else { continue };
+        if arr.len() == 5 && arr[1].as_str() == Some(join_ref.as_str()) && arr[3] == "phx_reply" {
+            if arr[4]["status"] == "ok" {
+                break;
+            }
+            return Err(format!("Le serveur Realtime a refusé la connexion : {}", arr[4]));
+        }
+    }
+    let track_ref = ref_counter.fetch_add(1, Ordering::SeqCst).to_string();
+    write
+        .send(build_frame(
+            &join_ref,
+            &track_ref,
+            topic,
+            "presence",
+            json!({ "type": "presence", "event": "track", "payload": { "role": "host" } }),
+        ))
         .await
         .map_err(|e| e.to_string())?;
 
@@ -258,7 +366,7 @@ async fn run_connection(app: &AppHandle, topic: &str) -> Result<(), String> {
     let mirror_app = app.clone();
     let mirror = move |event_name: &'static str, payload: Value| {
         let r = mirror_ref_counter.fetch_add(1, Ordering::SeqCst).to_string();
-        let _ = mirror_out_tx.send(build_broadcast(&mirror_join_ref, &r, &mirror_topic, event_name, payload));
+        let _ = mirror_out_tx.send(build_broadcast(&mirror_join_ref, &r, &mirror_topic, event_name, &payload));
         if matches!(event_name, "done" | "error" | "cancelled") {
             push_memory(&mirror_app, &mirror_out_tx, &mirror_join_ref, &mirror_ref_counter, &mirror_topic);
         }
@@ -311,7 +419,7 @@ async fn broadcast_frame_if_viewer(
         return;
     };
     let r = ref_counter.fetch_add(1, Ordering::SeqCst).to_string();
-    let frame = build_broadcast(join_ref, &r, topic, "frame", json!({ "jpeg_base64": jpeg }));
+    let frame = build_broadcast(join_ref, &r, topic, "frame", &json!({ "jpeg_base64": jpeg }));
     let _ = write.send(frame).await;
 }
 
@@ -324,6 +432,19 @@ fn handle_incoming(
     join_ref: &str,
     ref_counter: &Arc<AtomicU64>,
 ) {
+    // Every broadcast the site sends (channel.send({type:"broadcast",...}))
+    // goes out from @supabase/supabase-js as a BINARY "userBroadcastPush"
+    // frame, not JSON text — see build_broadcast's doc comment. Every other
+    // incoming message type (phx_reply, presence_state, presence_diff)
+    // stays plain JSON text. Both paths converge on the same
+    // handle_broadcast_event once unwrapped, so the six broadcast branches
+    // below don't need to exist twice.
+    if let Message::Binary(bytes) = &msg {
+        if let Some((inner_event, inner_payload)) = decode_broadcast_binary(bytes) {
+            handle_broadcast_event(app, topic, &inner_event, &inner_payload, out_tx, join_ref, ref_counter);
+        }
+        return;
+    }
     let Message::Text(text) = msg else { return };
     let Ok(parsed) = serde_json::from_str::<Value>(text.as_str()) else { return };
     let Some(arr) = parsed.as_array() else { return };
@@ -353,51 +474,70 @@ fn handle_incoming(
                 push_capabilities(app, out_tx, join_ref, ref_counter, topic);
             }
         }
+        // A JSON-text "broadcast" event would only ever arrive here from a
+        // client not using @supabase/supabase-js's default encoding (none
+        // do today) — kept as a harmless fallback rather than assumed dead.
         "broadcast" => {
-            let inner_event = payload["event"].as_str().unwrap_or("");
-            match inner_event {
-                "instruction" => {
-                    let text = payload["payload"]["text"].as_str().unwrap_or("").trim().to_string();
-                    if !text.is_empty() {
-                        spawn_remote_instruction(
-                            app.clone(),
-                            topic.to_string(),
-                            join_ref.to_string(),
-                            ref_counter.clone(),
-                            out_tx.clone(),
-                            text,
-                        );
-                    }
-                }
-                "stop" => {
-                    app.state::<ControlMeCancelFlag>().0.store(true, Ordering::SeqCst);
-                }
-                "clear_memory" => {
-                    let _ = save_memory(app, &[]);
-                    push_memory(app, out_tx, join_ref, ref_counter, topic);
-                }
-                "chat_message" => {
-                    let messages: Vec<ChatMessage> =
-                        serde_json::from_value(payload["payload"]["messages"].clone()).unwrap_or_default();
-                    let model = payload["payload"]["model"].as_str().unwrap_or("").trim().to_string();
-                    if !messages.is_empty() && !model.is_empty() {
-                        spawn_remote_chat(app.clone(), model, messages);
-                    }
-                }
-                "chat_stop" => {
-                    app.state::<ChatCancelFlag>().0.store(true, Ordering::SeqCst);
-                }
-                "list_models" => {
-                    spawn_remote_list_models(
-                        app.clone(),
-                        topic.to_string(),
-                        join_ref.to_string(),
-                        ref_counter.clone(),
-                        out_tx.clone(),
-                    );
-                }
-                _ => {}
+            let inner_event = payload["event"].as_str().unwrap_or("").to_string();
+            let inner_payload = payload["payload"].clone();
+            handle_broadcast_event(app, topic, &inner_event, &inner_payload, out_tx, join_ref, ref_counter);
+        }
+        _ => {}
+    }
+}
+
+fn handle_broadcast_event(
+    app: &AppHandle,
+    topic: &str,
+    inner_event: &str,
+    inner_payload: &Value,
+    out_tx: &UnboundedSender<Message>,
+    join_ref: &str,
+    ref_counter: &Arc<AtomicU64>,
+) {
+    match inner_event {
+        "instruction" => {
+            let text = inner_payload["text"].as_str().unwrap_or("").trim().to_string();
+            let active_skill_ids: Vec<String> = inner_payload["active_skill_ids"]
+                .as_array()
+                .map(|arr| arr.iter().filter_map(|v| v.as_str().map(|s| s.to_string())).collect())
+                .unwrap_or_default();
+            if !text.is_empty() {
+                spawn_remote_instruction(
+                    app.clone(),
+                    topic.to_string(),
+                    join_ref.to_string(),
+                    ref_counter.clone(),
+                    out_tx.clone(),
+                    text,
+                    active_skill_ids,
+                );
             }
+        }
+        "stop" => {
+            app.state::<ControlMeCancelFlag>().0.store(true, Ordering::SeqCst);
+        }
+        "clear_memory" => {
+            let _ = save_memory(app, &[]);
+            push_memory(app, out_tx, join_ref, ref_counter, topic);
+        }
+        "chat_message" => {
+            let messages: Vec<ChatMessage> = serde_json::from_value(inner_payload["messages"].clone()).unwrap_or_default();
+            let model = inner_payload["model"].as_str().unwrap_or("").trim().to_string();
+            if !messages.is_empty() && !model.is_empty() {
+                spawn_remote_chat(app.clone(), model, messages);
+            }
+        }
+        "chat_stop" => {
+            app.state::<ChatCancelFlag>().0.store(true, Ordering::SeqCst);
+        }
+        "list_models" => {
+            spawn_remote_list_models(app.clone(), topic.to_string(), join_ref.to_string(), ref_counter.clone(), out_tx.clone());
+        }
+        "list_skills" => {
+            let skills = super::skills::list_skills(app.clone()).unwrap_or_default();
+            let r = ref_counter.fetch_add(1, Ordering::SeqCst).to_string();
+            let _ = out_tx.send(build_broadcast(join_ref, &r, topic, "skills", &json!({ "skills": skills })));
         }
         _ => {}
     }
@@ -431,7 +571,7 @@ fn spawn_remote_list_models(app: AppHandle, topic: String, join_ref: String, ref
             Ok(Err(e)) => json!({ "error": e }),
             Err(e) => json!({ "error": e.to_string() }),
         };
-        let _ = out_tx.send(build_broadcast(&join_ref, &r, &topic, "models", payload));
+        let _ = out_tx.send(build_broadcast(&join_ref, &r, &topic, "models", &payload));
     });
 }
 
@@ -453,6 +593,7 @@ fn spawn_remote_instruction(
     ref_counter: Arc<AtomicU64>,
     out_tx: UnboundedSender<Message>,
     text: String,
+    active_skill_ids: Vec<String>,
 ) {
     tauri::async_runtime::spawn(async move {
         let settings = match load_settings(app.clone()) {
@@ -476,18 +617,29 @@ fn spawn_remote_instruction(
 
         let cancel = app.state::<ControlMeCancelFlag>().0.clone();
         let confirmation = app.state::<ControlMeConfirmation>().0.clone();
-        // No skill selection for remote-triggered sessions (that picker is
-        // local-app-only for now, see skills.rs/ExtensionsView) and
-        // windows_ui forced on regardless of the local toggle — see the
+        // Skill selection now also works from the site (v0.6.0 hotfix) —
+        // the site fetches the local skill list via a "list_skills"
+        // broadcast and lets the user pick before sending an instruction,
+        // exactly mirroring ControlMeView's own picker. windows_ui stays
+        // forced on regardless of the local toggle — see the
         // force_windows_ui doc comment on run_control_me_core.
-        let _ = run_control_me_core(app, cancel, confirmation, api_key, settings.gemini_model, text, Vec::new(), true)
-            .await;
+        let _ = run_control_me_core(
+            app,
+            cancel,
+            confirmation,
+            api_key,
+            settings.gemini_model,
+            text,
+            active_skill_ids,
+            true,
+        )
+        .await;
     });
 }
 
 fn send_error(out_tx: &UnboundedSender<Message>, join_ref: &str, ref_counter: &Arc<AtomicU64>, topic: &str, message: &str) {
     let r = ref_counter.fetch_add(1, Ordering::SeqCst).to_string();
-    let _ = out_tx.send(build_broadcast(join_ref, &r, topic, "error", json!({ "message": message })));
+    let _ = out_tx.send(build_broadcast(join_ref, &r, topic, "error", &json!({ "message": message })));
 }
 
 fn attach_mirrors(
