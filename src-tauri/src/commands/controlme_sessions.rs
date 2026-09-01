@@ -2,7 +2,7 @@
 // JSON-file-per-item persistence, same list/load/save/delete shape) so
 // past instructions and their transcripts survive closing the app, the
 // same way base chat conversations already do.
-use super::control_me_sessions_dir;
+use super::{control_me_sessions_dir, safe_item_id};
 use serde::{Deserialize, Serialize};
 use std::path::Path;
 use tauri::AppHandle;
@@ -79,21 +79,21 @@ pub fn search_control_me_sessions(app: AppHandle, query: String) -> Result<Vec<C
 
 #[tauri::command]
 pub fn load_control_me_session(app: AppHandle, id: String) -> Result<ControlMeSession, String> {
-    let path = control_me_sessions_dir(&app)?.join(format!("{}.json", id));
+    let path = control_me_sessions_dir(&app)?.join(format!("{}.json", safe_item_id(&id)?));
     let content = std::fs::read_to_string(&path).map_err(|e| e.to_string())?;
     serde_json::from_str(&content).map_err(|e| e.to_string())
 }
 
 #[tauri::command]
 pub fn save_control_me_session(app: AppHandle, session: ControlMeSession) -> Result<(), String> {
-    let path = control_me_sessions_dir(&app)?.join(format!("{}.json", session.id));
+    let path = control_me_sessions_dir(&app)?.join(format!("{}.json", safe_item_id(&session.id)?));
     let content = serde_json::to_string_pretty(&session).map_err(|e| e.to_string())?;
     std::fs::write(&path, content).map_err(|e| e.to_string())
 }
 
 #[tauri::command]
 pub fn delete_control_me_session(app: AppHandle, id: String) -> Result<(), String> {
-    let path = control_me_sessions_dir(&app)?.join(format!("{}.json", id));
+    let path = control_me_sessions_dir(&app)?.join(format!("{}.json", safe_item_id(&id)?));
     if path.exists() {
         std::fs::remove_file(&path).map_err(|e| e.to_string())?;
     }

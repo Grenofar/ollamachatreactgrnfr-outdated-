@@ -2475,6 +2475,89 @@ est maintenant couverte).
   640px de large, et qu'une combinaison comme Ctrl+Maj+S ou la touche
   Windows fonctionne bien en conditions réelles.
 
+**Deuxième passe demandée explicitement juste après** ("vérifie tout le
+code, et renforce la sécurité [...] anti injection") — relecture
+systématique de `src-tauri/src/commands/` à la recherche de la même
+famille de bug que le XSS déjà trouvé côté site : une valeur qui devrait
+être un simple identifiant, injectée telle quelle dans quelque chose qui a
+sa propre syntaxe (un chemin de fichier, une URL de requête). Trois
+vraies vulnérabilités trouvées et corrigées, aucune supposée :
+
+1. **Traversée de chemin réelle dans `read_active_skills`**
+   (`skills.rs`) : `active_skill_ids` — la liste de skills à fournir à une
+   session Control Me — était jointe directement à un chemin de fichier
+   (`dir.join(format!("{id}.json"))`, et `PathBuf::join` ne filtre
+   **pas** les composants `..`) sans la moindre validation. Sévérité
+   réelle, pas théorique : ce paramètre est atteignable **à distance**,
+   `remote.rs` le lit tel quel depuis le broadcast `instruction` envoyé
+   par n'importe quel visiteur ayant le code de jumelage (voir "Chat
+   distant unifié avec Control Me (v0.6.0)") — un id comme
+   `"../../../../chemin/vers/un/fichier"` aurait fait lire ce fichier et
+   l'aurait injecté dans le prompt envoyé à Gemini. Comme le code de
+   jumelage donne déjà un contrôle complet (écran, clavier, souris), ce
+   n'est pas une élévation de privilège en soi — mais c'est une manière
+   distincte d'en abuser : exfiltrer le contenu d'un fichier précis vers
+   un tiers (Google) sans avoir besoin d'accès visuel à l'écran. Corrigé
+   en validant que chaque id fait exactement `ID_LEN` caractères
+   alphanumériques minuscules (le seul format que `random_id()` produit
+   réellement) avant tout `join` — silencieusement ignoré sinon, même
+   comportement que "ce skill n'existe pas".
+2. **Même bug, moindre sévérité, corrigé par précaution** : `skill_path()`
+   (choix central utilisé par `load_skill`/`save_new_skill`/
+   `update_skill`/`delete_skill`) et les équivalents dans
+   `conversations.rs`/`controlme_sessions.rs` (mêmes trois commandes
+   load/save/delete, id généré par `crypto.randomUUID()` côté frontend)
+   avaient la même construction de chemin non validée — atteignables
+   seulement via l'IPC Tauri local (le propre frontend de l'app, pas le
+   réseau), donc un risque bien plus faible en pratique, mais corrigé
+   quand même pour fermer complètement la classe de bug plutôt que de
+   laisser un cas "probablement sûr aujourd'hui". Nouvelle fonction
+   partagée `safe_item_id()` dans `mod.rs` (accepte alphanumérique/`-`/`_`,
+   64 caractères max — couvre le format UUID avec tirets) réutilisée par
+   `conversations.rs`/`controlme_sessions.rs` ; `skills.rs` garde sa
+   propre vérification, plus stricte, déjà en place pour son format d'id
+   différent.
+3. **Injection de paramètres PostgREST dans `skills.rs`** (trois appels
+   réseau : `download_skill`, et `import_marketplace_extension` deux
+   fois) : l'URL de la requête vers Supabase était construite avec
+   `format!("...&share_code=eq.{}", share_code)` / `"...&id=eq.{}"` — une
+   valeur contenant `&` ou `,` aurait pu injecter un paramètre de requête
+   PostgREST supplémentaire (élargir le filtre `eq.` en `in.`, ajouter
+   son propre `&select=...`) plutôt que d'être traitée comme une valeur
+   littérale. Sévérité concrète surtout pour `import_marketplace_extension` :
+   `extension_id` y arrive **directement depuis un lien cliqué**
+   (`ollamachat://install-extension/<id>`, voir "Marketplace v0.7"), donc
+   entièrement écrit par qui a distribué le lien — pas un code tapé à la
+   main comme pour `download_skill`. Corrigé en remplaçant la
+   construction d'URL par `.query(&[...])` de `reqwest` (déjà utilisé
+   correctement ailleurs dans ce fichier, ex. `search_hf_models` dans
+   `huggingface.rs` — ces trois-là étaient les seuls endroits qui ne
+   suivaient pas déjà ce pattern), qui encode chaque valeur en
+   pourcentage via la crate `url` plutôt que de la concaténer telle
+   quelle.
+
+**Ce qui a été vérifié et confirmé déjà sûr, pas juste supposé** :
+injection SQL classique structurellement impossible (déjà établi côté
+site plus haut, revérifié côté Rust — même constat, tout passe par des
+paramètres typés) ; `decode_broadcast_binary`/`handle_incoming`
+(`remote.rs`, parsing de trames binaires non fiables venant du réseau)
+utilisent déjà `bytes.get(...)`/`checked_add`/`unwrap_or` partout, aucun
+indexage direct ni panique possible sur une trame malformée — vérifié en
+relisant chaque ligne, pas supposé sûr parce que "ça n'a jamais planté" ;
+le code de jumelage à distance (`generate_code()`) et le topic Realtime
+qui l'utilise sont générés localement (jamais de texte libre utilisateur),
+aucune injection possible à cet endroit ; `run_powershell_command`/l'accès
+fichiers non-sandboxé de Codex restent des risques **déjà documentés et
+assumés explicitement** (voir Limites connues et risques) — pas des bugs,
+pas retouchés ici ; les deux usages de `dangerouslySetInnerHTML` côté app
+React (`MessageBubble.tsx`, `ControlMeView.tsx`) passent déjà par
+`DOMPurify.sanitize()` avant injection, vérifié en remontant jusqu'à la
+définition de `renderMarkdown()` plutôt que supposé parce que c'était déjà
+documenté ailleurs.
+
+`cargo check` relancé après ces trois correctifs pour confirmer 0 erreur
+avant de considérer la passe terminée.
+
 ### Les 6 outils de l'agent
 1. `read_file` — lecture texte (limite 5 Mo), chemin absolu
 2. `list_dir` — listing un niveau, chemin absolu

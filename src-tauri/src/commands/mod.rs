@@ -49,3 +49,21 @@ pub fn control_me_sessions_dir(app: &AppHandle) -> Result<std::path::PathBuf, St
     std::fs::create_dir_all(&dir).map_err(|e| e.to_string())?;
     Ok(dir)
 }
+
+// Several list/load/save/delete command pairs (conversations.rs,
+// controlme_sessions.rs) embed a per-item id directly into a filename
+// (`{id}.json`) via `dir.join(...)`. `PathBuf::join` does not sanitize
+// ".." components — an id like "../../../../whatever" would resolve
+// outside the intended directory entirely, not just fail to find a file.
+// Real ids are always a `crypto.randomUUID()` from the frontend, so this
+// only needs to reject what one of those could never be, before it ever
+// reaches a filesystem call — checked centrally here rather than
+// per-caller so a future list/load/save/delete pair added the same way
+// doesn't have to remember to re-derive this. skills.rs uses its own
+// tighter check (fixed-length lowercase-alphanumeric ids), not this one.
+pub fn safe_item_id(id: &str) -> Result<&str, String> {
+    let ok = !id.is_empty()
+        && id.len() <= 64
+        && id.bytes().all(|b| b.is_ascii_alphanumeric() || b == b'-' || b == b'_');
+    if ok { Ok(id) } else { Err("Identifiant invalide.".to_string()) }
+}

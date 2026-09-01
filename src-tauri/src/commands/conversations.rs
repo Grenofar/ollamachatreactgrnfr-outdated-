@@ -1,4 +1,4 @@
-use super::conversations_dir;
+use super::{conversations_dir, safe_item_id};
 use serde::{Deserialize, Serialize};
 use std::path::Path;
 use tauri::AppHandle;
@@ -85,21 +85,21 @@ pub fn search_conversations(app: AppHandle, query: String) -> Result<Vec<Convers
 
 #[tauri::command]
 pub fn load_conversation(app: AppHandle, id: String) -> Result<Conversation, String> {
-    let path = conversations_dir(&app)?.join(format!("{}.json", id));
+    let path = conversations_dir(&app)?.join(format!("{}.json", safe_item_id(&id)?));
     let content = std::fs::read_to_string(&path).map_err(|e| e.to_string())?;
     serde_json::from_str(&content).map_err(|e| e.to_string())
 }
 
 #[tauri::command]
 pub fn save_conversation(app: AppHandle, conversation: Conversation) -> Result<(), String> {
-    let path = conversations_dir(&app)?.join(format!("{}.json", conversation.id));
+    let path = conversations_dir(&app)?.join(format!("{}.json", safe_item_id(&conversation.id)?));
     let content = serde_json::to_string_pretty(&conversation).map_err(|e| e.to_string())?;
     std::fs::write(&path, content).map_err(|e| e.to_string())
 }
 
 #[tauri::command]
 pub fn delete_conversation(app: AppHandle, id: String) -> Result<(), String> {
-    let path = conversations_dir(&app)?.join(format!("{}.json", id));
+    let path = conversations_dir(&app)?.join(format!("{}.json", safe_item_id(&id)?));
     if path.exists() {
         std::fs::remove_file(&path).map_err(|e| e.to_string())?;
     }

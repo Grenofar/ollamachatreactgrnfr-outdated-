@@ -111,7 +111,17 @@ fn hide_folder(path: &std::path::Path) {
     }
 }
 
+// Central choke point for every id -> file path in this module — even
+// though today's callers (load/save/update/delete_skill) are only reachable
+// via local Tauri IPC from the app's own bundled frontend, not the network,
+// validating here once means no future caller can reintroduce the path
+// traversal that read_active_skills below had to be fixed for (PathBuf::join
+// does not sanitize ".." components; every real id is exactly ID_LEN
+// lowercase-alphanumeric characters, see random_id above).
 fn skill_path(app: &AppHandle, id: &str) -> Result<std::path::PathBuf, String> {
+    if id.len() != ID_LEN || !id.bytes().all(|b| b.is_ascii_lowercase() || b.is_ascii_digit()) {
+        return Err("Identifiant de skill invalide.".to_string());
+    }
     Ok(skills_dir(app)?.join(format!("{id}.json")))
 }
 
@@ -203,10 +213,20 @@ pub fn delete_skill(app: AppHandle, id: String) -> Result<(), String> {
 
 // Concatenates the content of exactly the skills the user picked before
 // starting this Control Me session — see the call site in controlme.rs.
+// `ids` isn't always locally trusted input: a remote-triggered instruction
+// (remote.rs) forwards active_skill_ids straight from a WebSocket broadcast
+// sent by anyone holding the pairing code, so an id like "../../../../some/
+// other/file" reaching a raw dir.join() would read outside skills_dir
+// entirely (PathBuf::join does not sanitize ".." components) — every real
+// id is exactly ID_LEN lowercase-alphanumeric characters (see random_id
+// above), so anything else is rejected outright rather than joined.
 pub(crate) fn read_active_skills(app: &AppHandle, ids: &[String]) -> String {
     let Ok(dir) = skills_dir(app) else { return String::new() };
     let mut out = String::new();
     for id in ids {
+        if id.len() != ID_LEN || !id.bytes().all(|b| b.is_ascii_lowercase() || b.is_ascii_digit()) {
+            continue;
+        }
         let path = dir.join(format!("{id}.json"));
         let Some(skill) = read_skill(&path) else { continue };
         out.push_str(&format!("[{}]\n{}\n\n", skill.name, skill.content));
@@ -266,11 +286,20 @@ pub fn unpublish_skill(app: AppHandle, id: String) -> Result<(), String> {
 #[tauri::command]
 pub async fn download_skill(app: AppHandle, share_code: String) -> Result<Skill, String> {
     let client = reqwest::Client::new();
+    // share_code is free-text typed by whoever's importing — building the
+    // URL with format! would let a code containing "&" or "," smuggle in
+    // extra PostgREST query parameters (e.g. its own "&select=..." or a
+    // "," to widen the eq. filter into an "in." list) instead of being
+    // treated as a literal value to match. reqwest's .query() percent-
+    // encodes each value through the same `url` crate the rest of this
+    // project already depends on transitively, so it's just a literal
+    // string to Postgres either way.
     let resp = client
-        .get(format!(
-            "{SUPABASE_URL}/rest/v1/controlme_knowledge_shares?select=name,description,content&share_code=eq.{}",
-            share_code.trim()
-        ))
+        .get(format!("{SUPABASE_URL}/rest/v1/controlme_knowledge_shares"))
+        .query(&[
+            ("select", "name,description,content"),
+            ("share_code", &format!("eq.{}", share_code.trim())),
+        ])
         .header("apikey", SUPABASE_ANON_KEY)
         .header("Authorization", format!("Bearer {SUPABASE_ANON_KEY}"))
         .send()
@@ -394,12 +423,18 @@ pub async fn extract_skill_from_transcript(
 #[tauri::command]
 pub async fn import_marketplace_extension(app: AppHandle, extension_id: String) -> Result<Skill, String> {
     let client = reqwest::Client::new();
+    let extension_id = extension_id.trim().to_string();
 
+    // extension_id reaches this command straight from a URL someone clicked
+    // (ollamachat://install-extension/<id>, see App.tsx) — a link an
+    // attacker fully controls the text of, unlike a code someone types by
+    // hand. Building the request URL with format! would let a crafted id
+    // containing "&"/"," inject extra PostgREST query parameters (widen the
+    // eq. filter, add its own "&select=..."); .query() percent-encodes
+    // each value instead, same fix as download_skill above.
     let ext_resp = client
-        .get(format!(
-            "{SUPABASE_URL}/rest/v1/extensions?select=name,description&id=eq.{}",
-            extension_id.trim()
-        ))
+        .get(format!("{SUPABASE_URL}/rest/v1/extensions"))
+        .query(&[("select", "name,description"), ("id", &format!("eq.{extension_id}"))])
         .header("apikey", SUPABASE_ANON_KEY)
         .header("Authorization", format!("Bearer {SUPABASE_ANON_KEY}"))
         .send()
@@ -414,10 +449,13 @@ pub async fn import_marketplace_extension(app: AppHandle, extension_id: String) 
     let description = ext_row["description"].as_str().unwrap_or("").to_string();
 
     let version_resp = client
-        .get(format!(
-            "{SUPABASE_URL}/rest/v1/extension_versions?select=manifest&extension_id=eq.{}&order=created_at.desc&limit=1",
-            extension_id.trim()
-        ))
+        .get(format!("{SUPABASE_URL}/rest/v1/extension_versions"))
+        .query(&[
+            ("select", "manifest"),
+            ("extension_id", &format!("eq.{extension_id}")),
+            ("order", &"created_at.desc".to_string()),
+            ("limit", &"1".to_string()),
+        ])
         .header("apikey", SUPABASE_ANON_KEY)
         .header("Authorization", format!("Bearer {SUPABASE_ANON_KEY}"))
         .send()
