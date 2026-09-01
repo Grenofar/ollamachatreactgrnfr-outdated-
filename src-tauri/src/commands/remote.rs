@@ -45,7 +45,7 @@ const HOST_PRESENCE_KEY: &str = "host";
 type WsWriter = SplitSink<WebSocketStream<MaybeTlsStream<TcpStream>>, Message>;
 
 pub struct RemoteHandle {
-    task: tokio::task::JoinHandle<()>,
+    task: tauri::async_runtime::JoinHandle<()>,
 }
 
 pub struct RemoteState(pub Mutex<Option<RemoteHandle>>);
@@ -103,7 +103,17 @@ fn stop_remote_task(app: &AppHandle) {
 fn start_remote_task(app: AppHandle, code: String) {
     stop_remote_task(&app);
     let app_for_task = app.clone();
-    let task = tokio::spawn(async move {
+    // tauri::async_runtime::spawn, not bare tokio::spawn: this is called
+    // from resume_remote_on_startup, itself invoked from lib.rs's `setup`
+    // hook on the main thread — a thread that never `.enter()`s the tokio
+    // runtime, so bare tokio::spawn panics there ("there is no reactor
+    // running"). That panic on the main thread took the whole process down
+    // on every single launch once a remote_code was persisted (real
+    // incident, not hypothetical — reported by the user testing v0.5.7).
+    // tauri::async_runtime::spawn uses Tauri's own stored runtime Handle
+    // instead of thread-local ambient context, so it's safe from any
+    // thread, including this one.
+    let task = tauri::async_runtime::spawn(async move {
         remote_loop(app_for_task, code).await;
     });
     let state = app.state::<RemoteState>();
@@ -370,7 +380,7 @@ fn spawn_remote_instruction(
     out_tx: UnboundedSender<Message>,
     text: String,
 ) {
-    tokio::spawn(async move {
+    tauri::async_runtime::spawn(async move {
         let settings = match load_settings(app.clone()) {
             Ok(s) => s,
             Err(e) => {

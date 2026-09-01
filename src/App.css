@@ -19,13 +19,50 @@
 }
 
 /* ------------------------------------------------ global micro-interactions */
+/* A plain, un-styled <button> used to fall back to raw OS chrome (grey
+   3D-ish default) unless some specific selector happened to cover it —
+   several buttons added across recent versions (Codex's inline tool
+   approval, Control Me's header/confirm buttons, all of ExtensionsView)
+   were never added to the old ".modal button, .settings-section button"
+   list, so they rendered completely unstyled — the concrete bug behind
+   "les boutons sont moches" reports. Styling bare button itself instead
+   (once, globally) fixes every existing case AND every future one: a
+   class-qualified selector like .sidebar-item-delete or .editor-tab-close
+   still wins over this on specificity, so nothing that deliberately wants
+   a bare/transparent look breaks. */
 button {
+  background: #2c2c2c;
+  color: #dddddd;
+  border: none;
+  border-radius: 8px;
+  padding: 8px 14px;
+  font-size: 13px;
+  font-family: inherit;
+  cursor: pointer;
   transition: background 0.15s ease, color 0.15s ease, border-color 0.15s ease, opacity 0.15s ease,
     box-shadow 0.15s ease, transform 0.12s var(--ease-out);
 }
 
-button:active:not(:disabled) {
+/* :where(button) instead of bare button for the pseudo-class variants:
+   a plain `button:hover` selector carries specificity (0,1,1) — the
+   trailing type selector alone outranks a single-class rule like
+   `.editor-tab-close:hover` (0,2,0)/(0,1,0)-tier, which would silently
+   override intentional per-button hover/disabled colors that already
+   exist all over the app. :where() always contributes zero specificity,
+   so this stays a pure low-priority fallback exactly like the base
+   `button {}` rule above (already lower-specificity than any class
+   selector on its own). */
+:where(button):hover:not(:disabled) {
+  background: #383838;
+}
+
+:where(button):active:not(:disabled) {
   transform: scale(0.96);
+}
+
+:where(button):disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
 }
 
 input:focus,
@@ -758,6 +795,7 @@ body {
   position: relative;
   width: 32px;
   height: 32px;
+  padding: 0;
   border-radius: 16px;
   border: none;
   background: #3a3a3a;
@@ -872,22 +910,6 @@ body {
   padding: 8px 10px;
   font-size: 13px;
   font-family: inherit;
-}
-
-.modal button,
-.settings-section button {
-  background: #2c2c2c;
-  color: #dddddd;
-  border: none;
-  border-radius: 8px;
-  padding: 8px 14px;
-  font-size: 13px;
-  cursor: pointer;
-}
-
-.modal button:hover,
-.settings-section button:hover {
-  background: #383838;
 }
 
 .primary-btn {
@@ -2038,9 +2060,38 @@ body {
   font-weight: 600;
 }
 
+.extensions-header-spacer {
+  flex: 1;
+}
+
+.extensions-update-banner {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 8px 14px;
+  background: #1c2634;
+  border-bottom: 1px solid #2c2c2c;
+  font-size: 12.5px;
+  color: #9fc0ff;
+}
+
+.extensions-update-banner .install-progress-bar {
+  flex: 1;
+  max-width: 200px;
+}
+
 .extensions-content {
   flex: 1;
   overflow-y: auto;
   padding: 24px 32px;
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
   max-width: 560px;
+}
+
+.extension-card-actions {
+  display: flex;
+  gap: 8px;
+  margin-top: 2px;
 }

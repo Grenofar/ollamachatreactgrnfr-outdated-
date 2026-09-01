@@ -6,6 +6,7 @@ export default function Sidebar({
   conversations,
   currentId,
   view,
+  disabledExtensions,
   onNew,
   onSelect,
   onDelete,
@@ -18,6 +19,7 @@ export default function Sidebar({
   conversations: ConversationMeta[];
   currentId: string | null;
   view: "chat" | "codex" | "controlme" | "settings" | "extensions";
+  disabledExtensions: string[];
   onNew: () => void;
   onSelect: (id: string) => void;
   onDelete: (id: string) => void;
@@ -131,18 +133,22 @@ export default function Sidebar({
         )}
       </div>
 
-      <button
-        className={`sidebar-install-btn ${view === "codex" ? "sidebar-nav-active" : ""}`}
-        onClick={onOpenCodex}
-      >
-        Codex
-      </button>
-      <button
-        className={`sidebar-install-btn ${view === "controlme" ? "sidebar-nav-active" : ""}`}
-        onClick={onOpenControlMe}
-      >
-        Control Me
-      </button>
+      {!disabledExtensions.includes("codex") && (
+        <button
+          className={`sidebar-install-btn ${view === "codex" ? "sidebar-nav-active" : ""}`}
+          onClick={onOpenCodex}
+        >
+          Codex
+        </button>
+      )}
+      {!disabledExtensions.includes("controlme") && (
+        <button
+          className={`sidebar-install-btn ${view === "controlme" ? "sidebar-nav-active" : ""}`}
+          onClick={onOpenControlMe}
+        >
+          Control Me
+        </button>
+      )}
       <button
         className={`sidebar-install-btn ${view === "extensions" ? "sidebar-nav-active" : ""}`}
         onClick={onOpenExtensions}

@@ -450,6 +450,25 @@ export default function App() {
     setSettings((prev) => (prev ? { ...prev, remote_code: code } : prev));
   }
 
+  // Codex/Control Me/DB ready are never actually removed from the binary —
+  // this only hides their Sidebar entry (and, for "knowledge_base", stops
+  // offering read_knowledge_base to Gemini, see controlme.rs). Reversible,
+  // toggled from ExtensionsView.
+  function handleToggleExtension(id: string) {
+    setSettings((prev) => {
+      if (!prev) return prev;
+      const has = prev.disabled_extensions.includes(id);
+      const next = {
+        ...prev,
+        disabled_extensions: has
+          ? prev.disabled_extensions.filter((e) => e !== id)
+          : [...prev.disabled_extensions, id],
+      };
+      saveSettings(next);
+      return next;
+    });
+  }
+
   const messages = currentConv?.messages ?? [];
   const conversationTokens = messages.reduce((sum, m) => sum + (m.tokens ?? estimateTokens(m.content)), 0);
   const contextTokens = settings
@@ -466,6 +485,7 @@ export default function App() {
         conversations={conversations}
         currentId={currentConv?.id ?? null}
         view={view}
+        disabledExtensions={settings?.disabled_extensions ?? []}
         onNew={handleNewConversation}
         onSelect={handleSelectConversation}
         onDelete={handleDeleteConversation}
@@ -514,7 +534,18 @@ export default function App() {
         </Suspense>
       ) : view === "extensions" && settings ? (
         <Suspense fallback={<div className="codex-editor-empty">Chargement…</div>}>
-          <ExtensionsView />
+          <ExtensionsView
+            settings={settings}
+            onOpenCodex={() => setView("codex")}
+            onOpenControlMe={() => setView("controlme")}
+            onToggleExtension={handleToggleExtension}
+            checkingUpdate={checkingUpdate}
+            availableUpdate={availableUpdate}
+            installingUpdate={installingUpdate}
+            updateInstallPct={updateInstallPct}
+            onCheckUpdate={handleCheckUpdate}
+            onInstallUpdate={handleInstallUpdate}
+          />
         </Suspense>
       ) : (
       <div className="main">

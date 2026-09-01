@@ -53,7 +53,8 @@ pas devenir obsolète.
 - [FAIT] v0.5.4 : recherche dans l'historique Control Me (titre + contenu, `search_control_me_sessions`), renommage d'une session (double-clic, comme la Sidebar du chat), et navigation simplifiée — plus de bouton dédié "← Chat" dans Codex/Control Me, cliquer un élément de la Sidebar (nouvelle conversation ou conversation existante) y ramène directement — voir "Recherche/renommage de session, retrait du bouton retour (v0.5.4)" dans Architecture > Control Me.
 - [FAIT] v0.5.5 : passe d'animations sur toute l'app (CSS uniquement, aucune dépendance ajoutée) — micro-interactions de boutons, halo de focus sur les champs, entrée en fondu/décalage des bulles de chat et cartes d'outils avec effet cascade, indicateur de frappe animé + curseur clignotant pendant le streaming, transition de vue chat/Codex/Control Me, ouverture animée des modales/dropdowns/panneaux, toast de mise à jour avec rebond, accent visuel sur la conversation/section active dans la Sidebar, scrollbar personnalisée — respecte `prefers-reduced-motion`. Voir "Animations et micro-interactions (v0.5.5)" dans Architecture.
 - [FAIT] v0.5.6 : Control Me plus rapide et plus fiable — attente adaptative après chaque action (remplace le délai fixe de 120ms par une détection locale de stabilisation de l'écran) et nouvel outil `read_ui_elements` (Gemini peut lire l'arbre d'accessibilité Windows de la fenêtre au premier plan — type/libellé/état/position des contrôles — sans capture d'écran, en complément de `computer_use`) — voir "Attente adaptative et lecture de l'arbre d'accessibilité (v0.5.6)" dans Architecture > Control Me.
-- [FAIT] v0.5.7 : Control Me pilotable **à distance depuis le site** (`site/controlremote.html`, lien depuis la landing) — code de jumelage à 12 chiffres généré dans l'app, écran live + chat + mémoire + bouton Arrêter côté navigateur, tout via Supabase **Realtime** (Broadcast + Presence, aucune table Postgres, client WebSocket écrit à la main côté Rust) — voir "Control Me à distance depuis le site (v0.5.7)" et "Mémoire visible depuis le site distant (v0.5.7)" dans Architecture > Control Me, y compris le modèle de sécurité (code = mot de passe partagé, protection anti-brute-force côté navigateur assumée comme non absolue). Réglages **entièrement refaits en page pleine** à sections (Général/Modèles + Installer un modèle/Control Me/Mises à jour), `SettingsModal.tsx` supprimé au profit de `SettingsView.tsx`, bouton "Installer un modèle" déplacé de la Sidebar vers Réglages — voir "Réglages en page pleine (v0.5.7)". Deux correctifs Control Me au passage : `key_down` qui ne faisait rien (bug réel d'enigo, `release_keys_when_dropped`) et `read_ui_elements` qui n'apportait plus son gain de vitesse (capturait quand même un screenshot inutile) — voir "Correctifs de vitesse et de fiabilité (v0.5.7)". Nouveau **mode de perception "Windows UI"** (toggle Réglages > Control Me, `capture` vs `windows_ui`) : `computer_use` entièrement retiré et remplacé par des outils `function` personnalisés reproduisant le même jeu d'actions — plus aucune capture d'écran envoyée, juste du texte d'accessibilité, mais perte du garde-fou `require_confirmation` (propre au protocole `computer_use`) — voir "Mode de perception Windows UI (v0.5.7)". Nouvelle **extension "DB ready for Control Me"** (Réglages > Extensions) : dossier local caché (`.txt`/`.json`/`.sql` uniquement, validation qui refuse le dossier en bloc si un seul fichier a un autre type) que Control Me peut lire comme base de connaissances via un nouvel outil `read_knowledge_base`, plus un flux de **publication publique via Supabase** (première écriture `anon` de tout ce projet, jusqu'ici strictement lecture seule — RLS et implications documentées explicitement) — voir "Base de connaissances Control Me (v0.5.7)".
+- [FAIT] v0.5.7 : Control Me pilotable **à distance depuis le site** (`site/controlremote.html`, lien depuis la landing) — code de jumelage à 12 chiffres généré dans l'app, écran live + chat + mémoire + bouton Arrêter côté navigateur, tout via Supabase **Realtime** (Broadcast + Presence, aucune table Postgres, client WebSocket écrit à la main côté Rust) — voir "Control Me à distance depuis le site (v0.5.7)" et "Mémoire visible depuis le site distant (v0.5.7)" dans Architecture > Control Me, y compris le modèle de sécurité (code = mot de passe partagé, protection anti-brute-force côté navigateur assumée comme non absolue). Réglages **entièrement refaits en page pleine** à sections (Général/Modèles + Installer un modèle/Control Me/Mises à jour), `SettingsModal.tsx` supprimé au profit de `SettingsView.tsx`, bouton "Installer un modèle" déplacé de la Sidebar vers Réglages — voir "Réglages en page pleine (v0.5.7)". Deux correctifs Control Me au passage : `key_down` qui ne faisait rien (bug réel d'enigo, `release_keys_when_dropped`) et `read_ui_elements` qui n'apportait plus son gain de vitesse (capturait quand même un screenshot inutile) — voir "Correctifs de vitesse et de fiabilité (v0.5.7)". Nouveau **mode de perception "Windows UI"** (toggle Réglages > Control Me, `capture` vs `windows_ui`) : `computer_use` entièrement retiré et remplacé par des outils `function` personnalisés reproduisant le même jeu d'actions — plus aucune capture d'écran envoyée, juste du texte d'accessibilité, mais perte du garde-fou `require_confirmation` (propre au protocole `computer_use`) — voir "Mode de perception Windows UI (v0.5.7)". Nouvelle **extension "DB ready for Control Me"** (espace Extensions dédié, Sidebar) : dossier local caché (`.txt`/`.json`/`.sql` uniquement, validation qui refuse le dossier en bloc si un seul fichier a un autre type) que Control Me peut lire comme base de connaissances via un nouvel outil `read_knowledge_base`, plus un flux de **publication publique via Supabase** (première écriture `anon` de tout ce projet, jusqu'ici strictement lecture seule — RLS et implications documentées explicitement) — voir "Base de connaissances Control Me (v0.5.7)".
+- [FAIT] v0.5.8 : correctif critique — générer un code de jumelage à distance (ou simplement relancer l'app avec un code déjà enregistré) faisait planter l'app **définitivement**, à chaque lancement, signalé par l'utilisateur juste après la publication de la v0.5.7. `remote.rs` appelait `tokio::spawn` directement au lieu de `tauri::async_runtime::spawn` ; appelé depuis le thread principal (hook `setup()`, via `resume_remote_on_startup`), `tokio::spawn` panique faute de runtime "entré" sur ce thread — panic sur le thread principal = tout le processus meurt, et comme le code reste dans `settings.json`, ça se reproduisait à chaque démarrage — voir "Panic de démarrage sur le thread principal (v0.5.8)" dans Architecture > Control Me. Extensions restructuré en hub léger : Codex et Control Me apparaissent maintenant comme des cartes dans l'espace Extensions (bouton "Ouvrir", en plus de leur bouton Sidebar dédié qui reste) avec un interrupteur Activer/Désactiver réversible (masque juste l'entrée Sidebar, rien n'est réellement désinstallé — un seul binaire, pas de vrais modules indépendants), plus un bouton unique "Tout mettre à jour" (pas de fausse mise à jour par extension, une seule vraie mise à jour existe : l'app entière) — voir "Extensions : hub léger (v0.5.8)" dans Architecture. Correctif CSS global : plusieurs boutons ajoutés au fil des dernières versions (approbation inline Codex, en-tête/confirmation Control Me, tout l'espace Extensions) n'étaient couverts par aucun sélecteur et s'affichaient avec le chrome brut du navigateur — corrigé par un style de base sur l'élément `button` global (`:where()` pour les variantes `:hover`/`:disabled`/`:active`, afin de ne jamais l'emporter sur un sélecteur de classe plus spécifique déjà existant) — voir "Correctif CSS boutons non stylés (v0.5.8)" dans Architecture.
 
 ## Architecture
 
@@ -1194,6 +1195,161 @@ place dans l'app.
   fautif), lecture par Gemini de fichiers valides, publication vérifiée
   via `curl` avec la clé anon, import sur un second poste.
 
+### Panic de démarrage sur le thread principal (v0.5.8)
+
+Bug critique signalé par l'utilisateur immédiatement après la publication
+de la v0.5.7 : cliquer "Générer un code" (jumelage à distance, Réglages >
+Control Me) faisait planter l'app, et surtout, **relancer l'app plantait
+aussi, à chaque fois, sans exception** — l'app était devenue totalement
+inutilisable.
+
+Cause trouvée en relisant `remote.rs` : `start_remote_task` appelait
+`tokio::spawn(...)` **directement**, plutôt que `tauri::async_runtime::
+spawn(...)`. Cette fonction est appelée depuis deux endroits : la commande
+`generate_remote_code` (déclenchée par le clic utilisateur), et
+`resume_remote_on_startup`, appelée sans condition dans le hook `setup()`
+de `lib.rs` — **sur le thread principal**, avant tout event loop GUI, dès
+qu'un `remote_code` existe déjà dans `settings.json` (précisément pour
+que le site se reconnecte automatiquement sans repasser par Réglages,
+voir "Control Me à distance depuis le site (v0.5.7)").
+
+Le thread principal d'une app Tauri n'a **jamais** de runtime Tokio
+"entré" (pas de `.enter()`/contexte thread-local ambient) — Tauri
+maintient son propre `Handle` vers un runtime Tokio en interne, mais un
+`tokio::spawn` brut ne le consulte pas, il cherche le contexte
+thread-local courant. Résultat : panic immédiat ("there is no reactor
+running, must be called from the context of a Tokio 1.x runtime") **sur
+le thread principal**, ce qui tue tout le processus (le panic n'est
+attrapé nulle part, contrairement à un panic dans une tâche tokio déjà
+spawnée qui reste isolé à cette tâche). Comme `remote_code` reste
+persisté dans `settings.json` une fois généré, ce panic se reproduisait
+à **chaque lancement suivant**, sans que l'utilisateur n'ait rien à
+cliquer — d'où "l'app ne se lance plus du tout".
+
+Corrigé en remplaçant les deux appels `tokio::spawn` de `remote.rs`
+(`start_remote_task` et `spawn_remote_instruction`) par
+`tauri::async_runtime::spawn` — l'API sûre depuis n'importe quel thread
+dans une app Tauri, documentée précisément pour ce genre de cas (elle
+utilise le `Handle` que Tauri conserve lui-même, pas le contexte
+thread-local ambient). `RemoteHandle.task` a dû changer de type
+(`tauri::async_runtime::JoinHandle<()>` au lieu de
+`tokio::task::JoinHandle<()>` — ce ne sont pas des alias l'un de l'autre,
+confirmé par une erreur de compilation immédiate en essayant le
+remplacement direct, pas supposé). **Leçon retenue** : `tokio::spawn`
+brut n'est sûr que depuis du code qui s'exécute déjà à l'intérieur du
+runtime (une tâche déjà spawnée, ou un contexte explicitement entré) —
+dans du code appelé depuis `setup()` ou depuis une commande Tauri
+synchrone, toujours utiliser `tauri::async_runtime::spawn`. À vérifier
+pour tout futur `tokio::spawn` ajouté dans ce projet.
+
+**Pour un utilisateur déjà bloqué par ce bug avant la mise à jour** :
+éditer `%APPDATA%\com.userasus.ollama-chat-react\settings.json` à la main
+(app fermée), mettre `"remote_code": null`, relancer — l'app démarre
+alors normalement (sans écoute distante active) et peut se mettre à jour
+vers la version corrigée.
+
+`cargo check` passé à 0 erreur après le correctif. **Pas de reproduction
+possible dans cet environnement** (aucun `settings.json` avec
+`remote_code` renseigné n'existe sur cette machine de développement — le
+bug a été diagnostiqué uniquement par lecture de code, pas reproduit
+localement) — cause root confirmée par le raisonnement sur le
+fonctionnement de Tokio/Tauri plutôt que par un test en conditions
+réelles ; **à confirmer par l'utilisateur** que le crash a bien disparu
+après installation de la v0.5.8.
+
+### Extensions : hub léger (v0.5.8)
+
+Demande explicite de l'utilisateur, avec un vrai problème d'architecture
+sous-jacent clarifié via `AskUserQuestion` avant de coder : Codex et
+Control Me devaient apparaître dans l'espace Extensions, avec
+"désinstaller"/"mettre à jour" par extension et un bouton "tout mettre à
+jour". Or Codex et Control Me sont compilés dans le **même binaire** que
+tout le reste de l'app — il n'existe aucun système de modules
+indépendants (le système de plugins complet, avec versioning indépendant
+par module, a été explicitement mis en pause plus tôt dans ce projet, et
+ce n'est toujours pas ce qui a été construit ici). Deux clarifications
+tranchées par l'utilisateur (options recommandées choisies dans les
+deux cas) :
+
+- **"Désinstaller" = interrupteur réversible, pas une vraie
+  désinstallation.** Nouveau champ `Settings.disabled_extensions:
+  Vec<String>` (ids `"codex"` / `"controlme"` / `"knowledge_base"`),
+  persisté comme le reste des réglages. Pour `"codex"`/`"controlme"`,
+  désactiver masque uniquement le bouton correspondant dans la Sidebar
+  (`Sidebar.tsx` filtre son rendu sur `disabledExtensions`) — rien n'est
+  supprimé du binaire, réactivable à tout instant. Pour
+  `"knowledge_base"`, désactiver a un effet réel côté Control Me :
+  `build_capture_tools`/`build_windows_ui_tools` (`controlme.rs`)
+  prennent maintenant un paramètre `include_knowledge_base: bool`, lu
+  depuis `disabled_extensions` au début de `run_control_me_core` —
+  l'outil `read_knowledge_base` n'est simplement plus proposé à Gemini
+  quand désactivé (les fichiers restent sur le disque, juste plus lus
+  pendant une session).
+- **"Mettre à jour" = un seul bouton, pas une fausse mise à jour par
+  carte.** Il n'existe qu'une seule vraie mise à jour possible (l'app
+  entière, un seul `.exe`, via l'auto-updater déjà en place) — proposer
+  un bouton "Mettre à jour" par extension aurait été trompeur (rien ne se
+  mettrait à jour indépendamment). `ExtensionsView.tsx` gagne donc un
+  bouton unique **"Tout mettre à jour"** en en-tête, réutilisant
+  exactement le même état déjà lifté dans `App.tsx`
+  (`checkingUpdate`/`availableUpdate`/`installingUpdate`/
+  `onCheckUpdate`/`onInstallUpdate`, déjà utilisé par Réglages > Mises à
+  jour) plutôt qu'un second système de vérification en parallèle.
+
+Les deux chemins d'accès à Codex/Control Me restent disponibles (choisi
+explicitement plutôt que de retirer les boutons Sidebar dédiés) :
+`ExtensionsView.tsx` affiche maintenant trois cartes (Codex, Control Me,
+DB ready for Control Me), chacune avec un bouton "Ouvrir" (navigue vers
+la vue correspondante, désactivé si l'extension est elle-même
+désactivée) et un bouton Activer/Désactiver. Réglages > Extensions reste
+inchangé (liste en lecture seule nom + description uniquement, comme
+tranché à la correction précédente).
+
+### Correctif CSS boutons non stylés (v0.5.8)
+
+Retour utilisateur direct : "les boutons dans Paramètres et Extensions
+sont moches, dans Codex aussi". Cause trouvée en auditant `App.css` :
+`.modal button, .settings-section button` (fond/rayon/padding) ne
+couvrait que les boutons **à l'intérieur** de ces deux conteneurs précis
+— chaque nouvel ajout d'UI dans un conteneur différent depuis plusieurs
+versions (approbation inline Codex dans `.tool-approval-inline`, en-tête
+et confirmation de Control Me dans `.controlme-header`/`.controlme-confirm`,
+et la totalité du nouvel espace `ExtensionsView.tsx`) n'avait jamais été
+ajouté à cette liste — ces boutons s'affichaient donc avec le chrome brut
+par défaut du navigateur (gris, 3D), jurant avec le reste de
+l'interface sombre et personnalisée. Un vrai bug d'oubli répété, pas
+une question de goût.
+
+Corrigé en stylant l'élément `button` **directement, globalement**
+(fond `#2c2c2c`, rayon 8px, padding, `:hover`/`:disabled`) plutôt que de
+continuer à étendre une liste de sélecteurs à chaque nouvelle vue —
+élimine toute la catégorie de bug plutôt que de patcher les 5 endroits
+trouvés un par un (et n'importe quel bouton futur en profite
+automatiquement). `.modal button, .settings-section button` (devenu
+redondant) supprimé.
+
+**Piège de spécificité CSS repéré avant de committer, pas après** : un
+sélecteur `button:hover { ... }` brut a une spécificité de (0,1,1) — le
+sélecteur de type `button` compte pour 1, ce qui le rend **plus
+spécifique** qu'un sélecteur à une seule classe comme
+`.editor-tab-close:hover` (0,1,0), et l'aurait donc silencieusement
+emporté sur des dizaines de couleurs de survol/désactivé déjà
+personnalisées ailleurs dans l'app (`.editor-tab-close`,
+`.installed-model-delete`, `.send-btn:disabled`...). Corrigé en utilisant
+`:where(button)` pour les variantes `:hover`/`:disabled`/`:active`
+(`:where()` neutralise toujours sa propre spécificité à zéro) — reste un
+filet de secours de priorité minimale, jamais capable de l'emporter sur
+un sélecteur de classe existant. Au passage, corrigé le même piège déjà
+présent (avant cette session) sur la règle `:active` globale ajoutée en
+v0.5.5, qui empêchait silencieusement `.editor-tab-close:active` de
+jouer son propre `scale(0.85)`.
+
+`.send-btn` (bouton d'envoi rond, icône positionnée en `inset: 0`)
+recevait désormais un padding non désiré du nouveau style global — ajouté
+`padding: 0` explicitement pour préserver son rendu exact (vérifié par
+lecture du CSS, pas testé visuellement — pas d'accès GUI dans cet
+environnement).
+
 ### Les 6 outils de l'agent
 1. `read_file` — lecture texte (limite 5 Mo), chemin absolu
 2. `list_dir` — listing un niveau, chemin absolu
@@ -2048,6 +2204,34 @@ l'utilisateur confirme qu'elle est bien dans `.env` local.
   bout possible dans cet environnement** — à tester explicitement par
   l'utilisateur après build et exécution de la migration SQL
   (`supabase/knowledge_base_migration.sql`).
+- **2026-09-01** — v0.5.8, publiée quelques heures après la v0.5.7 :
+  correctif critique signalé immédiatement par l'utilisateur (l'app ne se
+  relançait plus du tout après avoir généré un code de jumelage à
+  distance) — `remote.rs` utilisait `tokio::spawn` brut au lieu de
+  `tauri::async_runtime::spawn`, ce qui panique quand c'est appelé depuis
+  le thread principal (hook `setup()`, au démarrage) faute de runtime
+  Tokio "entré" sur ce thread ; un panic sur le thread principal tue tout
+  le processus, et comme le code de jumelage reste dans `settings.json`,
+  ça se reproduisait à chaque lancement — voir "Panic de démarrage sur le
+  thread principal (v0.5.8)" dans Architecture pour le détail complet et
+  la procédure de déblocage manuelle donnée à l'utilisateur en attendant
+  le correctif (éditer `settings.json`, mettre `remote_code` à `null`).
+  Groupées dans la même version, deux demandes explicites supplémentaires
+  de l'utilisateur : Extensions restructuré en hub léger (Codex/Control
+  Me listés comme cartes avec bouton Ouvrir + interrupteur
+  Activer/Désactiver réversible, un seul bouton "Tout mettre à jour" —
+  clarifié via `AskUserQuestion`, l'utilisateur a choisi les deux options
+  recommandées plutôt que de construire un vrai système de plugins
+  indépendants) et un correctif CSS global (plusieurs boutons ajoutés au
+  fil des dernières versions n'étaient couverts par aucun sélecteur et
+  s'affichaient avec le chrome brut du navigateur) — voir "Extensions :
+  hub léger (v0.5.8)" et "Correctif CSS boutons non stylés (v0.5.8)"
+  dans Architecture. `cargo check`/`npx tsc --noEmit` passés à 0 erreur.
+  **Aucune reproduction ni vérification visuelle possible dans cet
+  environnement** pour le bug de crash (root-cause déterminée par lecture
+  de code, aucun `settings.json` avec `remote_code` renseigné sur cette
+  machine) ni pour le rendu des boutons — à confirmer par l'utilisateur
+  après installation.
 
 ## Prochaines étapes (dans l'ordre du fichier de passation d'origine)
 

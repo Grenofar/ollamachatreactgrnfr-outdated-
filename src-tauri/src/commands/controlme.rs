@@ -505,17 +505,20 @@ fn read_knowledge_base_tool() -> Value {
     })
 }
 
-fn build_capture_tools() -> Value {
-    json!([
-        {
+fn build_capture_tools(include_knowledge_base: bool) -> Value {
+    let mut tools = vec![
+        json!({
             "type": "computer_use",
             "environment": "desktop",
             "enable_prompt_injection_detection": true,
-        },
+        }),
         remember_fact_tool(),
         read_ui_elements_tool(false),
-        read_knowledge_base_tool(),
-    ])
+    ];
+    if include_knowledge_base {
+        tools.push(read_knowledge_base_tool());
+    }
+    Value::Array(tools)
 }
 
 // "windows_ui" mode drops computer_use entirely (it's fundamentally a
@@ -530,7 +533,7 @@ fn build_capture_tools() -> Value {
 // Real trade-off, not hidden: Gemini's require_confirmation safety signal
 // is part of computer_use's own protocol specifically — a custom function
 // tool has no equivalent, so that safety net does not exist in this mode.
-fn build_windows_ui_tools() -> Value {
+fn build_windows_ui_tools(include_knowledge_base: bool) -> Value {
     let xy_params = |extra: Value| {
         let mut props = json!({
             "x": { "type": "number", "description": "Position X normalisée 0-999" },
@@ -552,7 +555,7 @@ fn build_windows_ui_tools() -> Value {
         })
     };
 
-    json!([
+    let mut tools = json!([
         click_tool("click", "Clic gauche"),
         click_tool("double_click", "Double-clic gauche"),
         click_tool("triple_click", "Triple-clic gauche"),
@@ -657,8 +660,13 @@ fn build_windows_ui_tools() -> Value {
         },
         remember_fact_tool(),
         read_ui_elements_tool(true),
-        read_knowledge_base_tool(),
-    ])
+    ]);
+    if include_knowledge_base {
+        if let Some(arr) = tools.as_array_mut() {
+            arr.push(read_knowledge_base_tool());
+        }
+    }
+    tools
 }
 
 #[tauri::command]
@@ -705,8 +713,14 @@ pub async fn run_control_me_core(
     // execute_action's existing action set. Loaded from settings rather
     // than passed as a parameter so neither call site (the Tauri command
     // above, remote.rs) needs to change its own signature for this.
-    let use_ui_mode = load_settings(app.clone())
+    let loaded_settings = load_settings(app.clone()).ok();
+    let use_ui_mode = loaded_settings
+        .as_ref()
         .map(|s| s.control_me_perception_mode == "windows_ui")
+        .unwrap_or(false);
+    let include_knowledge_base = !loaded_settings
+        .as_ref()
+        .map(|s| s.disabled_extensions.iter().any(|e| e == "knowledge_base"))
         .unwrap_or(false);
 
     let (width, height, initial_observation) = if use_ui_mode {
@@ -718,7 +732,11 @@ pub async fn run_control_me_core(
         let (screenshot, w, h) = capture_screenshot_base64()?;
         (w, h, json!({ "type": "image", "data": screenshot, "mime_type": "image/jpeg" }))
     };
-    let tools = if use_ui_mode { build_windows_ui_tools() } else { build_capture_tools() };
+    let tools = if use_ui_mode {
+        build_windows_ui_tools(include_knowledge_base)
+    } else {
+        build_capture_tools(include_knowledge_base)
+    };
 
     // thinking_level "low" trades some reasoning depth for much faster
     // per-step responses — appropriate for a tight screenshot/act loop

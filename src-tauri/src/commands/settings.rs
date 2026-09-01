@@ -20,6 +20,13 @@ pub struct Settings {
     pub remote_code: Option<String>,
     #[serde(default = "default_control_me_perception_mode")]
     pub control_me_perception_mode: String,
+    // Extension ids ("codex" | "controlme" | "knowledge_base") the user
+    // toggled off from the Extensions view. Purely a show/hide switch —
+    // nothing is actually uninstalled (everything ships in the same
+    // binary), see ExtensionsView.tsx. "knowledge_base" additionally gates
+    // whether read_knowledge_base is offered to Gemini (controlme.rs).
+    #[serde(default)]
+    pub disabled_extensions: Vec<String>,
 }
 
 fn default_codex_mode() -> String {
@@ -55,6 +62,7 @@ fn default_settings() -> Settings {
         gemini_model: default_gemini_model(),
         remote_code: None,
         control_me_perception_mode: default_control_me_perception_mode(),
+        disabled_extensions: Vec::new(),
     }
 }
 
