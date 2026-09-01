@@ -3144,7 +3144,7 @@ dependencies = [
 
 [[package]]
 name = "ollama-chat-react"
-version = "0.5.8"
+version = "0.6.0"
 dependencies = [
  "base64 0.23.1",
  "enigo",

@@ -20,13 +20,23 @@ pub struct Settings {
     pub remote_code: Option<String>,
     #[serde(default = "default_control_me_perception_mode")]
     pub control_me_perception_mode: String,
-    // Extension ids ("codex" | "controlme" | "knowledge_base") the user
-    // toggled off from the Extensions view. Purely a show/hide switch —
-    // nothing is actually uninstalled (everything ships in the same
-    // binary), see ExtensionsView.tsx. "knowledge_base" additionally gates
-    // whether read_knowledge_base is offered to Gemini (controlme.rs).
+    // Extension ids ("codex" | "controlme") the user toggled off from the
+    // Extensions view. Purely a show/hide switch — nothing is actually
+    // uninstalled (everything ships in the same binary), see
+    // ExtensionsView.tsx.
     #[serde(default)]
     pub disabled_extensions: Vec<String>,
+    // Toggle for the "new version available" toast (App.tsx) — separate
+    // from the update mechanism itself, which always keeps working
+    // regardless (Réglages > Extensions still lets you check/install
+    // manually). Requested explicitly: the popup itself should be
+    // silenceable without disabling updates.
+    #[serde(default = "default_true")]
+    pub update_popup_enabled: bool,
+}
+
+fn default_true() -> bool {
+    true
 }
 
 fn default_codex_mode() -> String {
@@ -63,6 +73,7 @@ fn default_settings() -> Settings {
         remote_code: None,
         control_me_perception_mode: default_control_me_perception_mode(),
         disabled_extensions: Vec::new(),
+        update_popup_enabled: true,
     }
 }
 

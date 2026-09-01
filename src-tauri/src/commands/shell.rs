@@ -47,6 +47,14 @@ pub fn run_powershell_command(
         if let Some(dir) = &cwd {
             cmd.current_dir(dir);
         }
+        // Output is already captured via the piped stdout/stderr above and
+        // streamed into the transcript panel — the console window itself
+        // was never meant to be seen, just a leftover default.
+        #[cfg(windows)]
+        {
+            use std::os::windows::process::CommandExt;
+            cmd.creation_flags(super::CREATE_NO_WINDOW);
+        }
 
         let mut child = match cmd.spawn() {
             Ok(c) => c,

@@ -450,10 +450,10 @@ export default function App() {
     setSettings((prev) => (prev ? { ...prev, remote_code: code } : prev));
   }
 
-  // Codex/Control Me/DB ready are never actually removed from the binary —
-  // this only hides their Sidebar entry (and, for "knowledge_base", stops
-  // offering read_knowledge_base to Gemini, see controlme.rs). Reversible,
-  // toggled from ExtensionsView.
+  // Codex/Control Me are never actually removed from the binary — this
+  // only hides their Sidebar entry, reversible, toggled from
+  // ExtensionsView. Skills (skills.rs) are real local files with their own
+  // delete command instead, since they're actually installable.
   function handleToggleExtension(id: string) {
     setSettings((prev) => {
       if (!prev) return prev;
@@ -539,12 +539,6 @@ export default function App() {
             onOpenCodex={() => setView("codex")}
             onOpenControlMe={() => setView("controlme")}
             onToggleExtension={handleToggleExtension}
-            checkingUpdate={checkingUpdate}
-            availableUpdate={availableUpdate}
-            installingUpdate={installingUpdate}
-            updateInstallPct={updateInstallPct}
-            onCheckUpdate={handleCheckUpdate}
-            onInstallUpdate={handleInstallUpdate}
           />
         </Suspense>
       ) : (
@@ -641,7 +635,10 @@ export default function App() {
         />
       )}
 
-      {availableUpdate && availableUpdate.version !== dismissedUpdateVersion && view !== "settings" && (
+      {availableUpdate &&
+        availableUpdate.version !== dismissedUpdateVersion &&
+        view !== "settings" &&
+        settings?.update_popup_enabled !== false && (
         <div className="update-toast">
           <div className="update-toast-text">
             <strong>Nouvelle version disponible : {availableUpdate.version}</strong>

@@ -14,11 +14,13 @@
 // existing "Supabase Postgres stays read-only" posture almost entirely
 // intact — only the Realtime *service* (a WebSocket relay), not the
 // Postgres REST API, carries this feature.
+use super::chat::{list_models as list_ollama_models, send_chat, CancelFlag as ChatCancelFlag, ChatMessage};
 use super::controlme::{
     capture_screenshot_base64, load_memory, run_control_me_core, save_memory, ControlMeCancelFlag,
     ControlMeConfirmation,
 };
 use super::settings::{load_settings, save_settings};
+use super::watchdog::Watchdog;
 use super::{SUPABASE_ANON_KEY, SUPABASE_URL};
 use futures_util::stream::SplitSink;
 use futures_util::{SinkExt, StreamExt};
@@ -178,6 +180,25 @@ fn push_memory(app: &AppHandle, out_tx: &UnboundedSender<Message>, join_ref: &st
     let _ = out_tx.send(build_broadcast(join_ref, &r, topic, "memory", json!({ "entries": entries })));
 }
 
+// Tells a freshly-joined site viewer which tabs it can actually offer —
+// Chat (Ollama) is always available, Control Me only if not disabled
+// locally (ExtensionsView). Codex has no remote equivalent (a code editor
+// makes no sense driven from a phone/browser), so it's never advertised
+// here regardless of its own toggle.
+fn push_capabilities(app: &AppHandle, out_tx: &UnboundedSender<Message>, join_ref: &str, ref_counter: &Arc<AtomicU64>, topic: &str) {
+    let controlme_enabled = load_settings(app.clone())
+        .map(|s| !s.disabled_extensions.iter().any(|e| e == "controlme"))
+        .unwrap_or(true);
+    let r = ref_counter.fetch_add(1, Ordering::SeqCst).to_string();
+    let _ = out_tx.send(build_broadcast(
+        join_ref,
+        &r,
+        topic,
+        "capabilities",
+        json!({ "chat": true, "controlme": controlme_enabled }),
+    ));
+}
+
 // RAII cleanup for the listeners attached below — run_connection has
 // several early-return points (via `?` and explicit `return Err(...)`),
 // same reasoning as WatchdogGuard in watchdog.rs: every exit path
@@ -329,6 +350,7 @@ fn handle_incoming(
             // same as ControlMeView's own memory panel would show locally.
             if has_new_viewer {
                 push_memory(app, out_tx, join_ref, ref_counter, topic);
+                push_capabilities(app, out_tx, join_ref, ref_counter, topic);
             }
         }
         "broadcast" => {
@@ -354,11 +376,63 @@ fn handle_incoming(
                     let _ = save_memory(app, &[]);
                     push_memory(app, out_tx, join_ref, ref_counter, topic);
                 }
+                "chat_message" => {
+                    let messages: Vec<ChatMessage> =
+                        serde_json::from_value(payload["payload"]["messages"].clone()).unwrap_or_default();
+                    let model = payload["payload"]["model"].as_str().unwrap_or("").trim().to_string();
+                    if !messages.is_empty() && !model.is_empty() {
+                        spawn_remote_chat(app.clone(), model, messages);
+                    }
+                }
+                "chat_stop" => {
+                    app.state::<ChatCancelFlag>().0.store(true, Ordering::SeqCst);
+                }
+                "list_models" => {
+                    spawn_remote_list_models(
+                        app.clone(),
+                        topic.to_string(),
+                        join_ref.to_string(),
+                        ref_counter.clone(),
+                        out_tx.clone(),
+                    );
+                }
                 _ => {}
             }
         }
         _ => {}
     }
+}
+
+// send_chat is a plain sync command (spawns its own std::thread and emits
+// chat-chunk/chat-done/chat-error/chat-cancelled Tauri events, mirrored to
+// the site exactly like Control Me's events — see attach_mirrors) — it can
+// be called directly with an AppHandle and the states it needs, no IPC
+// round-trip required, same pattern as run_control_me_core.
+fn spawn_remote_chat(app: AppHandle, model: String, messages: Vec<ChatMessage>) {
+    let Ok(settings) = load_settings(app.clone()) else { return };
+    let host = settings.ollama_host;
+    let cancel = app.state::<ChatCancelFlag>();
+    let watchdog = app.state::<Watchdog>();
+    let _ = send_chat(app.clone(), cancel, watchdog, host, model, messages);
+}
+
+// list_models uses reqwest::blocking internally — spawn_blocking keeps that
+// off the async runtime's worker threads instead of stalling this
+// connection's own event loop (heartbeats, frame ticks) for however long a
+// slow/unreachable Ollama host takes to respond.
+fn spawn_remote_list_models(app: AppHandle, topic: String, join_ref: String, ref_counter: Arc<AtomicU64>, out_tx: UnboundedSender<Message>) {
+    tauri::async_runtime::spawn(async move {
+        let Ok(settings) = load_settings(app.clone()) else { return };
+        let host = settings.ollama_host;
+        let result = tokio::task::spawn_blocking(move || list_ollama_models(host)).await;
+        let r = ref_counter.fetch_add(1, Ordering::SeqCst).to_string();
+        let payload = match result {
+            Ok(Ok(models)) => json!({ "models": models }),
+            Ok(Err(e)) => json!({ "error": e }),
+            Err(e) => json!({ "error": e.to_string() }),
+        };
+        let _ = out_tx.send(build_broadcast(&join_ref, &r, &topic, "models", payload));
+    });
 }
 
 // The mirror listeners are attached once for the whole connection
@@ -402,7 +476,12 @@ fn spawn_remote_instruction(
 
         let cancel = app.state::<ControlMeCancelFlag>().0.clone();
         let confirmation = app.state::<ControlMeConfirmation>().0.clone();
-        let _ = run_control_me_core(app, cancel, confirmation, api_key, settings.gemini_model, text).await;
+        // No skill selection for remote-triggered sessions (that picker is
+        // local-app-only for now, see skills.rs/ExtensionsView) and
+        // windows_ui forced on regardless of the local toggle — see the
+        // force_windows_ui doc comment on run_control_me_core.
+        let _ = run_control_me_core(app, cancel, confirmation, api_key, settings.gemini_model, text, Vec::new(), true)
+            .await;
     });
 }
 
@@ -415,13 +494,21 @@ fn attach_mirrors(
     app: &AppHandle,
     mirror: impl Fn(&'static str, Value) + Send + Sync + Clone + 'static,
 ) -> Vec<tauri::EventId> {
-    let events: [(&'static str, &'static str); 6] = [
+    // Chat's own mirror events are prefixed ("chat_done" not "done") since
+    // Control Me and Chat run on the same channel and share this same
+    // dispatch — an unprefixed "done" would be ambiguous between "a Control
+    // Me session finished" and "a chat reply finished" on the site side.
+    let events: [(&'static str, &'static str); 10] = [
         ("control-me-step", "step"),
         ("control-me-message", "message"),
         ("control-me-done", "done"),
         ("control-me-error", "error"),
         ("control-me-cancelled", "cancelled"),
         ("control-me-limit", "limit"),
+        ("chat-chunk", "chat_chunk"),
+        ("chat-done", "chat_done"),
+        ("chat-error", "chat_error"),
+        ("chat-cancelled", "chat_cancelled"),
     ];
     events
         .into_iter()

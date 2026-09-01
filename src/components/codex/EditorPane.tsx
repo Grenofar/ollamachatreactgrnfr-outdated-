@@ -1,3 +1,4 @@
+import { useEffect, useRef } from "react";
 import Editor, { type OnMount } from "@monaco-editor/react";
 import "../../monacoSetup";
 import { languageForPath } from "../../fileLang";
@@ -20,9 +21,26 @@ export default function EditorPane({
 }) {
   const active = openFiles.find((f) => f.path === activePath) ?? null;
 
+  // Monaco's onMount fires exactly once per editor instance (per open tab,
+  // since <Editor key={active.path}> remounts on tab switch but not on
+  // every keystroke) — the addCommand callback below is a native keybinding
+  // registered at that single moment, so a plain closure over `onSave`
+  // freezes it to whatever CodexView.tsx's handleSave reference was at
+  // mount time. handleSave itself closes over openFiles fresh each
+  // CodexView render, so calling a stale reference meant Ctrl+S wrote
+  // whatever the file's content was WHEN THE TAB WAS OPENED, silently
+  // ignoring every edit made since (while still clearing the "dirty"
+  // flag as if the save had worked) — the real cause of "Ctrl+S doesn't
+  // save my changes". Routing through a ref that's kept current on every
+  // render fixes it without needing the editor to remount per keystroke.
+  const onSaveRef = useRef(onSave);
+  useEffect(() => {
+    onSaveRef.current = onSave;
+  }, [onSave]);
+
   const handleMount: OnMount = (editorInstance, monaco) => {
     editorInstance.addCommand(monaco.KeyMod.CtrlCmd | monaco.KeyCode.KeyS, () => {
-      if (active) onSave(active.path);
+      if (active) onSaveRef.current(active.path);
     });
   };
 

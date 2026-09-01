@@ -14,9 +14,11 @@ import type {
   DirEntry,
   EditResult,
   HfModel,
-  KnowledgeBaseStatus,
   OllamaModel,
+  PublicSkillMeta,
   Settings,
+  Skill,
+  SkillMeta,
 } from "./types";
 
 export const listModels = (host: string) => invoke<OllamaModel[]>("list_models", { host });
@@ -145,8 +147,8 @@ export const onFreezeResolved = (cb: () => void) => listen("freeze-resolved", ()
 
 // ------------------------------------------------------------ Control Me
 
-export const runControlMe = (apiKey: string, model: string, instruction: string) =>
-  invoke<void>("run_control_me", { apiKey, model, instruction });
+export const runControlMe = (apiKey: string, model: string, instruction: string, activeSkillIds: string[]) =>
+  invoke<void>("run_control_me", { apiKey, model, instruction, activeSkillIds });
 
 export const cancelControlMe = () => invoke<void>("cancel_control_me");
 
@@ -196,8 +198,20 @@ export const onRemoteViewerChanged = (cb: (connected: boolean) => void) =>
 
 // ------------------------------------------------- "DB ready" knowledge base
 
-export const getKnowledgeBaseStatus = () => invoke<KnowledgeBaseStatus>("get_knowledge_base_status");
-export const openKnowledgeBaseFolder = () => invoke<void>("open_knowledge_base_folder");
-export const publishKnowledgeBase = (title: string) => invoke<string>("publish_knowledge_base", { title });
-export const importKnowledgeBase = (shareCode: string) =>
-  invoke<void>("import_knowledge_base", { shareCode });
+export const openSkillsFolder = () => invoke<void>("open_skills_folder");
+export const listSkills = () => invoke<SkillMeta[]>("list_skills");
+export const loadSkill = (id: string) => invoke<Skill>("load_skill", { id });
+export const saveNewSkill = (name: string, description: string, content: string) =>
+  invoke<Skill>("save_new_skill", { name, description, content });
+export const updateSkill = (skill: Skill) => invoke<void>("update_skill", { skill });
+export const deleteSkill = (id: string) => invoke<void>("delete_skill", { id });
+export const publishSkill = (id: string) => invoke<string>("publish_skill", { id });
+export const unpublishSkill = (id: string) => invoke<void>("unpublish_skill", { id });
+export const downloadSkill = (shareCode: string) => invoke<Skill>("download_skill", { shareCode });
+export const listPublicSkills = () => invoke<PublicSkillMeta[]>("list_public_skills");
+export const extractSkillFromTranscript = (
+  apiKey: string,
+  model: string,
+  existingContent: string,
+  transcript: string,
+) => invoke<string>("extract_skill_from_transcript", { apiKey, model, existingContent, transcript });

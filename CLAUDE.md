@@ -55,6 +55,7 @@ pas devenir obsolète.
 - [FAIT] v0.5.6 : Control Me plus rapide et plus fiable — attente adaptative après chaque action (remplace le délai fixe de 120ms par une détection locale de stabilisation de l'écran) et nouvel outil `read_ui_elements` (Gemini peut lire l'arbre d'accessibilité Windows de la fenêtre au premier plan — type/libellé/état/position des contrôles — sans capture d'écran, en complément de `computer_use`) — voir "Attente adaptative et lecture de l'arbre d'accessibilité (v0.5.6)" dans Architecture > Control Me.
 - [FAIT] v0.5.7 : Control Me pilotable **à distance depuis le site** (`site/controlremote.html`, lien depuis la landing) — code de jumelage à 12 chiffres généré dans l'app, écran live + chat + mémoire + bouton Arrêter côté navigateur, tout via Supabase **Realtime** (Broadcast + Presence, aucune table Postgres, client WebSocket écrit à la main côté Rust) — voir "Control Me à distance depuis le site (v0.5.7)" et "Mémoire visible depuis le site distant (v0.5.7)" dans Architecture > Control Me, y compris le modèle de sécurité (code = mot de passe partagé, protection anti-brute-force côté navigateur assumée comme non absolue). Réglages **entièrement refaits en page pleine** à sections (Général/Modèles + Installer un modèle/Control Me/Mises à jour), `SettingsModal.tsx` supprimé au profit de `SettingsView.tsx`, bouton "Installer un modèle" déplacé de la Sidebar vers Réglages — voir "Réglages en page pleine (v0.5.7)". Deux correctifs Control Me au passage : `key_down` qui ne faisait rien (bug réel d'enigo, `release_keys_when_dropped`) et `read_ui_elements` qui n'apportait plus son gain de vitesse (capturait quand même un screenshot inutile) — voir "Correctifs de vitesse et de fiabilité (v0.5.7)". Nouveau **mode de perception "Windows UI"** (toggle Réglages > Control Me, `capture` vs `windows_ui`) : `computer_use` entièrement retiré et remplacé par des outils `function` personnalisés reproduisant le même jeu d'actions — plus aucune capture d'écran envoyée, juste du texte d'accessibilité, mais perte du garde-fou `require_confirmation` (propre au protocole `computer_use`) — voir "Mode de perception Windows UI (v0.5.7)". Nouvelle **extension "DB ready for Control Me"** (espace Extensions dédié, Sidebar) : dossier local caché (`.txt`/`.json`/`.sql` uniquement, validation qui refuse le dossier en bloc si un seul fichier a un autre type) que Control Me peut lire comme base de connaissances via un nouvel outil `read_knowledge_base`, plus un flux de **publication publique via Supabase** (première écriture `anon` de tout ce projet, jusqu'ici strictement lecture seule — RLS et implications documentées explicitement) — voir "Base de connaissances Control Me (v0.5.7)".
 - [FAIT] v0.5.8 : correctif critique — générer un code de jumelage à distance (ou simplement relancer l'app avec un code déjà enregistré) faisait planter l'app **définitivement**, à chaque lancement, signalé par l'utilisateur juste après la publication de la v0.5.7. `remote.rs` appelait `tokio::spawn` directement au lieu de `tauri::async_runtime::spawn` ; appelé depuis le thread principal (hook `setup()`, via `resume_remote_on_startup`), `tokio::spawn` panique faute de runtime "entré" sur ce thread — panic sur le thread principal = tout le processus meurt, et comme le code reste dans `settings.json`, ça se reproduisait à chaque démarrage — voir "Panic de démarrage sur le thread principal (v0.5.8)" dans Architecture > Control Me. Extensions restructuré en hub léger : Codex et Control Me apparaissent maintenant comme des cartes dans l'espace Extensions (bouton "Ouvrir", en plus de leur bouton Sidebar dédié qui reste) avec un interrupteur Activer/Désactiver réversible (masque juste l'entrée Sidebar, rien n'est réellement désinstallé — un seul binaire, pas de vrais modules indépendants), plus un bouton unique "Tout mettre à jour" (pas de fausse mise à jour par extension, une seule vraie mise à jour existe : l'app entière) — voir "Extensions : hub léger (v0.5.8)" dans Architecture. Correctif CSS global : plusieurs boutons ajoutés au fil des dernières versions (approbation inline Codex, en-tête/confirmation Control Me, tout l'espace Extensions) n'étaient couverts par aucun sélecteur et s'affichaient avec le chrome brut du navigateur — corrigé par un style de base sur l'élément `button` global (`:where()` pour les variantes `:hover`/`:disabled`/`:active`, afin de ne jamais l'emporter sur un sélecteur de classe plus spécifique déjà existant) — voir "Correctif CSS boutons non stylés (v0.5.8)" dans Architecture.
+- [FAIT] v0.6.0 : session de travail autonome de nuit (l'utilisateur a donné une longue liste de demandes puis est allé se coucher, en demandant explicitement de poser toute question tout de suite ou de continuer seul sinon — aucune ambiguïté bloquante identifiée, tout implémenté avec des décisions de scope documentées ci-dessous plutôt que deviné en silence). Contenu, dans l'ordre de priorité suivi : (1) site distant en 404 — lien `/controlremote` sans extension, `cleanUrls` manquant dans `vercel.json`, corrigé ; (2) **vrai bug Ctrl+S dans Codex** trouvé (closure figée dans `EditorPane.tsx`, pas juste le souci WebView2 déjà corrigé en v0.3.4 — voir "Ctrl+S enregistrait du contenu périmé (v0.6.0)") ; (3) le petit cmd qui flashait au démarrage — `get_system_ram_gb` (et les autres process PowerShell) sans `CREATE_NO_WINDOW`, corrigé ; (4) **Réglages/Extensions restructurés** : Control Me n'a plus sa propre section Réglages, ses réglages (modèle/clé API/mode de perception) sont maintenant sous une icône ⚙ sur sa carte dans Réglages > Extensions, qui gagne aussi le bouton "Tout mettre à jour" (déplacé depuis l'espace Extensions, qui gagne à la place une recherche) et une case pour désactiver le popup de mise à jour — voir "Réglages/Extensions restructurés (v0.6.0)" ; (5) **refonte complète de "DB ready" en "DB skill for Control Me"** : skills multiples nommés+décrits (plus un seul tas de fichiers), sélection de quel(s) skill(s) fournir avant une session Control Me, bouton "Extraire les informations" (l'IA résume une session passée en mise à jour du skill), navigateur de skills publics en plus du code, "Désinstaller" qui supprime réellement le fichier local (contrairement à Codex/Control Me) — voir "DB skill for Control Me (v0.6.0)" ; (6) **refonte complète du contrôle à distance** : un seul code de jumelage (Réglages > Appareils connectés, plus de section dédiée à Control Me) donne accès à un chat avec le modèle Ollama du PC **et** à Control Me (si activé) depuis le même onglet du site, relayés sur le même canal Realtime — voir "Chat distant unifié avec Control Me (v0.6.0)" ; (7) mode Windows UI branché automatiquement pour toute session Control Me déclenchée à distance, avec vérification explicite qu'aucun appel LLM n'a lieu pour la simple lecture de l'interface — voir la même section ; (8) markdown rendu dans les entrées "étape" de Control Me (texte brut avant, astérisques/backticks affichés tels quels). **Scope volontairement pas couvert, documenté plutôt que deviné** : pas de vrai système générique d'espace Sidebar par extension installée (juste l'espace Skills existant, bien organisé) ; pas de système de skills pour Codex (uniquement Control Me, comme nommé) ; passe d'animations générale limitée aux nouveaux panneaux (réutilisation de `panel-open` existant), pas une repasse complète de l'app.
 
 ## Architecture
 
@@ -1350,6 +1351,254 @@ recevait désormais un padding non désiré du nouveau style global — ajouté
 lecture du CSS, pas testé visuellement — pas d'accès GUI dans cet
 environnement).
 
+### Ctrl+S enregistrait du contenu périmé (v0.6.0)
+
+Retour utilisateur : "control S ne fonctionne toujours pas dans codex" —
+malgré le correctif WebView2 de la v0.3.4 (qui empêchait le navigateur
+d'intercepter le raccourci avant que la page ne le reçoive). Un second
+bug, totalement distinct, existait en dessous : `EditorPane.tsx` enregistre
+la commande Monaco `Ctrl+S` dans `onMount`, qui ne s'exécute **qu'une
+seule fois** par instance d'éditeur (chaque changement d'onglet remonte
+l'éditeur via `key={active.path}`, mais taper dans le même fichier ne le
+fait pas). Le callback passé à `editorInstance.addCommand(...)` fermait
+directement sur `onSave` (prop) et `active` (variable locale) — une
+closure figée à l'instant du montage. `onSave` pointe vers `handleSave`
+dans `CodexView.tsx`, qui lit `openFiles` par fermeture sur l'état de
+**son propre rendu** — pas l'état le plus récent. Résultat concret :
+Ctrl+S enregistrait sur disque le contenu du fichier **tel qu'il était à
+l'ouverture de l'onglet**, ignorant silencieusement toute frappe faite
+depuis — pendant que l'indicateur "non enregistré" (point orange sur
+l'onglet) se remettait à zéro comme si tout s'était bien passé, laissant
+croire que la sauvegarde avait réussi. Un bug classique de closure périmée
+dans un point d'échappement impératif (l'API `addCommand` de Monaco
+contourne le cycle de rendu React). Corrigé avec un `useRef` mis à jour à
+chaque rendu (`onSaveRef.current = onSave` dans un `useEffect`), et le
+callback Monaco appelle `onSaveRef.current(...)` au lieu de `onSave(...)`
+directement — `active.path` reste utilisé tel quel dans la closure (il ne
+change jamais sans un remontage, contrairement au contenu). `npx tsc
+--noEmit` passé à 0 erreur. **Pas de test visuel possible dans cet
+environnement** — à confirmer par l'utilisateur.
+
+### Réglages/Extensions restructurés (v0.6.0)
+
+Trois demandes explicites groupées : Control Me ne doit plus avoir sa
+propre section dans Réglages (ses réglages doivent vivre sous une petite
+icône réglages sur sa carte, dans Réglages > Extensions), le bouton "Tout
+mettre à jour" doit être dans Réglages > Extensions plutôt que dans
+l'espace Extensions lui-même (qui gagne une recherche à la place), et une
+notification de mise à jour désactivable.
+
+- `SettingsView.tsx` : `SECTIONS` passe de
+  `["general","models","controlme","extensions","updates"]` à
+  `["general","models","extensions","devices","updates"]` — plus de
+  section `controlme` dédiée. La carte "Control Me" dans
+  `EXTENSIONS` (tableau local) porte `hasSettings: true` ; un clic sur
+  l'icône `⚙` qu'elle affiche bascule `openGear` et révèle un panneau
+  inline (`.extension-gear-panel`, animation `panel-open` déjà existante)
+  contenant exactement ce qui vivait avant dans la section Control Me
+  dédiée (modèle Gemini, clé API, bascule capture/Windows UI) — Codex n'a
+  pas d'icône réglages (rien à configurer à ce niveau, son bascule
+  Auto/Approbation reste dans `CodexView.tsx` lui-même).
+- Un bouton "Tout mettre à jour" (+ bandeau "Installer X.Y.Z" si
+  disponible) apparaît en haut de la section Extensions, réutilisant
+  exactement le même état déjà lifté dans `App.tsx`
+  (`checkingUpdate`/`availableUpdate`/`installingUpdate`/`onCheckUpdate`/
+  `onInstallUpdate`) — aucun second système de vérification.
+- Nouvelle case à cocher `form.update_popup_enabled` (nouveau champ
+  `Settings.update_popup_enabled: bool`, défaut `true` via
+  `#[serde(default = "default_true")]`) — le toast "Nouvelle version
+  disponible" dans `App.tsx` se masque désormais aussi si
+  `settings.update_popup_enabled === false`, en plus de ses conditions
+  existantes (version différente, pas sur Réglages).
+- **"Appareils connectés"** remplace le bloc "Contrôle à distance"
+  auparavant niché dans la section Control Me — même code de jumelage,
+  mêmes commandes (`generateRemoteCode`/`clearRemoteCode`), juste
+  déplacé dans sa propre section de navigation et son libellé généralisé
+  ("discute avec le modèle qui tourne sur ce PC... et contrôle son écran
+  si Control Me est activé" au lieu de la description Control-Me-only
+  d'avant) — cohérent avec le fait qu'un seul code sert maintenant les
+  deux (voir "Chat distant unifié avec Control Me (v0.6.0)").
+- `ExtensionsView.tsx` (l'espace Sidebar) perd le bouton "Tout mettre à
+  jour" (et les props `checkingUpdate`/`availableUpdate`/etc. associées)
+  et gagne un champ de recherche (`.extensions-search`, dans l'en-tête) —
+  filtre les cartes Codex/Control Me **et** la liste des skills par nom/
+  description (une seule recherche, portée volontairement large plutôt
+  que deux champs séparés).
+
+### DB skill for Control Me (v0.6.0)
+
+Remplace entièrement "DB ready for Control Me" (v0.5.7) — retour de
+l'utilisateur : "il faut obligatoirement un nom et une description et pas
+un code", plus toute une série de demandes (liste de skills visibles,
+choix du skill à fournir avant une session, extraction automatique depuis
+une session passée, skills téléchargeables). L'ancien design (un seul
+dossier plat de fichiers `.txt`/`.json`/`.sql` validés en bloc) ne
+permettait aucune de ces choses — refonte complète plutôt que patch.
+
+- **`src-tauri/src/commands/skills.rs`** (nouveau, remplace
+  `knowledge_base.rs` supprimé) : `Skill { id, name, description, content,
+  is_public, share_code, created_at }`, un fichier JSON par skill dans
+  `{app_data_dir}/controlme_skills/` (même dossier cache Windows que
+  l'ancien design, même raison : frein cosmétique, pas un vrai contrôle
+  d'accès) — pattern JSON-par-item déjà utilisé partout ailleurs dans ce
+  projet (conversations, sessions Control Me, mémoire) plutôt qu'inventer
+  un format dossier-par-skill-avec-sous-fichiers. `name`/`description`
+  obligatoires, validés côté Rust (`validate()`) avant toute écriture —
+  correspond littéralement à la demande "obligatoirement un nom et une
+  description".
+- **Sélection avant une session** : `run_control_me`/`run_control_me_core`
+  gagnent un paramètre `active_skill_ids: Vec<String>` — le contenu des
+  skills choisis est **préfixé directement à l'instruction** (même
+  mécanisme que le préchargement de la mémoire `remember_fact`, juste
+  appliqué aux skills explicitement sélectionnés plutôt qu'à tout le
+  fichier mémoire), pas exposé comme outil `read_knowledge_base` que
+  Gemini devait penser à appeler — l'utilisateur a déjà fait le choix
+  explicitement, il n'y a plus rien à décider pour le modèle. L'outil
+  `read_knowledge_base` et tout ce qui y touchait dans `controlme.rs`
+  (`build_capture_tools`/`build_windows_ui_tools` reprennent leur
+  signature sans paramètre) sont supprimés. Panneau "Skills" dans
+  `ControlMeView.tsx` (à côté de Mémoire/Historique) — liste à cases à
+  cocher, comptable dans le libellé du bouton
+  (`Skills (2)`).
+- **Publication/téléchargement** : `publish_skill` écrit `name`,
+  `description`, `content` dans `controlme_knowledge_shares` (même table
+  que l'ancien design — migration `supabase/skills_migration.sql`,
+  **à exécuter par l'utilisateur** : renomme `title` en `name`, ajoute
+  `description NOT NULL DEFAULT ''`, aucune policy RLS à toucher).
+  `unpublish_skill` est **local uniquement** — remet `is_public`/
+  `share_code` à faux/`None` côté app, mais **ne retire rien de ce qui
+  est déjà sur Supabase** (aucune policy `update`/`delete` pour `anon`,
+  décision assumée depuis le tout premier design de cette table, voir
+  "Base de connaissances Control Me (v0.5.7)") — documenté explicitement
+  dans le commentaire de module de `skills.rs`, pas caché. Nouveau
+  `list_public_skills()` (parcours de tous les skills publics, pas juste
+  par code) — gratuit : la policy `select to anon using (true)` déjà en
+  place pour la recherche par code autorise déjà lister toute la table,
+  aucun changement de schéma/RLS nécessaire pour ça.
+- **"Extraire les informations"** (`extract_skill_from_transcript`,
+  `skills.rs`) : appel Gemini **ponctuel, sans outils, sans boucle** (juste
+  `input: [{type:"text", text: prompt}]`, pas de `tools` dans le corps) —
+  distinct de la boucle agentique de Control Me dans `controlme.rs`, un
+  simple appel de génération de texte. Le prompt inclut le contenu actuel
+  du skill (peut être vide) + le transcript de la session choisie, et
+  demande une réécriture complète et à jour. Le résultat est affiché dans
+  le champ de contenu de l'éditeur pour relecture — **jamais appliqué
+  automatiquement**, l'utilisateur doit encore cliquer "Enregistrer".
+  "Quand ya qu'un seul fichier choisi" (contrainte demandée explicitement)
+  est satisfait par construction plutôt que par une vérification
+  séparée : l'éditeur de `ExtensionsView.tsx` n'ouvre jamais qu'un seul
+  skill à la fois (cliquer une ligne de la liste = ouvrir son éditeur),
+  donc il n'existe structurellement aucun état où "plusieurs sont
+  sélectionnés" — pas besoin du message d'avertissement décrit dans la
+  demande, l'ambiguïté qu'il visait à couvrir ne peut simplement pas se
+  produire.
+- **"Désinstaller" a un vrai sens ici**, contrairement à Codex/Control Me
+  (voir "Extensions : hub léger (v0.5.8)") : `delete_skill` supprime
+  réellement le fichier JSON local — un skill est un vrai fichier créé
+  par l'app, pas une fonctionnalité compilée dans le binaire.
+- `ExtensionsView.tsx` réécrit entièrement : carte "DB skill for Control
+  Me" avec liste de skills (`.skill-list`/`.skill-row`, recherche
+  partagée avec les cartes Codex/Control Me), bouton "Nouveau skill",
+  éditeur inline (nom/description/contenu + sélecteur de session pour
+  l'extraction + publier/rendre privé/désinstaller/enregistrer), section
+  "Parcourir les skills publics" repliable + import manuel par code en
+  secours.
+- `cargo check`/`npx tsc --noEmit` passés à 0 erreur. **Aucune
+  vérification de bout en bout possible dans cet environnement**
+  (nécessite une vraie clé API Gemini pour tester l'extraction, et un
+  accès GUI pour tout le reste) — à tester par l'utilisateur : créer un
+  skill, le sélectionner dans une session Control Me, publier/vérifier
+  via `curl` avec la clé anon, importer sur un second poste, extraire
+  depuis une session passée.
+
+### Chat distant unifié avec Control Me (v0.6.0)
+
+Demande explicite, avec un changement de modèle assez profond par
+rapport au design de la v0.5.7 : "je veux qu'il y ait qu'un seul code" —
+jusqu'ici, le code de jumelage vivait dans la section Control Me des
+Réglages et ne donnait accès qu'à Control Me sur le site. Maintenant, ce
+même code (même canal Realtime, aucun second système) donne accès à
+**deux onglets** sur le site : Chat (discuter avec le modèle Ollama qui
+tourne sur le PC) et Control Me (si activé localement) — voir "Réglages/
+Extensions restructurés (v0.6.0)" pour le renommage de la section en
+"Appareils connectés".
+
+- **Relais de chat, `remote.rs`** : `chat::send_chat` est une commande
+  Tauri **synchrone** (pas `async fn`) qui spawn son propre thread et
+  émet des événements `chat-chunk`/`chat-done`/`chat-error`/
+  `chat-cancelled` — appelable directement avec un `AppHandle` et les
+  `State<T>` qu'elle attend (`app.state::<ChatCancelFlag>()`/
+  `app.state::<Watchdog>()`), exactement comme `run_control_me_core`
+  était déjà appelée directement depuis `remote.rs` sans passer par l'IPC
+  Tauri. `chat::list_models` utilise `reqwest::blocking` en interne —
+  appelée via `tokio::task::spawn_blocking` pour ne jamais bloquer le
+  thread qui fait tourner toute la connexion WebSocket (heartbeats, tick
+  d'écran) le temps qu'Ollama réponde.
+- **Événements de mirroring préfixés** : `attach_mirrors` (déjà en place
+  pour Control Me depuis la v0.5.7) mirrore maintenant aussi
+  `chat-chunk`/`chat-done`/`chat-error`/`chat-cancelled`, mais sous les
+  noms `chat_chunk`/`chat_done`/`chat_error`/`chat_cancelled` (préfixés)
+  plutôt que les noms courts de Control Me (`step`/`message`/`done`/
+  `error`/`cancelled`) — sans ça, "done" serait ambigu entre "une session
+  Control Me vient de finir" et "une réponse de chat vient de finir" sur
+  le même canal partagé, côté site.
+- **Nouveaux événements entrants** (site → app, dans `handle_incoming`) :
+  `chat_message` (`{messages, model}`, appelle `spawn_remote_chat`),
+  `chat_stop` (déclenche `ChatCancelFlag`, même flag que le chat local —
+  cohérent, un seul chat actif à la fois de toute façon), `list_models`
+  (répond avec un broadcast `models`).
+- **Capacités annoncées à la connexion** : nouvel événement
+  `capabilities` (`{chat: true, controlme: bool}`), poussé à chaque
+  nouveau viewer comme la mémoire (`push_capabilities`, même point
+  d'accroche que `push_memory` dans `presence_diff`). Codex n'est **jamais**
+  annoncé (aucun équivalent distant sensé pour un éditeur de code piloté
+  depuis un téléphone/navigateur) — `chat` est toujours `true` (le chat de
+  base existe forcément), `controlme` reflète `disabled_extensions`.
+- **`site/controlremote.html` réécrit** : barre d'onglets Chat/Control Me
+  (Control Me masqué si `capabilities.controlme` est faux), onglet Chat
+  avec sélecteur de modèle (peuplé via `list_models` à la première
+  ouverture de l'onglet), zone de conversation, champ de saisie, bouton
+  Arrêter. Rendu des messages de chat en **texte brut uniquement**
+  (`textContent`, jamais `innerHTML`) — même discipline que le reste de
+  cette page (mémoire/étapes/messages Control Me déjà en `textContent`),
+  délibérément pas de dépendance markdown ajoutée juste pour ce nouvel
+  onglet.
+- **Windows UI branché automatiquement pour les sessions distantes** :
+  `run_control_me_core` gagne un paramètre `force_windows_ui: bool` —
+  `true` pour toute instruction déclenchée par `spawn_remote_instruction`
+  (peu importe le réglage local de l'utilisateur), `false` pour la
+  commande IPC locale (`run_control_me`, comportement inchangé, respecte
+  toujours le réglage local). Raisonnement : le flux d'écran que voit le
+  site (`broadcast_frame_if_viewer`) est **totalement indépendant** de ce
+  que Gemini perçoit lui-même — donc basculer Gemini en mode texte
+  (Windows UI) pour une session distante ne prive le viewer de rien, tout
+  en étant plus rapide et en n'envoyant aucune image à Google.
+  **Vérification explicite demandée** ("trouve un moyen de vérifier que
+  l'UI ne lance pas de prompt ni de LLM, juste regarder l'ui") : tracé le
+  code de `read_foreground_ui_elements`/`read_ui_elements` (`controlme.rs`/
+  `ui_automation.rs`) — c'est un parcours **purement local** de l'arbre
+  UI Automation Windows (COM), aucun appel réseau, aucun appel à l'API
+  Gemini nulle part dans cette fonction ; le mode `windows_ui` retire même
+  `computer_use` du tableau `tools` (voir "Mode de perception Windows UI
+  (v0.5.7)"), donc **aucune image n'est jamais capturée ni envoyée** dans
+  ce mode — seul du texte transite vers Gemini (l'instruction + le
+  contenu de `read_foreground_ui_elements`), jamais vers un autre service.
+  Vérifié par lecture de code, pas par un test réseau en direct (pas de
+  clé API Gemini disponible dans cet environnement pour observer le
+  trafic réellement émis).
+- **Lacune connue, héritée du design v0.5.7, pas nouvelle** :
+  `control-me-confirmation-required` n'est toujours pas mirroré — une
+  pause `safety_decision` (mode capture uniquement) déclenchée à distance
+  ne peut toujours être résolue que depuis l'app locale. Sans rapport
+  avec le nouveau chat (le chat n'a pas de mécanisme de confirmation).
+- `cargo check` passé à 0 erreur ni avertissement dès la première
+  tentative. **Aucune vérification de bout en bout possible dans cet
+  environnement** (nécessite l'app lancée ET un navigateur sur le site
+  déployé en même temps) — à tester explicitement par l'utilisateur :
+  jumelage, onglet Chat (liste de modèles, envoi, streaming, Arrêter),
+  bascule automatique vers l'onglet Chat si Control Me est désactivé,
+  onglet Control Me toujours fonctionnel comme avant.
+
 ### Les 6 outils de l'agent
 1. `read_file` — lecture texte (limite 5 Mo), chemin absolu
 2. `list_dir` — listing un niveau, chemin absolu
@@ -2232,6 +2481,49 @@ l'utilisateur confirme qu'elle est bien dans `.env` local.
   de code, aucun `settings.json` avec `remote_code` renseigné sur cette
   machine) ni pour le rendu des boutons — à confirmer par l'utilisateur
   après installation.
+- **2026-09-01** — v0.6.0, session de nuit autonome : l'utilisateur a
+  envoyé une longue liste de demandes groupées ("attention ya des
+  failles..." puis un très long message listant une dizaine de
+  changements distincts) et est allé se coucher en demandant
+  explicitement de poser toute question tout de suite plutôt qu'après —
+  aucun point n'a semblé assez ambigu/risqué pour justifier de bloquer
+  sur une question (contrairement à d'autres sessions comme le partage
+  public de la base de connaissances en v0.5.7), donc travail lancé
+  directement avec des décisions de scope documentées au fil de l'eau
+  plutôt que devinées en silence, dans l'ordre de priorité : (1) un vrai
+  **bug critique signalé en urgence en cours de route** — générer un
+  code de jumelage plantait l'app définitivement — traité immédiatement
+  hors de l'ordre prévu, publié seul en v0.5.8 (voir son entrée
+  ci-dessus) avant de reprendre le reste de la liste ; (2) 404 du site
+  distant (routage Vercel) ; (3) vrai bug Ctrl+S dans Codex (closure
+  périmée, distinct du correctif WebView2 de la v0.3.4) ; (4) flash de
+  console au démarrage (`CREATE_NO_WINDOW` manquant sur les process
+  PowerShell spawnés) ; (5) Réglages/Extensions restructurés (Control Me
+  sous une icône réglages, "Tout mettre à jour" déplacé, recherche
+  ajoutée, popup de mise à jour désactivable) ; (6) refonte complète de
+  "DB ready" en "DB skill for Control Me" (skills multiples nommés/
+  décrits, sélection avant session, extraction automatique depuis une
+  session passée, navigateur de skills publics) ; (7) refonte du contrôle
+  à distance en un seul code donnant accès à un chat Ollama **et** à
+  Control Me depuis le même onglet du site, mode Windows UI forcé pour
+  les sessions distantes avec vérification explicite qu'aucune image
+  n'est jamais envoyée dans ce mode ; (8) markdown rendu dans les entrées
+  "étape" de Control Me. Voir "Ctrl+S enregistrait du contenu périmé
+  (v0.6.0)", "Réglages/Extensions restructurés (v0.6.0)", "DB skill for
+  Control Me (v0.6.0)" et "Chat distant unifié avec Control Me (v0.6.0)"
+  dans Architecture pour le détail technique complet de chaque point.
+  Scope volontairement réduit sur deux points, documenté explicitement
+  plutôt que construit à moitié : pas de vrai système générique
+  d'espace Sidebar par extension installée (l'espace Skills existant
+  suffit et reste bien séparé de l'installation) ; pas de système de
+  skills pour Codex (la demande nommait "DB skill for **Control Me**"
+  explicitement). `cargo check`/`npx tsc --noEmit` passés à 0 erreur sur
+  l'ensemble des changements. **Aucune vérification de bout en bout
+  possible dans cet environnement** pour la quasi-totalité de ces points
+  (accès GUI, clé API Gemini réelle, et site déployé + app lancée
+  simultanément tous absents ici) — à tester explicitement par
+  l'utilisateur au réveil, point par point (chaque section Architecture
+  liste précisément quoi vérifier).
 
 ## Prochaines étapes (dans l'ordre du fichier de passation d'origine)
 

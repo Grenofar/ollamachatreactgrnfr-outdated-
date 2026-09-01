@@ -35,6 +35,7 @@ export interface Settings {
   remote_code?: string | null;
   control_me_perception_mode: "capture" | "windows_ui";
   disabled_extensions: string[];
+  update_popup_enabled: boolean;
 }
 
 export interface DirEntry {
@@ -120,9 +121,28 @@ export interface ControlMeSessionMeta {
   created_at: number;
 }
 
-export interface KnowledgeBaseStatus {
-  valid_files: string[];
-  invalid_files: string[];
-  total_bytes: number;
+export interface Skill {
+  id: string;
+  name: string;
+  description: string;
+  content: string;
+  is_public: boolean;
+  share_code?: string | null;
+  created_at: number;
+}
+
+export interface SkillMeta {
+  id: string;
+  name: string;
+  description: string;
+  is_public: boolean;
+  share_code?: string | null;
+  created_at: number;
+}
+
+export interface PublicSkillMeta {
+  name: string;
+  description: string;
+  share_code: string;
 }
 

@@ -42,8 +42,8 @@ pub struct MemoryEntry {
 const MAX_CONTROL_ME_ITERATIONS: u32 = 40;
 // Fallback only (used if the frontend somehow sends an empty model string)
 // — the real default lives in settings.rs's default_gemini_model().
-const GEMINI_MODEL: &str = "gemini-3.5-flash-lite";
-const GEMINI_ENDPOINT: &str = "https://generativelanguage.googleapis.com/v1beta/interactions";
+pub(crate) const GEMINI_MODEL: &str = "gemini-3.5-flash-lite";
+pub(crate) const GEMINI_ENDPOINT: &str = "https://generativelanguage.googleapis.com/v1beta/interactions";
 const CANCELLED_MESSAGE: &str = "Annulé par l'utilisateur.";
 // Normalized 0-999 coordinates map to a fraction of the screenshot
 // regardless of its pixel resolution, so downscaling before encoding
@@ -66,7 +66,7 @@ const SETTLE_THUMB_WIDTH: u32 = 64;
 const SETTLE_DIFF_THRESHOLD: f64 = 3.0;
 // Tools that never touch the screen — no settle wait, no screenshot
 // attached to their result (see the main loop below).
-const NO_VISUAL_EFFECT_TOOLS: [&str; 3] = ["read_ui_elements", "remember_fact", "read_knowledge_base"];
+const NO_VISUAL_EFFECT_TOOLS: [&str; 2] = ["read_ui_elements", "remember_fact"];
 // Fixed settle delay used in "windows_ui" perception mode instead of the
 // adaptive pixel-diff wait above — there's no screen to diff against, just
 // a short buffer so a UI has time to actually update before the
@@ -253,15 +253,6 @@ fn dispatch_action(app: &AppHandle, name: &str, args: &Value, width: u32, height
                 let count = text.lines().count().saturating_sub(1);
                 (format!("Lecture de l'interface ({count} éléments)"), text, None)
             }
-            Err(e) => {
-                let msg = format!("Erreur : {e}");
-                (msg.clone(), msg, Some(e))
-            }
-        };
-    }
-    if name == "read_knowledge_base" {
-        return match super::knowledge_base::validate_and_read_knowledge_base(app) {
-            Ok(text) => ("Lecture de la base de connaissances".to_string(), text, None),
             Err(e) => {
                 let msg = format!("Erreur : {e}");
                 (msg.clone(), msg, Some(e))
@@ -492,33 +483,16 @@ fn read_ui_elements_tool(preferred: bool) -> Value {
     })
 }
 
-// "DB ready for Control Me" — an optional local knowledge base the user
-// can populate themselves (Réglages > Extensions), distinct from
-// remember_fact's auto-learned memory: this is reference material the
-// user explicitly chose to provide, not facts Gemini inferred on its own.
-fn read_knowledge_base_tool() -> Value {
-    json!({
-        "type": "function",
-        "name": "read_knowledge_base",
-        "description": "Lit la base de connaissances locale que l'utilisateur a préparée lui-même (fichiers texte/JSON/SQL de référence — pas des faits appris automatiquement, contrairement à remember_fact). Utile pour des informations que l'utilisateur veut explicitement mettre à disposition (identifiants d'un compte à utiliser, notes de procédure, données de référence...). Peut être vide si rien n'a été configuré — dans ce cas, l'outil le signale simplement.",
-        "parameters": { "type": "object", "properties": {} }
-    })
-}
-
-fn build_capture_tools(include_knowledge_base: bool) -> Value {
-    let mut tools = vec![
-        json!({
+fn build_capture_tools() -> Value {
+    json!([
+        {
             "type": "computer_use",
             "environment": "desktop",
             "enable_prompt_injection_detection": true,
-        }),
+        },
         remember_fact_tool(),
         read_ui_elements_tool(false),
-    ];
-    if include_knowledge_base {
-        tools.push(read_knowledge_base_tool());
-    }
-    Value::Array(tools)
+    ])
 }
 
 // "windows_ui" mode drops computer_use entirely (it's fundamentally a
@@ -533,7 +507,7 @@ fn build_capture_tools(include_knowledge_base: bool) -> Value {
 // Real trade-off, not hidden: Gemini's require_confirmation safety signal
 // is part of computer_use's own protocol specifically — a custom function
 // tool has no equivalent, so that safety net does not exist in this mode.
-fn build_windows_ui_tools(include_knowledge_base: bool) -> Value {
+fn build_windows_ui_tools() -> Value {
     let xy_params = |extra: Value| {
         let mut props = json!({
             "x": { "type": "number", "description": "Position X normalisée 0-999" },
@@ -555,7 +529,7 @@ fn build_windows_ui_tools(include_knowledge_base: bool) -> Value {
         })
     };
 
-    let mut tools = json!([
+    json!([
         click_tool("click", "Clic gauche"),
         click_tool("double_click", "Double-clic gauche"),
         click_tool("triple_click", "Triple-clic gauche"),
@@ -660,13 +634,7 @@ fn build_windows_ui_tools(include_knowledge_base: bool) -> Value {
         },
         remember_fact_tool(),
         read_ui_elements_tool(true),
-    ]);
-    if include_knowledge_base {
-        if let Some(arr) = tools.as_array_mut() {
-            arr.push(read_knowledge_base_tool());
-        }
-    }
-    tools
+    ])
 }
 
 #[tauri::command]
@@ -677,8 +645,19 @@ pub async fn run_control_me(
     api_key: String,
     model: String,
     instruction: String,
+    active_skill_ids: Vec<String>,
 ) -> Result<(), String> {
-    run_control_me_core(app, cancel.0.clone(), confirmation.0.clone(), api_key, model, instruction).await
+    run_control_me_core(
+        app,
+        cancel.0.clone(),
+        confirmation.0.clone(),
+        api_key,
+        model,
+        instruction,
+        active_skill_ids,
+        false,
+    )
+    .await
 }
 
 // Extracted from the #[tauri::command] above so the remote-pairing task
@@ -697,6 +676,17 @@ pub async fn run_control_me_core(
     api_key: String,
     model: String,
     instruction: String,
+    active_skill_ids: Vec<String>,
+    // Remote-triggered instructions (remote.rs) force windows_ui regardless
+    // of the local toggle: the site already gets its own live screenshot
+    // feed independently (broadcast_frame_if_viewer, unrelated to what
+    // Gemini itself perceives), so there's no reason for Gemini to also
+    // burn a screenshot round-trip through computer_use for a session
+    // nobody is standing in front of locally to benefit from that mode's
+    // visual reasoning — windows_ui is also strictly cheaper/faster and
+    // sends no image data anywhere. Local sessions keep respecting the
+    // user's own Réglages toggle, unchanged.
+    force_windows_ui: bool,
 ) -> Result<(), String> {
     if api_key.trim().is_empty() {
         return Err("Aucune clé API Gemini configurée. Ajoute-la dans Réglages.".to_string());
@@ -710,18 +700,13 @@ pub async fn run_control_me_core(
     // "capture" (default) sends screenshots through computer_use, same as
     // always. "windows_ui" sends no screenshots at all — only the
     // accessibility tree as text, via custom function tools mirroring
-    // execute_action's existing action set. Loaded from settings rather
-    // than passed as a parameter so neither call site (the Tauri command
-    // above, remote.rs) needs to change its own signature for this.
+    // execute_action's existing action set.
     let loaded_settings = load_settings(app.clone()).ok();
-    let use_ui_mode = loaded_settings
-        .as_ref()
-        .map(|s| s.control_me_perception_mode == "windows_ui")
-        .unwrap_or(false);
-    let include_knowledge_base = !loaded_settings
-        .as_ref()
-        .map(|s| s.disabled_extensions.iter().any(|e| e == "knowledge_base"))
-        .unwrap_or(false);
+    let use_ui_mode = force_windows_ui
+        || loaded_settings
+            .as_ref()
+            .map(|s| s.control_me_perception_mode == "windows_ui")
+            .unwrap_or(false);
 
     let (width, height, initial_observation) = if use_ui_mode {
         let (w, h) = primary_screen_size()?;
@@ -732,11 +717,7 @@ pub async fn run_control_me_core(
         let (screenshot, w, h) = capture_screenshot_base64()?;
         (w, h, json!({ "type": "image", "data": screenshot, "mime_type": "image/jpeg" }))
     };
-    let tools = if use_ui_mode {
-        build_windows_ui_tools(include_knowledge_base)
-    } else {
-        build_capture_tools(include_knowledge_base)
-    };
+    let tools = if use_ui_mode { build_windows_ui_tools() } else { build_capture_tools() };
 
     // thinking_level "low" trades some reasoning depth for much faster
     // per-step responses — appropriate for a tight screenshot/act loop
@@ -749,21 +730,32 @@ pub async fn run_control_me_core(
     // infrastructure for no practical benefit here. Revisit only if this
     // ever grows large enough to meaningfully bloat context.
     let memory = load_memory(&app).unwrap_or_default();
-    let instruction_with_memory = if memory.is_empty() {
+    let mut instruction_with_context = if memory.is_empty() {
         instruction
     } else {
         let facts: Vec<String> = memory.iter().map(|m| format!("- {}", m.fact)).collect();
-        format!(
-            "Ce que tu sais déjà sur cette personne :\n{}\n\nInstruction actuelle : {}",
-            facts.join("\n"),
-            instruction
-        )
+        format!("Ce que tu sais déjà sur cette personne :\n{}\n\nInstruction actuelle : {}", facts.join("\n"), instruction)
     };
+    // Skills chosen by the user before starting this session (ExtensionsView)
+    // — prepended directly rather than exposed as a callable tool (the
+    // earlier read_knowledge_base design): the user already picked exactly
+    // which skill(s) apply here, so there's nothing left for Gemini to
+    // decide by calling a tool, and a plain prepend can't be "forgotten"
+    // the way a tool call sometimes is (same reasoning as remember_fact's
+    // memory preload above, just applied to explicitly-selected skills
+    // instead of the whole memory file).
+    if !active_skill_ids.is_empty() {
+        let skills_text = super::skills::read_active_skills(&app, &active_skill_ids);
+        if !skills_text.is_empty() {
+            instruction_with_context =
+                format!("Compétence(s) fournie(s) pour cette session :\n{skills_text}\n\n{instruction_with_context}");
+        }
+    }
 
     let mut body = json!({
         "model": model,
         "input": [
-            { "type": "text", "text": instruction_with_memory },
+            { "type": "text", "text": instruction_with_context },
             initial_observation,
         ],
         "tools": tools,

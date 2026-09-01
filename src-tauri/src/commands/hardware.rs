@@ -5,13 +5,19 @@
 // that alone rather than guessing at a GPU budget that might be wrong.
 #[tauri::command]
 pub async fn get_system_ram_gb() -> Result<f64, String> {
-    let output = tokio::process::Command::new("powershell")
-        .args([
-            "-NoProfile",
-            "-NonInteractive",
-            "-Command",
-            "(Get-CimInstance Win32_ComputerSystem).TotalPhysicalMemory",
-        ])
+    #[allow(unused_mut)]
+    let mut cmd = tokio::process::Command::new("powershell");
+    cmd.args([
+        "-NoProfile",
+        "-NonInteractive",
+        "-Command",
+        "(Get-CimInstance Win32_ComputerSystem).TotalPhysicalMemory",
+    ]);
+    // tokio::process::Command exposes creation_flags directly on Windows
+    // (no CommandExt trait import needed, unlike std::process::Command).
+    #[cfg(windows)]
+    cmd.creation_flags(super::CREATE_NO_WINDOW);
+    let output = cmd
         .output()
         .await
         .map_err(|e| format!("Impossible de lire la RAM système : {}", e))?;

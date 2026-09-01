@@ -3,8 +3,8 @@
 <head>
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1" />
-<title>Control Me à distance</title>
-<meta name="description" content="Contrôle ton PC à distance depuis ce navigateur, jumelé avec l'app Control Me via un code." />
+<title>Contrôle à distance</title>
+<meta name="description" content="Discute avec le modèle qui tourne sur ton PC, ou prends le contrôle de son écran, depuis ce navigateur — jumelé avec l'app via un code." />
 <style>
   :root {
     color-scheme: dark;
@@ -117,6 +117,30 @@
   .status-dot.online { background: var(--ok); }
   .status-text { font-size: 0.85rem; color: var(--text-dim); flex: 1; }
 
+  .tab-bar {
+    display: flex;
+    gap: 4px;
+    background: var(--bg-raised);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    padding: 4px;
+    margin-bottom: 16px;
+  }
+  .tab-btn {
+    flex: 1;
+    background: transparent;
+    border: none;
+    color: var(--text-dim);
+    padding: 8px;
+    border-radius: 8px;
+    font-size: 0.88rem;
+    cursor: pointer;
+  }
+  .tab-btn.active {
+    background: var(--accent-strong);
+    color: #ffffff;
+  }
+
   .memory-panel {
     background: var(--bg-raised);
     border: 1px solid var(--border);
@@ -185,6 +209,7 @@
     gap: 8px;
     margin-bottom: 12px;
     font-size: 0.88rem;
+    white-space: pre-wrap;
   }
   .transcript-empty { color: var(--text-dim); }
   .remote-step {
@@ -219,6 +244,19 @@
     letter-spacing: normal;
     text-align: left;
     font-family: inherit;
+  }
+
+  .chat-model-row {
+    margin-bottom: 10px;
+  }
+  .chat-model-row select {
+    width: 100%;
+    background: var(--bg-raised);
+    border: 1px solid var(--border);
+    color: var(--text);
+    border-radius: 8px;
+    padding: 10px 12px;
+    font-size: 0.9rem;
   }
 
   .footer-actions {
@@ -257,16 +295,16 @@
     </div>
 
     <div id="pair-form-state" hidden>
-      <h1>Control Me à distance</h1>
+      <h1>Contrôle à distance</h1>
       <p>
-        Saisis le code à 12 chiffres généré dans l'app (Réglages → Control Me)
-        pour voir l'écran et donner des instructions depuis ce navigateur.
+        Saisis le code généré dans l'app (Réglages → Appareils connectés) pour discuter avec le
+        modèle qui tourne sur ce PC, et contrôler son écran si Control Me est activé.
       </p>
       <div class="note">
-        <strong>Attention :</strong> toute personne connaissant ce code peut voir
-        ton écran et contrôler ton PC — traite-le comme un mot de passe. Il est
-        enregistré dans ce navigateur une fois connecté, pour ne pas avoir à le
-        ressaisir.
+        <strong>Attention :</strong> toute personne connaissant ce code peut discuter avec le modèle
+        installé sur ce PC et, si Control Me est activé, voir son écran et le contrôler — traite ce
+        code comme un mot de passe. Il est enregistré dans ce navigateur une fois connecté, pour ne
+        pas avoir à le ressaisir.
       </div>
       <form id="pair-form">
         <input type="text" id="code-input" inputmode="numeric" maxlength="12" placeholder="000000000000" autocomplete="off" />
@@ -283,30 +321,57 @@
         <button class="btn btn-danger" id="disconnect-btn">Se déconnecter</button>
       </div>
 
+      <div class="tab-bar">
+        <button class="tab-btn" id="tab-chat-btn">Chat</button>
+        <button class="tab-btn" id="tab-controlme-btn">Control Me</button>
+      </div>
+
       <div class="memory-panel" id="memory-panel" hidden>
         <div class="memory-empty" id="memory-empty">Rien de retenu pour l'instant.</div>
         <div class="memory-list" id="memory-list"></div>
         <button class="btn btn-danger" id="memory-clear-btn" hidden>Tout effacer</button>
       </div>
 
-      <div class="screen-frame">
-        <img id="screen-img" hidden alt="Écran distant" />
-        <span class="screen-placeholder" id="screen-placeholder">En attente de l'écran…</span>
-      </div>
-
-      <div class="transcript" id="transcript">
-        <div class="transcript-empty" id="transcript-empty">
-          Décris ce que tu veux faire sur le PC — la conversation apparaît ici.
+      <div id="chat-panel">
+        <div class="chat-model-row">
+          <select id="chat-model-select">
+            <option value="">Chargement des modèles…</option>
+          </select>
+        </div>
+        <div class="transcript" id="chat-transcript">
+          <div class="transcript-empty" id="chat-transcript-empty">
+            Discute avec le modèle qui tourne sur ce PC — la conversation apparaît ici.
+          </div>
+        </div>
+        <form id="chat-form" class="input-row">
+          <input type="text" id="chat-input" placeholder="Écris un message…" autocomplete="off" />
+          <button type="submit" class="btn btn-primary" id="chat-send-btn">Envoyer</button>
+        </form>
+        <div class="footer-actions">
+          <button class="btn" id="chat-stop-btn">Arrêter</button>
         </div>
       </div>
 
-      <form id="instruction-form" class="input-row">
-        <input type="text" id="instruction-input" placeholder="Donne une instruction…" autocomplete="off" />
-        <button type="submit" class="btn btn-primary" id="send-btn">Envoyer</button>
-      </form>
+      <div id="controlme-panel" hidden>
+        <div class="screen-frame">
+          <img id="screen-img" hidden alt="Écran distant" />
+          <span class="screen-placeholder" id="screen-placeholder">En attente de l'écran…</span>
+        </div>
 
-      <div class="footer-actions">
-        <button class="btn" id="stop-btn">Arrêter</button>
+        <div class="transcript" id="transcript">
+          <div class="transcript-empty" id="transcript-empty">
+            Décris ce que tu veux faire sur le PC — la conversation apparaît ici.
+          </div>
+        </div>
+
+        <form id="instruction-form" class="input-row">
+          <input type="text" id="instruction-input" placeholder="Donne une instruction…" autocomplete="off" />
+          <button type="submit" class="btn btn-primary" id="send-btn">Envoyer</button>
+        </form>
+
+        <div class="footer-actions">
+          <button class="btn" id="stop-btn">Arrêter</button>
+        </div>
       </div>
     </div>
   </div>
@@ -319,8 +384,10 @@
 
     // Deliberately no server anywhere in this pairing flow (see CLAUDE.md) —
     // the code IS the Realtime channel topic, "connected" is channel
-    // Presence, screen/chat ride on Broadcast. Nothing here is persisted to
-    // Postgres.
+    // Presence, screen/chat all ride on Broadcast. Nothing here is
+    // persisted to Postgres. Chat and Control Me now share this exact same
+    // channel/code (v0.5.8) — which tab is offered is driven by the
+    // "capabilities" broadcast the app pushes on join.
     const LS_CODE = "ollamachat_remote_code";
     const LS_ATTEMPTS = "ollamachat_remote_attempts";
     const LS_BANNED = "ollamachat_remote_banned";
@@ -341,6 +408,17 @@
     const statusDot = document.getElementById("status-dot");
     const statusText = document.getElementById("status-text");
     const disconnectBtn = document.getElementById("disconnect-btn");
+    const tabChatBtn = document.getElementById("tab-chat-btn");
+    const tabControlMeBtn = document.getElementById("tab-controlme-btn");
+    const chatPanel = document.getElementById("chat-panel");
+    const controlMePanel = document.getElementById("controlme-panel");
+    const chatModelSelect = document.getElementById("chat-model-select");
+    const chatTranscript = document.getElementById("chat-transcript");
+    const chatTranscriptEmpty = document.getElementById("chat-transcript-empty");
+    const chatForm = document.getElementById("chat-form");
+    const chatInput = document.getElementById("chat-input");
+    const chatSendBtn = document.getElementById("chat-send-btn");
+    const chatStopBtn = document.getElementById("chat-stop-btn");
     const screenImg = document.getElementById("screen-img");
     const screenPlaceholder = document.getElementById("screen-placeholder");
     const transcript = document.getElementById("transcript");
@@ -357,6 +435,12 @@
 
     let channel = null;
     let hostOnline = false;
+    let capabilities = { chat: true, controlme: true }; // optimistic until the app confirms
+    let activeTab = "chat";
+    let modelsLoaded = false;
+    let chatMessages = []; // { role, content } — sent whole each time, mirrors the desktop app's own contract
+    let chatStreamDiv = null;
+    let chatStreamBuffer = "";
 
     function showState(el) {
       [bannedState, pairFormState, remoteAppState].forEach((s) => (s.hidden = s !== el));
@@ -369,6 +453,24 @@
     function updateHostStatus() {
       statusDot.classList.toggle("online", hostOnline);
       statusText.textContent = hostOnline ? "Connecté" : "En attente de l'app…";
+    }
+
+    function applyCapabilities() {
+      tabControlMeBtn.hidden = !capabilities.controlme;
+      if (activeTab === "controlme" && !capabilities.controlme) {
+        setActiveTab("chat");
+      }
+    }
+
+    function setActiveTab(tab) {
+      activeTab = tab;
+      tabChatBtn.classList.toggle("active", tab === "chat");
+      tabControlMeBtn.classList.toggle("active", tab === "controlme");
+      chatPanel.hidden = tab !== "chat";
+      controlMePanel.hidden = tab !== "controlme";
+      if (tab === "chat" && !modelsLoaded && channel) {
+        channel.send({ type: "broadcast", event: "list_models", payload: {} });
+      }
     }
 
     function setScreen(b64) {
@@ -401,11 +503,38 @@
       instructionInput.disabled = running;
     }
 
+    // Chat rendering deliberately stays textContent-only, never innerHTML —
+    // same discipline as the rest of this page (memory/step/message
+    // rendering above) even though this content technically originates
+    // from the paired app rather than an arbitrary stranger: no markdown
+    // parser dependency added just for this, and one less thing that could
+    // ever go wrong with untrusted-looking network content.
+    function appendChatBubble(role, text) {
+      chatTranscriptEmpty.hidden = true;
+      const div = document.createElement("div");
+      div.className = `remote-bubble remote-bubble-${role}`;
+      div.textContent = text;
+      chatTranscript.appendChild(div);
+      chatTranscript.scrollTop = chatTranscript.scrollHeight;
+      return div;
+    }
+
+    function setChatRunning(running) {
+      chatSendBtn.disabled = running;
+      chatInput.disabled = running;
+    }
+
     function clearTranscript() {
       transcript.querySelectorAll(".remote-step, .remote-bubble").forEach((el) => el.remove());
       transcriptEmpty.hidden = false;
       screenImg.hidden = true;
       screenPlaceholder.hidden = false;
+      chatTranscript.querySelectorAll(".remote-bubble").forEach((el) => el.remove());
+      chatTranscriptEmpty.hidden = false;
+      chatMessages = [];
+      chatStreamDiv = null;
+      modelsLoaded = false;
+      chatModelSelect.innerHTML = '<option value="">Chargement des modèles…</option>';
       renderMemory([]);
       memoryPanel.hidden = true;
     }
@@ -427,6 +556,24 @@
         }
         div.appendChild(document.createTextNode(entry.fact ?? ""));
         memoryList.appendChild(div);
+      }
+    }
+
+    function renderModels(models) {
+      modelsLoaded = true;
+      chatModelSelect.innerHTML = "";
+      if (!Array.isArray(models) || models.length === 0) {
+        const opt = document.createElement("option");
+        opt.value = "";
+        opt.textContent = "Aucun modèle installé sur ce PC";
+        chatModelSelect.appendChild(opt);
+        return;
+      }
+      for (const m of models) {
+        const opt = document.createElement("option");
+        opt.value = m.name;
+        opt.textContent = m.name;
+        chatModelSelect.appendChild(opt);
       }
     }
 
@@ -469,6 +616,11 @@
         }
       });
 
+      ch.on("broadcast", { event: "capabilities" }, ({ payload }) => {
+        capabilities = { chat: payload.chat !== false, controlme: !!payload.controlme };
+        applyCapabilities();
+      });
+
       ch.on("broadcast", { event: "frame" }, ({ payload }) => setScreen(payload.jpeg_base64));
       ch.on("broadcast", { event: "step" }, ({ payload }) => {
         const intent = payload.intent ? `${payload.intent} — ` : "";
@@ -493,6 +645,50 @@
       });
       ch.on("broadcast", { event: "memory" }, ({ payload }) => renderMemory(payload.entries));
 
+      ch.on("broadcast", { event: "models" }, ({ payload }) => {
+        if (payload.error) {
+          renderModels([]);
+          return;
+        }
+        renderModels(payload.models);
+      });
+
+      // Chat mirror events (chat_*, prefixed on the Rust side to avoid
+      // colliding with Control Me's own step/message/done/error/cancelled
+      // names on this shared channel).
+      ch.on("broadcast", { event: "chat_chunk" }, ({ payload }) => {
+        if (!chatStreamDiv) {
+          chatStreamDiv = appendChatBubble("assistant", "");
+          chatStreamBuffer = "";
+        }
+        chatStreamBuffer += payload.content ?? "";
+        chatStreamDiv.textContent = chatStreamBuffer;
+        chatTranscript.scrollTop = chatTranscript.scrollHeight;
+      });
+      ch.on("broadcast", { event: "chat_done" }, ({ payload }) => {
+        const finalText = payload.content ?? chatStreamBuffer;
+        if (chatStreamDiv) {
+          chatStreamDiv.textContent = finalText;
+        } else if (finalText) {
+          appendChatBubble("assistant", finalText);
+        }
+        chatMessages.push({ role: "assistant", content: finalText });
+        chatStreamDiv = null;
+        chatStreamBuffer = "";
+        setChatRunning(false);
+      });
+      ch.on("broadcast", { event: "chat_error" }, ({ payload }) => {
+        appendChatBubble("assistant", `Erreur : ${payload.message ?? ""}`);
+        chatStreamDiv = null;
+        chatStreamBuffer = "";
+        setChatRunning(false);
+      });
+      ch.on("broadcast", { event: "chat_cancelled" }, () => {
+        chatStreamDiv = null;
+        chatStreamBuffer = "";
+        setChatRunning(false);
+      });
+
       ch.subscribe(async (status) => {
         if (status !== "SUBSCRIBED") return;
         await ch.track({ role: "viewer" });
@@ -501,6 +697,8 @@
       channel = ch;
       showState(remoteAppState);
       updateHostStatus();
+      applyCapabilities();
+      setActiveTab("chat");
 
       if (!isReconnect) {
         timeoutHandle = setTimeout(() => {
@@ -543,6 +741,9 @@
 
     disconnectBtn.addEventListener("click", disconnect);
 
+    tabChatBtn.addEventListener("click", () => setActiveTab("chat"));
+    tabControlMeBtn.addEventListener("click", () => setActiveTab("controlme"));
+
     instructionForm.addEventListener("submit", (e) => {
       e.preventDefault();
       const text = instructionInput.value.trim();
@@ -556,6 +757,23 @@
     stopBtn.addEventListener("click", () => {
       if (!channel) return;
       channel.send({ type: "broadcast", event: "stop", payload: {} });
+    });
+
+    chatForm.addEventListener("submit", (e) => {
+      e.preventDefault();
+      const text = chatInput.value.trim();
+      const model = chatModelSelect.value;
+      if (!text || !channel || !model) return;
+      appendChatBubble("user", text);
+      chatMessages.push({ role: "user", content: text });
+      channel.send({ type: "broadcast", event: "chat_message", payload: { messages: chatMessages, model } });
+      chatInput.value = "";
+      setChatRunning(true);
+    });
+
+    chatStopBtn.addEventListener("click", () => {
+      if (!channel) return;
+      channel.send({ type: "broadcast", event: "chat_stop", payload: {} });
     });
 
     memoryBtn.addEventListener("click", () => {

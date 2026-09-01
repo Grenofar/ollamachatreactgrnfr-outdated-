@@ -2,5 +2,6 @@
   "framework": null,
   "buildCommand": null,
   "installCommand": null,
-  "outputDirectory": "site"
+  "outputDirectory": "site",
+  "cleanUrls": true
 }

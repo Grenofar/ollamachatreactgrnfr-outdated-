@@ -891,7 +891,8 @@ body {
 }
 
 .modal label,
-.settings-section label {
+.settings-section label,
+.extensions-view label {
   font-size: 12px;
   color: #bbbbbb;
   margin-top: 8px;
@@ -902,7 +903,10 @@ body {
 .modal select,
 .settings-section input,
 .settings-section textarea,
-.settings-section select {
+.settings-section select,
+.extensions-view input,
+.extensions-view textarea,
+.extensions-view select {
   background: #2a2a2a;
   border: 1px solid #3a3a3a;
   border-radius: 8px;
@@ -1352,6 +1356,41 @@ body {
   border-radius: 8px;
   animation: bubble-in 0.25s var(--ease-out) both;
   animation-delay: calc(min(var(--i, 0), 12) * 30ms);
+}
+
+/* renderMarkdown wraps a single line in <p>, which defaults to block +
+   margin — collapsed back to inline so a step entry stays the same
+   compact single-line pill it was as plain text, just with real bold/
+   italic/code/lists instead of literal asterisks/backticks. */
+.controlme-step p {
+  margin: 0;
+  display: inline;
+}
+
+.controlme-step code {
+  background: #141c29;
+  border-radius: 4px;
+  padding: 1px 5px;
+  font-size: 11px;
+}
+
+.controlme-skill-pick {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  padding: 6px 10px;
+  background: #232323;
+  border-radius: 8px;
+  cursor: pointer;
+}
+
+.controlme-skill-pick input {
+  margin-top: 2px;
+}
+
+.controlme-skill-pick span {
+  display: flex;
+  flex-direction: column;
 }
 
 .codex-header-spacer {
@@ -2064,20 +2103,132 @@ body {
   flex: 1;
 }
 
-.extensions-update-banner {
-  display: flex;
-  align-items: center;
-  gap: 12px;
-  padding: 8px 14px;
-  background: #1c2634;
-  border-bottom: 1px solid #2c2c2c;
+.extensions-search {
+  width: 240px;
+  background: #262626;
+  border: none;
+  border-radius: 10px;
+  color: #eaeaea;
+  padding: 8px 10px;
   font-size: 12.5px;
-  color: #9fc0ff;
+  outline: none;
 }
 
-.extensions-update-banner .install-progress-bar {
+.extensions-update-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 4px;
+}
+
+.settings-checkbox {
+  display: flex !important;
+  flex-direction: row !important;
+  align-items: center;
+  gap: 8px;
+  margin-top: 10px !important;
+  cursor: pointer;
+}
+
+.settings-checkbox input {
+  width: auto;
+}
+
+.extension-gear {
+  background: transparent;
+  border: none;
+  color: #9a9a9a;
+  padding: 2px 6px;
+  margin-left: 6px;
+  font-size: 13px;
+  border-radius: 6px;
+  vertical-align: middle;
+}
+
+.extension-gear:hover {
+  color: #eaeaea;
+  background: #333333;
+}
+
+.extension-gear-panel {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  margin-top: 6px;
+  padding-top: 10px;
+  border-top: 1px solid #2c2c2c;
+  animation: panel-open 0.2s var(--ease-out) both;
+  transform-origin: top;
+}
+
+.skill-list {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  max-height: 280px;
+  overflow-y: auto;
+}
+
+.skill-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  background: #232323;
+  border-radius: 8px;
+  padding: 4px 6px 4px 10px;
+}
+
+.skill-row-main {
   flex: 1;
-  max-width: 200px;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 2px;
+  background: transparent;
+  padding: 4px 0;
+  text-align: left;
+}
+
+.skill-row-main strong {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  max-width: 100%;
+}
+
+.skill-row-delete {
+  flex-shrink: 0;
+  background: transparent;
+  color: #999999;
+  padding: 6px 8px;
+}
+
+.skill-row-delete:hover {
+  color: #e06666;
+  background: #3a2a2a;
+}
+
+.skill-public-browse {
+  margin-top: 8px;
+  padding-top: 10px;
+  border-top: 1px solid #2c2c2c;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  animation: panel-open 0.2s var(--ease-out) both;
+  transform-origin: top;
+}
+
+.skill-editor {
+  margin-top: 8px;
+  padding-top: 12px;
+  border-top: 1px solid #2c2c2c;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  animation: panel-open 0.22s var(--ease-out) both;
+  transform-origin: top;
 }
 
 .extensions-content {

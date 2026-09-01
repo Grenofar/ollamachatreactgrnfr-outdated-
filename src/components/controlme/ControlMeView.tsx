@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState, type CSSProperties, type KeyboardEvent } from "react";
-import MessageBubble from "../MessageBubble";
+import MessageBubble, { renderMarkdown } from "../MessageBubble";
 import SendButton from "../SendButton";
 import {
   cancelControlMe,
@@ -7,6 +7,7 @@ import {
   deleteControlMeSession,
   listControlMeMemory,
   listControlMeSessions,
+  listSkills,
   loadControlMeSession,
   onControlMeCancelled,
   onControlMeConfirmationRequired,
@@ -20,7 +21,7 @@ import {
   saveControlMeSession,
   searchControlMeSessions,
 } from "../../api";
-import type { ControlMeMemoryEntry, ControlMeSessionMeta, Settings } from "../../types";
+import type { ControlMeMemoryEntry, ControlMeSessionMeta, Settings, SkillMeta } from "../../types";
 
 interface TranscriptEntry {
   role: "user" | "assistant" | "system";
@@ -66,6 +67,9 @@ export default function ControlMeView({
   const [customTitle, setCustomTitle] = useState<string | null>(null);
   const [renamingSessionId, setRenamingSessionId] = useState<string | null>(null);
   const [renameSessionText, setRenameSessionText] = useState("");
+  const [showSkills, setShowSkills] = useState(false);
+  const [skills, setSkills] = useState<SkillMeta[] | null>(null);
+  const [activeSkillIds, setActiveSkillIds] = useState<string[]>([]);
   const scrollRef = useRef<HTMLDivElement>(null);
 
   const apiKey = settings.gemini_api_key?.trim() ?? "";
@@ -159,7 +163,7 @@ export default function ControlMeView({
     setEntries((prev) => [...prev, { role: "user", content: text }]);
     setInstruction("");
     setRunning(true);
-    runControlMe(apiKey, model, text).catch((e) => {
+    runControlMe(apiKey, model, text, activeSkillIds).catch((e) => {
       setEntries((prev) => [...prev, { role: "system", content: `Erreur : ${String(e)}` }]);
       setRunning(false);
     });
@@ -199,6 +203,23 @@ export default function ControlMeView({
     clearControlMeMemory()
       .then(() => setMemory([]))
       .catch(() => {});
+  }
+
+  function toggleSkills() {
+    if (showSkills) {
+      setShowSkills(false);
+      return;
+    }
+    setShowSkills(true);
+    if (skills === null) {
+      listSkills()
+        .then(setSkills)
+        .catch(() => setSkills([]));
+    }
+  }
+
+  function toggleActiveSkill(id: string) {
+    setActiveSkillIds((prev) => (prev.includes(id) ? prev.filter((s) => s !== id) : [...prev, id]));
   }
 
   function toggleHistory() {
@@ -285,6 +306,9 @@ export default function ControlMeView({
         <button onClick={handleNewSession}>Nouvelle session</button>
         <button onClick={toggleHistory}>Historique</button>
         <button onClick={toggleMemory}>Mémoire</button>
+        <button onClick={toggleSkills}>
+          Skills{activeSkillIds.length > 0 ? ` (${activeSkillIds.length})` : ""}
+        </button>
         <select
           className="controlme-model-select"
           value={model}
@@ -378,6 +402,37 @@ export default function ControlMeView({
         </div>
       )}
 
+      {showSkills && (
+        <div className="controlme-memory-panel">
+          {skills === null ? (
+            <div className="controlme-memory-empty">Chargement…</div>
+          ) : skills.length === 0 ? (
+            <div className="controlme-memory-empty">
+              Aucun skill créé pour l'instant — gère-les depuis l'espace Extensions.
+            </div>
+          ) : (
+            <>
+              <div className="modal-hint">Skill(s) à fournir à l'IA pour cette session :</div>
+              <div className="controlme-memory-list">
+                {skills.map((s) => (
+                  <label key={s.id} className="controlme-skill-pick">
+                    <input
+                      type="checkbox"
+                      checked={activeSkillIds.includes(s.id)}
+                      onChange={() => toggleActiveSkill(s.id)}
+                    />
+                    <span>
+                      <strong>{s.name}</strong>
+                      <span className="modal-hint">{s.description}</span>
+                    </span>
+                  </label>
+                ))}
+              </div>
+            </>
+          )}
+        </div>
+      )}
+
       <div className="controlme-scroll" ref={scrollRef}>
         {entries.length === 0 && (
           <div className="empty-state">
@@ -389,9 +444,12 @@ export default function ControlMeView({
         )}
         {entries.map((entry, i) =>
           entry.role === "system" ? (
-            <div key={i} className="controlme-step" style={{ "--i": i } as CSSProperties}>
-              {entry.content}
-            </div>
+            <div
+              key={i}
+              className="controlme-step"
+              style={{ "--i": i } as CSSProperties}
+              dangerouslySetInnerHTML={{ __html: renderMarkdown(entry.content) }}
+            />
           ) : (
             <MessageBubble key={i} role={entry.role} content={entry.content} style={{ "--i": i } as CSSProperties} />
           ),

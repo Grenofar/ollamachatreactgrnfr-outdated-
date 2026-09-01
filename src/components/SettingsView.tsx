@@ -4,16 +4,25 @@ import type { Update } from "@tauri-apps/plugin-updater";
 import { clearRemoteCode, deleteModel, generateRemoteCode } from "../api";
 import type { OllamaModel, Settings } from "../types";
 
-// Réglages > Extensions only ever lists name + description — the actual
-// interactive UI for each extension (open folder, publish, import...)
-// lives in its own dedicated Sidebar space (ExtensionsView.tsx), same
-// split as Codex/Control Me already have between their own view and
-// whatever of theirs shows up here.
+// Réglages > Extensions only ever lists name + description (+ a settings
+// gear for the ones that have any) — the actual interactive UI (open,
+// create, publish...) lives in its own dedicated Sidebar space
+// (ExtensionsView.tsx). Codex has nothing configurable at the Settings
+// level yet (its Auto/Approbation toggle lives inside CodexView itself),
+// so it gets no gear here.
 const EXTENSIONS = [
+  { id: "codex", name: "Codex", description: "Éditeur de code agentique — agit sur ton PC via un modèle Ollama.", hasSettings: false },
   {
-    name: "DB ready for Control Me",
-    description:
-      "Base de connaissances locale (fichiers .txt/.json/.sql dans un dossier caché) que Control Me peut lire pendant une session, en local ou à distance — gérée depuis l'espace Extensions.",
+    id: "controlme",
+    name: "Control Me",
+    description: "Contrôle autonome souris/clavier via Gemini, en local ou à distance.",
+    hasSettings: true,
+  },
+  {
+    id: "skills",
+    name: "DB skill for Control Me",
+    description: "Skills nommés et décrits, gérés depuis l'espace Extensions.",
+    hasSettings: false,
   },
 ];
 
@@ -28,14 +37,14 @@ const GEMINI_MODELS = [
   { id: "gemini-3.5-flash", label: "Gemini 3.5 Flash" },
 ];
 
-const SECTIONS = ["general", "models", "controlme", "extensions", "updates"] as const;
+const SECTIONS = ["general", "models", "extensions", "devices", "updates"] as const;
 type Section = (typeof SECTIONS)[number];
 
 const SECTION_LABELS: Record<Section, string> = {
   general: "Général",
   models: "Modèles installés",
-  controlme: "Control Me",
   extensions: "Extensions",
+  devices: "Appareils connectés",
   updates: "Mises à jour",
 };
 
@@ -88,6 +97,7 @@ export default function SettingsView({
   const [deletingModel, setDeletingModel] = useState<string | null>(null);
   const [generatingCode, setGeneratingCode] = useState(false);
   const [remoteError, setRemoteError] = useState<string | null>(null);
+  const [openGear, setOpenGear] = useState<string | null>(null);
 
   useEffect(() => {
     getVersion()
@@ -126,7 +136,7 @@ export default function SettingsView({
   }
 
   async function handleClearCode() {
-    if (!window.confirm("Désactiver le contrôle à distance ? Le site ne pourra plus se reconnecter avec ce code.")) {
+    if (!window.confirm("Désactiver le jumelage à distance ? Le site ne pourra plus se reconnecter avec ce code.")) {
       return;
     }
     setGeneratingCode(true);
@@ -216,61 +226,127 @@ export default function SettingsView({
           </div>
         )}
 
-        {section === "controlme" && (
+        {section === "extensions" && (
           <div className="settings-section">
-            <h2>Control Me</h2>
+            <h2>Extensions</h2>
 
-            <label>Modèle Gemini</label>
-            <select value={form.gemini_model} onChange={(e) => { setForm({ ...form, gemini_model: e.target.value }); onPersistModel(e.target.value); }}>
-              {GEMINI_MODELS.map((m) => (
-                <option key={m.id} value={m.id}>
-                  {m.label}
-                </option>
-              ))}
-            </select>
-
-            <label>Clé API Gemini</label>
-            <input
-              type="password"
-              value={form.gemini_api_key ?? ""}
-              onChange={(e) => setForm({ ...form, gemini_api_key: e.target.value })}
-              placeholder="Clé obtenue sur Google AI Studio"
-            />
-            <div className="modal-hint">
-              Ta propre clé, jamais fournie par l'app — nécessaire pour utiliser Control Me.
-            </div>
-
-            <label>Comment l'IA perçoit ton écran</label>
-            <div className="mode-toggle">
-              <button
-                className={form.control_me_perception_mode === "capture" ? "mode-toggle-active" : ""}
-                onClick={() => setForm({ ...form, control_me_perception_mode: "capture" })}
-              >
-                Capture d'écran
+            <div className="extensions-update-row">
+              <button onClick={onCheckUpdate} disabled={checkingUpdate || installingUpdate}>
+                {checkingUpdate ? "Vérification…" : "Tout mettre à jour"}
               </button>
-              <button
-                className={form.control_me_perception_mode === "windows_ui" ? "mode-toggle-active" : ""}
-                onClick={() => setForm({ ...form, control_me_perception_mode: "windows_ui" })}
-              >
-                Windows UI
-              </button>
-            </div>
-            <div className="modal-hint">
-              {form.control_me_perception_mode === "windows_ui" ? (
-                <>
-                  Aucune capture d'écran envoyée — l'IA lit uniquement la structure d'accessibilité
-                  Windows (texte). Plus rapide et plus privé, mais ne fonctionne pas pour une
-                  interface dessinée directement (jeu, canvas), et perd le signal de sécurité
-                  intégré de Gemini pour les actions sensibles (propre à l'outil de capture
-                  d'écran).
-                </>
-              ) : (
-                "Comportement actuel : captures d'écran envoyées à Gemini à chaque étape, comme aujourd'hui."
+              {availableUpdate && !installingUpdate && (
+                <button className="primary-btn" onClick={onInstallUpdate}>
+                  Installer {availableUpdate.version}
+                </button>
               )}
-              {" "}Enregistre pour appliquer.
+            </div>
+            <div className="modal-hint">
+              Une seule vraie mise à jour existe (l'app entière) — ce bouton couvre Codex, Control Me et les
+              skills en même temps.
             </div>
 
-            <label>Contrôle à distance depuis le site</label>
+            <label className="settings-checkbox">
+              <input
+                type="checkbox"
+                checked={form.update_popup_enabled}
+                onChange={(e) => setForm({ ...form, update_popup_enabled: e.target.checked })}
+              />
+              Afficher une notification quand une mise à jour est disponible
+            </label>
+
+            <div className="modal-hint">
+              Liste des extensions installées — ouvre l'espace Extensions (Sidebar) pour les utiliser.
+            </div>
+
+            {EXTENSIONS.map((ext) => (
+              <div key={ext.id} className="extension-card">
+                <div className="extension-card-header">
+                  <strong>
+                    {ext.name}
+                    {ext.hasSettings && (
+                      <button
+                        className="extension-gear"
+                        onClick={() => setOpenGear(openGear === ext.id ? null : ext.id)}
+                        title="Réglages"
+                      >
+                        ⚙
+                      </button>
+                    )}
+                  </strong>
+                  <span className="modal-hint">{ext.description}</span>
+                </div>
+
+                {ext.id === "controlme" && openGear === "controlme" && (
+                  <div className="extension-gear-panel">
+                    <label>Modèle Gemini</label>
+                    <select
+                      value={form.gemini_model}
+                      onChange={(e) => {
+                        setForm({ ...form, gemini_model: e.target.value });
+                        onPersistModel(e.target.value);
+                      }}
+                    >
+                      {GEMINI_MODELS.map((m) => (
+                        <option key={m.id} value={m.id}>
+                          {m.label}
+                        </option>
+                      ))}
+                    </select>
+
+                    <label>Clé API Gemini</label>
+                    <input
+                      type="password"
+                      value={form.gemini_api_key ?? ""}
+                      onChange={(e) => setForm({ ...form, gemini_api_key: e.target.value })}
+                      placeholder="Clé obtenue sur Google AI Studio"
+                    />
+                    <div className="modal-hint">
+                      Ta propre clé, jamais fournie par l'app — nécessaire pour utiliser Control Me.
+                    </div>
+
+                    <label>Comment l'IA perçoit ton écran</label>
+                    <div className="mode-toggle">
+                      <button
+                        className={form.control_me_perception_mode === "capture" ? "mode-toggle-active" : ""}
+                        onClick={() => setForm({ ...form, control_me_perception_mode: "capture" })}
+                      >
+                        Capture d'écran
+                      </button>
+                      <button
+                        className={form.control_me_perception_mode === "windows_ui" ? "mode-toggle-active" : ""}
+                        onClick={() => setForm({ ...form, control_me_perception_mode: "windows_ui" })}
+                      >
+                        Windows UI
+                      </button>
+                    </div>
+                    <div className="modal-hint">
+                      {form.control_me_perception_mode === "windows_ui" ? (
+                        <>
+                          Aucune capture d'écran envoyée — l'IA lit uniquement la structure d'accessibilité
+                          Windows (texte, jamais d'image). Plus rapide et plus privé, mais ne fonctionne pas
+                          pour une interface dessinée directement (jeu, canvas), et perd le signal de sécurité
+                          intégré de Gemini pour les actions sensibles (propre à l'outil de capture d'écran).
+                        </>
+                      ) : (
+                        "Comportement actuel : captures d'écran envoyées à Gemini à chaque étape, comme aujourd'hui."
+                      )}
+                      {" "}Enregistre pour appliquer.
+                    </div>
+                  </div>
+                )}
+              </div>
+            ))}
+          </div>
+        )}
+
+        {section === "devices" && (
+          <div className="settings-section">
+            <h2>Appareils connectés</h2>
+            <div className="modal-hint">
+              Un seul code contrôle l'accès depuis le site (chat avec le modèle qui tourne sur ce PC, et
+              Control Me si activé) — génère-le ici, saisis-le une fois sur le site, il s'y reconnecte
+              automatiquement ensuite.
+            </div>
             <div className="remote-pairing">
               {settings.remote_code ? (
                 <>
@@ -294,28 +370,11 @@ export default function SettingsView({
               )}
               {remoteError && <div className="install-error">{remoteError}</div>}
               <div className="modal-hint">
-                Toute personne connaissant ce code peut voir ton écran et contrôler ton PC depuis le site
-                — traite-le comme un mot de passe. Saisi une fois sur le site, il s'y reconnecte
-                automatiquement ensuite.
+                Toute personne connaissant ce code peut voir ton écran, discuter avec le modèle qui tourne
+                sur ce PC et contrôler ton PC (si Control Me est activé) depuis le site — traite-le comme un
+                mot de passe.
               </div>
             </div>
-          </div>
-        )}
-
-        {section === "extensions" && (
-          <div className="settings-section">
-            <h2>Extensions</h2>
-            <div className="modal-hint">
-              Liste des extensions installées — ouvre l'espace Extensions (Sidebar) pour les utiliser.
-            </div>
-            {EXTENSIONS.map((ext) => (
-              <div key={ext.name} className="extension-card">
-                <div className="extension-card-header">
-                  <strong>{ext.name}</strong>
-                  <span className="modal-hint">{ext.description}</span>
-                </div>
-              </div>
-            ))}
           </div>
         )}
 

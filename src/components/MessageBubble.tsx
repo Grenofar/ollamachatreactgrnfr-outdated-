@@ -34,7 +34,7 @@ marked.use({
   },
 });
 
-function renderMarkdown(content: string): string {
+export function renderMarkdown(content: string): string {
   const html = marked.parse(content, { async: false }) as string;
   return DOMPurify.sanitize(html, { ADD_ATTR: ["data-code"] });
 }
