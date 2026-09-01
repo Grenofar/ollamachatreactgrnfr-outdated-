@@ -249,6 +249,15 @@ function ensureStyles() {
     .account-switch input:checked + .account-switch-track .account-switch-thumb { transform: translateX(16px); }
     .account-signout-btn { color: #e08a8a !important; font-weight: 600; }
     .account-menu-divider { border-top: 1px solid var(--border, #23272e); margin: 4px 0; }
+    /* index.html/controlremote.html declare .account-menu { display: flex }
+       in their own <style> block (predates account.js being shared) — an
+       author-level "display" always beats the browser's default
+       [hidden] { display: none } rule regardless of selector specificity
+       (origin outranks specificity in the CSS cascade), so setting
+       menu.hidden = true in JS was silently not hiding it at all on those
+       two pages. Higher-specificity author rule here wins over the plain
+       .account-menu class rule and actually closes it. */
+    .account-menu[hidden] { display: none; }
     .account-modal-overlay {
       position: fixed; inset: 0; background: rgba(0,0,0,0.55);
       display: flex; align-items: center; justify-content: center; z-index: 100;
