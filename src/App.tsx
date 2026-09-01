@@ -97,12 +97,28 @@ export default function App() {
   }
 
   useEffect(() => {
+    // The window starts hidden (tauri.conf.json's app.windows[0].visible:
+    // false) specifically so it's only ever shown once, already at its
+    // final tauri-plugin-window-state-restored size with real content
+    // rendered — instead of flashing a small/default-sized blank window
+    // that then visibly resizes and repaints a moment later.
+    //
+    // The `finally` here is load-bearing, not decorative: if any awaited
+    // call above threw and this were a plain sequential `await`, the show()
+    // call would never run and the window would stay invisible forever —
+    // a far worse regression (the app looking like it never launched at
+    // all) than the flash this is fixing.
     (async () => {
-      const s = await loadSettings();
-      setSettings(s);
-      const list = await refreshModels(s.ollama_host);
-      await refreshConversations();
-      if (list.length === 0) setShowInstall(true);
+      try {
+        const s = await loadSettings();
+        setSettings(s);
+        const list = await refreshModels(s.ollama_host);
+        await refreshConversations();
+        if (list.length === 0) setShowInstall(true);
+      } finally {
+        const { getCurrentWindow } = await import("@tauri-apps/api/window");
+        await getCurrentWindow().show();
+      }
     })();
     // Fire-and-forget, off the critical startup path: spawns a PowerShell
     // process (WMI query), noticeably slower than everything else above.

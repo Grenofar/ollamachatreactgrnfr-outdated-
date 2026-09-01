@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import { listDir, writeFileText } from "../../api";
+import { fileIconFor } from "../../fileIcon";
 import type { DirEntry } from "../../types";
 
 interface Node {
@@ -177,6 +178,11 @@ export default function FileTree({
           <span className={`tree-toggle ${node.expanded ? "tree-toggle-expanded" : ""}`}>
             {node.entry.is_dir ? (node.loading ? "…" : "▸") : ""}
           </span>
+          {!node.entry.is_dir && (
+            <span className="tree-file-badge" style={{ color: fileIconFor(node.entry.name).color }}>
+              {fileIconFor(node.entry.name).label}
+            </span>
+          )}
           <span className={node.entry.is_dir ? "tree-name-dir" : "tree-name-file"}>{node.entry.name}</span>
           {node.entry.is_dir && (
             <button

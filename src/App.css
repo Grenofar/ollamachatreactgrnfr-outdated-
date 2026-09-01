@@ -798,13 +798,21 @@ body {
   padding: 0;
   border-radius: 16px;
   border: none;
-  background: #3a3a3a;
-  color: #dddddd;
+  /* Blue idle, black arrow / red busy, white stop square — requested
+     explicitly, applied everywhere this shared component is used (chat,
+     Codex, Control Me, and mirrored by hand in site/controlremote.html
+     since the site can't import this component). */
+  background: #3d6dd8;
+  color: #14161a;
   font-size: 14px;
   cursor: pointer;
   overflow: hidden;
   flex-shrink: 0;
   transition: background 0.2s ease, border-radius 0.2s ease, transform 0.12s var(--ease-out);
+}
+
+.send-btn:hover:not(:disabled) {
+  background: #4c7ae0;
 }
 
 .send-btn:disabled {
@@ -813,10 +821,14 @@ body {
 }
 
 .send-btn-busy {
-  background: #4a2b2b;
-  color: #e8a8a8;
+  background: #d64545;
+  color: #ffffff;
   border-radius: 10px;
   cursor: pointer;
+}
+
+.send-btn-busy:hover:not(:disabled) {
+  background: #e05252;
 }
 
 .send-btn-icon {
@@ -1436,6 +1448,24 @@ body {
   min-height: 0;
 }
 
+/* VS Code's own status bar is this exact solid blue, no border/shadow —
+   reused as-is since it's such a recognizable visual signature of the
+   editor this view is trying to evoke. */
+.codex-statusbar {
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  padding: 3px 12px;
+  background: #007acc;
+  color: #ffffff;
+  font-size: 11px;
+}
+
+.codex-statusbar-spacer {
+  flex: 1;
+}
+
 .codex-filetree {
   width: 230px;
   flex-shrink: 0;
@@ -1560,6 +1590,15 @@ body {
 
 .tree-name-file {
   color: #b8b8b8;
+}
+
+.tree-file-badge {
+  flex-shrink: 0;
+  font-size: 8px;
+  font-weight: 700;
+  letter-spacing: 0.2px;
+  opacity: 0.9;
+  min-width: 16px;
 }
 
 .codex-editor {

@@ -47,14 +47,17 @@ fn default_gemini_model() -> String {
     "gemini-3.5-flash-lite".to_string()
 }
 
-// "capture" (screenshots via computer_use, current default) or
-// "windows_ui" (Windows UI Automation only, no screenshots at all — see
-// controlme.rs). Defaults to "capture": it's the only mode where Gemini's
-// own require_confirmation safety signal exists at all (it's part of
-// computer_use's own protocol, not something a custom tool carries), so
-// switching to "windows_ui" should be an explicit opt-in, not a surprise.
+// "capture" (screenshots via computer_use) or "windows_ui" (Windows UI
+// Automation only, no screenshots at all — see controlme.rs). Defaulted to
+// "capture" originally (the only mode carrying Gemini's own
+// require_confirmation safety signal, part of computer_use's own
+// protocol) — flipped to "windows_ui" on explicit request: faster, and no
+// screenshot ever leaves the machine by default now. The toggle in
+// Réglages > Extensions > Control Me still lets anyone switch back to
+// "capture" (and its require_confirmation safety net) at any time — this
+// only changes what a fresh install starts with.
 fn default_control_me_perception_mode() -> String {
-    "capture".to_string()
+    "windows_ui".to_string()
 }
 
 fn default_settings() -> Settings {

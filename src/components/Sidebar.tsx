@@ -152,16 +152,16 @@ export default function Sidebar({
         </button>
       )}
       <button
-        className={`sidebar-install-btn ${view === "extensions" ? "sidebar-nav-active" : ""}`}
-        onClick={onOpenExtensions}
-      >
-        Extensions
-      </button>
-      <button
         className={`sidebar-install-btn ${view === "skills" ? "sidebar-nav-active" : ""}`}
         onClick={onOpenSkills}
       >
         Skills
+      </button>
+      <button
+        className={`sidebar-install-btn ${view === "extensions" ? "sidebar-nav-active" : ""}`}
+        onClick={onOpenExtensions}
+      >
+        Extensions
       </button>
       <button
         className={`sidebar-settings-btn ${view === "settings" ? "sidebar-nav-active" : ""}`}

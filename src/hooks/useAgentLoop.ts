@@ -58,6 +58,68 @@ function extractFallbackCommand(content: string): string | null {
   return command ? command : null;
 }
 
+// Second, more general fallback — found by actually testing this app's own
+// system prompt + tool schema against the model installed and selected in
+// this environment (qwen2.5-coder:3b), not assumed to be fixed by the
+// markdown-fence fallback above. That model, despite Ollama reporting
+// "tools" as a supported capability for it, doesn't reliably populate the
+// API's structured tool_calls field — instead it sometimes writes the
+// intended call as plain JSON *text* in the message content, e.g.:
+//   {"name": "run_powershell_command", "arguments": {"command": "..."}}
+// with no code fence at all, so SHELL_FENCE_RE never matches it either —
+// the previous fallback only covered one specific way small models get
+// this wrong, not this one. Also observed: the value itself sometimes
+// nested one level too deep, mimicking the tool's own JSON-schema shape
+// instead of a flat argument — e.g. {"command": {"type": "string",
+// "value": "..."}} instead of {"command": "..."} — unwrapped below.
+const KNOWN_TOOL_NAMES = new Set([
+  "read_file",
+  "list_dir",
+  "write_file",
+  "edit_file",
+  "run_powershell_command",
+  ASK_USER_TOOL,
+]);
+
+function unwrapSchemaShapedValue(value: unknown): unknown {
+  if (value && typeof value === "object" && !Array.isArray(value) && "value" in (value as Record<string, unknown>)) {
+    return (value as Record<string, unknown>).value;
+  }
+  return value;
+}
+
+function extractFallbackJsonToolCall(content: string): { name: string; arguments: Record<string, unknown> } | null {
+  const trimmed = content.trim();
+  const candidates = [trimmed];
+  const first = trimmed.indexOf("{");
+  const last = trimmed.lastIndexOf("}");
+  if (first !== -1 && last > first && (first !== 0 || last !== trimmed.length - 1)) {
+    candidates.push(trimmed.slice(first, last + 1));
+  }
+
+  for (const candidate of candidates) {
+    let parsed: unknown;
+    try {
+      parsed = JSON.parse(candidate);
+    } catch {
+      continue;
+    }
+    if (!parsed || typeof parsed !== "object") continue;
+    const obj = parsed as Record<string, unknown>;
+    const func = obj.function && typeof obj.function === "object" ? (obj.function as Record<string, unknown>) : null;
+    const name = (func?.name ?? obj.name) as unknown;
+    const rawArgs = (func?.arguments ?? obj.arguments) as unknown;
+    if (typeof name !== "string" || !KNOWN_TOOL_NAMES.has(name)) continue;
+    if (!rawArgs || typeof rawArgs !== "object") continue;
+    const args: Record<string, unknown> = {};
+    for (const [key, value] of Object.entries(rawArgs as Record<string, unknown>)) {
+      args[key] = unwrapSchemaShapedValue(value);
+    }
+    return { name, arguments: args };
+  }
+  return null;
+}
+
 function useResolvablePrompt<TPayload, TResult>() {
   const resolverRef = useRef<((v: TResult) => void) | null>(null);
   const [pending, setPending] = useState<TPayload | null>(null);
@@ -246,6 +308,11 @@ export function useAgentLoop(opts: {
         const fallbackCommand = extractFallbackCommand(resp.content);
         if (fallbackCommand) {
           toolCalls = [{ id: "fallback_1", name: "run_powershell_command", arguments: { command: fallbackCommand } }];
+        } else {
+          const fallbackJson = extractFallbackJsonToolCall(resp.content);
+          if (fallbackJson) {
+            toolCalls = [{ id: "fallback_1", name: fallbackJson.name, arguments: fallbackJson.arguments }];
+          }
         }
       }
 

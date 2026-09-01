@@ -100,6 +100,15 @@
   .btn-danger {
     color: var(--danger);
   }
+  /* Solid red "stop" button — matches the app's blue-send/red-stop scheme
+     (SendButton.tsx) rather than just tinting the text like .btn-danger. */
+  .btn-stop {
+    color: #ffffff;
+    background: #d64545;
+    border-color: transparent;
+    font-weight: 600;
+  }
+  .btn-stop:hover { background: #e05252; }
   .btn:disabled { opacity: 0.5; cursor: default; }
 
   .status-bar {
@@ -224,6 +233,12 @@
     max-width: 85%;
     border-radius: 12px;
     padding: 8px 12px;
+    /* Bubble backgrounds below are hardcoded dark tones on purpose
+       (consistent chat colors regardless of page theme) — but that means
+       they can't rely on the page's --text variable, which flips to
+       near-black in light mode. Without this, light mode rendered
+       near-black text on a near-black background: unreadable. */
+    color: #e8eaed;
   }
   .remote-bubble-user {
     align-self: flex-end;
@@ -348,7 +363,7 @@
           <button type="submit" class="btn btn-primary" id="chat-send-btn">Envoyer</button>
         </form>
         <div class="footer-actions">
-          <button class="btn" id="chat-stop-btn">Arrêter</button>
+          <button class="btn btn-stop" id="chat-stop-btn">Arrêter</button>
         </div>
       </div>
 
@@ -378,7 +393,7 @@
         </form>
 
         <div class="footer-actions">
-          <button class="btn" id="stop-btn">Arrêter</button>
+          <button class="btn btn-stop" id="stop-btn">Arrêter</button>
         </div>
       </div>
     </div>

@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState, type KeyboardEvent } from "react";
 import { pickFolder, readFileText, writeFileText } from "../../api";
 import { CODEX_SYSTEM_PROMPT } from "../../agentTools";
+import { languageForPath } from "../../fileLang";
 import { useAgentLoop } from "../../hooks/useAgentLoop";
 import type { OllamaModel, OpenFile, Settings } from "../../types";
 import FileTree from "./FileTree";
@@ -231,6 +232,13 @@ export default function CodexView({
               </div>
             </div>
           </div>
+        </div>
+
+        <div className="codex-statusbar">
+          <span>{mode === "auto" ? "Auto" : "Approbation"}</span>
+          <div className="codex-statusbar-spacer" />
+          {activePath && <span>{languageForPath(activePath)}</span>}
+          <span>{selectedModel || "—"}</span>
         </div>
       </div>
 

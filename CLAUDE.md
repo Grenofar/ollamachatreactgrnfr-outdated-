@@ -85,6 +85,29 @@ pas devenir obsolète.
   locale, fonctionne maintenant aussi depuis l'onglet Control Me du site
   (nouveau broadcast `list_skills`/`skills`, case à cocher par skill,
   inclus dans le broadcast `instruction`).
+- [FAIT] v0.6.2 : lot de correctifs après premier vrai test du site distant
+  et de Codex. **Vrai bug de Codex trouvé et corrigé** — testé pour de vrai
+  contre le serveur Ollama réellement installé (`qwen2.5-coder:3b`) plutôt
+  que supposé réparé par les correctifs précédents (v0.3.3/v0.3.4) : le
+  modèle n'utilise jamais le champ `tool_calls` structuré, il écrit
+  l'appel d'outil en JSON texte brut dans sa réponse, sans bloc de code —
+  ni le tool-calling normal ni le filet de secours markdown existant ne
+  l'attrapaient. Nouveau second filet de secours (`extractFallbackJsonToolCall`)
+  qui reconnaît ce JSON, y compris mal formé (valeur imbriquée un niveau
+  trop profond, observé tel quel) — voir "Deuxième bug réel de Codex :
+  tool_calls jamais structuré (v0.6.2)" dans Architecture. Corrections
+  groupées : texte illisible (noir sur noir) dans le chat du site ; écran
+  distant à 10 img/s au lieu d'1 (60 demandé mais irréaliste en bande
+  passante, expliqué) ; bouton Envoyer bleu/rouge clean (au lieu de gris/
+  gris) partout où il apparaît (chat, Codex, Control Me, site) ; Windows UI
+  choisi par défaut pour Control Me (au lieu de capture d'écran) ; flash
+  de petite fenêtre au démarrage corrigé (fenêtre cachée jusqu'à être
+  prête, avec un filet de sécurité pour ne jamais rester invisible en cas
+  d'erreur) ; Codex légèrement plus "VS Code" (badges de couleur par type
+  de fichier, barre de statut bleue en bas) ; page d'accueil du site
+  remplace le simple lien texte par une vraie section "Interface pour
+  appareil connecté" expliquant ce qu'on peut y faire ; Skills réordonné
+  au-dessus d'Extensions dans la Sidebar.
 
 ## Architecture
 
@@ -1790,6 +1813,73 @@ fonctionnels sur le site, sélection de skill(s) visible et effective
 dans l'onglet Control Me du site, nouvel espace Skills dans la Sidebar de
 l'app.
 
+### Deuxième bug réel de Codex : tool_calls jamais structuré (v0.6.2)
+
+Retour utilisateur : "l'ia de codex n'est toujours pas capable de faire
+des commande" — malgré les correctifs v0.3.3 (renforcement du system
+prompt) et v0.3.4 (filet de secours pour un bloc markdown ` ```powershell
+`). Cette fois, vérifié pour de vrai plutôt que patché à l'aveugle une
+troisième fois : Ollama tourne réellement sur cette machine de
+développement (`http://127.0.0.1:11434`), avec `qwen2.5-coder:3b`
+installé — le modèle que CLAUDE.md mentionnait déjà être celui testé par
+l'utilisateur lors du tout premier signalement de ce bug (v0.3.3). Un
+appel direct à `/api/chat`, avec exactement le même corps de requête
+qu'`agent.rs` construit (`tools` + `stream: true`) et une instruction
+demandant explicitement d'exécuter une commande, montre que **le modèle
+ne remplit jamais le champ `tool_calls` structuré de la réponse** — au
+lieu de ça, il écrit l'appel voulu en JSON texte brut dans
+`message.content`, sans le moindre bloc de code :
+
+```
+{"name": "run_powershell_command", "arguments": {"command": {"type": "string", "description": "...", "value": "Get-ChildItem 'C:\\Users\\userAsus\\Documents'"}}}
+```
+
+Deux choses cassent en même temps : (1) Ollama annonce pourtant
+`"capabilities":["completion","tools","insert"]` pour ce modèle — le
+template de chat supporte le function calling, mais un modèle de 3B
+paramètres reste peu fiable pour l'invoquer correctement à chaque fois,
+un problème connu des petits modèles quantisés ; (2) même le filet de
+secours markdown existant ne peut pas rattraper ce cas précis, puisqu'il
+n'y a **aucun bloc de code fence** — juste du JSON brut en préfixe/à la
+place du texte de la réponse. Les deux correctifs précédents supposaient
+tous les deux que le modèle échouerait d'une manière ou d'une autre déjà
+anticipée (soit un vrai `tool_calls`, soit un bloc markdown) — aucun ne
+couvrait "le modèle écrit du JSON brut, mal formé, sans balisage".
+
+Nouveau second filet de secours (`extractFallbackJsonToolCall`,
+`useAgentLoop.ts`), essayé seulement si ni un vrai `tool_calls` ni un
+bloc markdown n'a été trouvé :
+- Essaie `JSON.parse` sur le contenu entier, puis, si ça échoue, sur le
+  sous-texte entre la première `{` et la dernière `}` (au cas où le
+  modèle ajoute une phrase avant/après le JSON).
+- Accepte la forme `{name, arguments}` directement ou imbriquée sous
+  `{function: {name, arguments}}` (les deux formes existent selon les
+  modèles/versions).
+- Vérifie que `name` correspond à un outil réellement connu de l'app
+  (`read_file`/`list_dir`/`write_file`/`edit_file`/
+  `run_powershell_command`/`ask_user_question`) — évite de déclencher un
+  faux positif sur un JSON sans rapport présent ailleurs dans une
+  réponse.
+- **Dépliage d'un niveau d'imbrication en trop**, observé tel quel dans
+  la vraie réponse ci-dessus : au lieu de `{"command": "..."}`, le modèle
+  a écrit `{"command": {"type": "string", "description": "...", "value":
+  "..."}}` — confondant la définition du schéma de l'outil (qui a bien
+  des champs `type`/`description`) avec la valeur à lui passer.
+  `unwrapSchemaShapedValue` détecte ce cas précis (un objet contenant une
+  clé `value`) et extrait `.value` à la place de l'objet entier.
+
+**Vérifié avec les vraies données capturées**, pas juste "ça compile" :
+un script Node reproduisant exactement `extractFallbackJsonToolCall`
+appliqué à la réponse brute réellement renvoyée par `qwen2.5-coder:3b`
+extrait correctement
+`{"name": "run_powershell_command", "arguments": {"command": "Get-ChildItem 'C:\\Users\\userAsus\\Documents'"}}`
+— à la fois sur le JSON seul et avec une phrase de politesse ajoutée
+autour. `npx tsc --noEmit` passé à 0 erreur. Le reste de la boucle
+(exécution de l'outil, approbation, retour du résultat au modèle) est
+inchangé — ce correctif n'ajoute qu'une deuxième façon de reconnaître
+l'intention du modèle, la même mécanique d'exécution que le filet
+markdown existant prend le relais ensuite.
+
 ### Les 6 outils de l'agent
 1. `read_file` — lecture texte (limite 5 Mo), chemin absolu
 2. `list_dir` — listing un niveau, chemin absolu
@@ -2751,6 +2841,31 @@ l'utilisateur confirme qu'elle est bien dans `.env` local.
   (pas d'accès GUI) — à confirmer par l'utilisateur : jumelage réussi
   avec le bon code, écran/chat/Control Me fonctionnels sur le site,
   sélection de skill(s) visible et effective depuis le site.
+- **2026-09-01** — v0.6.2 : lot de retours après le tout premier test réel
+  du site distant et de Codex par l'utilisateur. Le plus important :
+  **deuxième vrai bug Codex trouvé et corrigé, vérifié contre Ollama
+  réellement installé sur cette machine** (`qwen2.5-coder:3b`, tools+
+  streaming) plutôt que patché à l'aveugle une troisième fois — le modèle
+  écrit l'appel d'outil en JSON brut mal formé dans le texte de sa
+  réponse, jamais dans le champ structuré `tool_calls`, et sans le
+  moindre bloc markdown — donc aucun des deux correctifs précédents
+  (v0.3.3/v0.3.4) ne pouvait l'attraper. Nouveau filet de secours
+  JSON, voir "Deuxième bug réel de Codex : tool_calls jamais structuré
+  (v0.6.2)" dans Architecture pour le détail complet et la preuve
+  empirique. Reste du lot : texte illisible dans le chat du site (noir
+  sur noir en mode clair), écran distant à 10 img/s au lieu d'1 (60
+  demandé mais expliqué comme irréaliste en bande passante/CPU soutenus),
+  bouton Envoyer bleu/rouge partout (au lieu de gris), Windows UI par
+  défaut pour Control Me, flash de petite fenêtre au démarrage corrigé
+  (fenêtre cachée jusqu'à être prête, avec filet de sécurité anti-
+  blocage), Codex légèrement plus "VS Code" (badges de fichiers, barre
+  de statut bleue), page d'accueil du site avec une vraie section
+  explicative au lieu d'un simple lien, Skills réordonné au-dessus
+  d'Extensions. `cargo check`/`npx tsc --noEmit` passés à 0 erreur.
+  Publié comme lot séparé, avant d'attaquer la demande suivante de
+  l'utilisateur (comptes/profils/marketplace d'extensions avec examen de
+  sécurité par IA) — chantier bien plus large, pas mélangé à ces
+  correctifs.
 
 ## Prochaines étapes (dans l'ordre du fichier de passation d'origine)
 

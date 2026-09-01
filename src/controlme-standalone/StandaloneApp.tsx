@@ -12,7 +12,18 @@ export default function StandaloneApp() {
   const [autostart, setAutostart] = useState(false);
 
   useEffect(() => {
-    loadSettings().then(setSettings);
+    // Same reasoning as App.tsx (including the load-bearing `finally`,
+    // not decorative — see its comment for why): the window starts hidden
+    // (tauri.controlme.conf.json's visible: false) so it only ever
+    // appears once already correctly sized and rendered.
+    (async () => {
+      try {
+        setSettings(await loadSettings());
+      } finally {
+        const { getCurrentWindow } = await import("@tauri-apps/api/window");
+        await getCurrentWindow().show();
+      }
+    })();
     isEnabled()
       .then(setAutostart)
       .catch(() => {});

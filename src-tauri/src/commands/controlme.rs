@@ -272,13 +272,23 @@ fn dispatch_action(app: &AppHandle, name: &str, args: &Value, width: u32, height
 // dimensions (not the downscaled ones) are what denormalize() uses, since a
 // 0-999 coordinate is the same fraction of the screen either way.
 pub(crate) fn capture_screenshot_base64() -> Result<(String, u32, u32), String> {
+    capture_screenshot_base64_scaled(SCREENSHOT_MAX_WIDTH, SCREENSHOT_JPEG_QUALITY)
+}
+
+// Parameterized version — remote.rs's live screen preview (broadcast at
+// several frames/sec, see FRAME_INTERVAL_MS) uses smaller/more compressed
+// frames than this (still fine for a human watching a live view, unlike
+// Gemini's own vision input which stays at the higher quality above) to
+// keep sustained upload bandwidth and per-frame encode cost reasonable at
+// a much higher frame rate.
+pub(crate) fn capture_screenshot_base64_scaled(max_width: u32, jpeg_quality: u8) -> Result<(String, u32, u32), String> {
     let monitor = primary_monitor()?;
     let image = monitor.capture_image().map_err(|e| e.to_string())?;
     let (width, height) = (image.width(), image.height());
 
-    let resized = if width > SCREENSHOT_MAX_WIDTH {
-        let scaled_height = ((height as f64) * (SCREENSHOT_MAX_WIDTH as f64) / (width as f64)).round() as u32;
-        xcap::image::imageops::resize(&image, SCREENSHOT_MAX_WIDTH, scaled_height, xcap::image::imageops::FilterType::Triangle)
+    let resized = if width > max_width {
+        let scaled_height = ((height as f64) * (max_width as f64) / (width as f64)).round() as u32;
+        xcap::image::imageops::resize(&image, max_width, scaled_height, xcap::image::imageops::FilterType::Triangle)
     } else {
         image
     };
@@ -286,7 +296,7 @@ pub(crate) fn capture_screenshot_base64() -> Result<(String, u32, u32), String> 
     let rgb = xcap::image::DynamicImage::ImageRgba8(resized).to_rgb8();
 
     let mut jpeg_bytes: Vec<u8> = Vec::new();
-    xcap::image::codecs::jpeg::JpegEncoder::new_with_quality(&mut jpeg_bytes, SCREENSHOT_JPEG_QUALITY)
+    xcap::image::codecs::jpeg::JpegEncoder::new_with_quality(&mut jpeg_bytes, jpeg_quality)
         .encode(rgb.as_raw(), rgb.width(), rgb.height(), xcap::image::ExtendedColorType::Rgb8)
         .map_err(|e| e.to_string())?;
 
