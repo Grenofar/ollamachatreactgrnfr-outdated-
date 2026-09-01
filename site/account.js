@@ -366,6 +366,14 @@ function openAccountModal() {
 // Mounts the account bar into the given container element. Kept
 // framework-free (direct DOM) like the rest of this static site.
 export function renderAccountBar(container) {
+  // render() recreates the whole bar (including a fresh outside-click
+  // listener) on every profile change (login, dev toggle, avatar
+  // upload...) — without tracking and removing the previous listener,
+  // each re-render would leave a stale one attached to `document` forever
+  // (harmless since it only touches an already-detached menu, but real
+  // accumulating cruft over a session with several profile changes).
+  let removeOutsideClickListener = null;
+
   async function render() {
     ensureStyles();
     container.innerHTML = "";
@@ -484,12 +492,21 @@ export function renderAccountBar(container) {
     signOutBtn.onclick = signOut;
     menu.appendChild(signOutBtn);
 
+    // Re-clicking the avatar toggles the menu closed again — this handler
+    // fires first (avatar is the event target), setting menu.hidden back
+    // to true before the click ever bubbles up to the document listener
+    // below, whose `wrap.contains(e.target)` check (true here, the avatar
+    // is inside wrap) means it leaves that result alone rather than
+    // fighting it.
     avatar.onclick = () => {
       menu.hidden = !menu.hidden;
     };
-    document.addEventListener("click", (e) => {
+    removeOutsideClickListener?.();
+    const onOutsideClick = (e) => {
       if (!wrap.contains(e.target)) menu.hidden = true;
-    });
+    };
+    document.addEventListener("click", onOutsideClick);
+    removeOutsideClickListener = () => document.removeEventListener("click", onOutsideClick);
 
     wrap.append(avatar, menu);
     container.appendChild(wrap);
