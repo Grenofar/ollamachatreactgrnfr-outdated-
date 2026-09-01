@@ -1,7 +1,7 @@
 {
   "$schema": "https://schema.tauri.app/config/2",
   "productName": "ollama-chat-react",
-  "version": "0.6.3",
+  "version": "0.7.0",
   "identifier": "com.userasus.ollama-chat-react",
   "build": {
     "beforeDevCommand": "npm run dev",
@@ -40,6 +40,11 @@
     ]
   },
   "plugins": {
+    "deep-link": {
+      "desktop": {
+        "schemes": ["ollamachat"]
+      }
+    },
     "updater": {
       "pubkey": "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IDZGNTE1ODQ4NTEwNEI2QzkKUldUSnRnUlJTRmhSYndjSjB0SlVtQkQ4U2dneXh5Z0NoK1FIQzY2UWcrVXZqbTY0VmRRbU13cWsK",
       "endpoints": [

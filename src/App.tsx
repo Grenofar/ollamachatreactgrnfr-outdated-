@@ -32,6 +32,7 @@ import {
   onFreezeWarning,
   onFreezeResolved,
   onRemoteViewerChanged,
+  importMarketplaceExtension,
 } from "./api";
 import { estimateTokens, trimMessagesToBudget } from "./memory";
 import type { ChatMessage, Conversation, ConversationMeta, OllamaModel, Settings, StoredMessage } from "./types";
@@ -125,6 +126,58 @@ export default function App() {
     getSystemRamGb()
       .then(setRamGb)
       .catch(() => setRamGb(null));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  useEffect(() => {
+    // One-click "Ajouter" from the site's extension marketplace page opens
+    // an ollamachat://install-extension/<id> link. On the very first launch
+    // (app not running yet) tauri-plugin-deep-link's own setup already
+    // parses this from argv before the frontend even mounts and remembers
+    // it for getCurrent(); if the app was already running, the OS instead
+    // spawns a short-lived second process whose argv gets forwarded here by
+    // tauri-plugin-single-instance (see lib.rs) as a "deep-link://new-url"
+    // event via onOpenUrl — both paths need handling since either can fire.
+    let cancelled = false;
+    let unlisten: (() => void) | undefined;
+    async function handleUrls(urls: string[]) {
+      for (const raw of urls) {
+        let parsed: URL;
+        try {
+          parsed = new URL(raw);
+        } catch {
+          continue;
+        }
+        if (parsed.protocol !== "ollamachat:" || parsed.hostname !== "install-extension") continue;
+        const extensionId = parsed.pathname.replace(/^\//, "");
+        if (!extensionId) continue;
+        if (
+          !window.confirm(
+            "Une extension a été ouverte depuis le site pour être installée dans l'app. Fais-tu confiance à ce créateur ? Une extension non officielle n'a été vérifiée que par une IA, pas par une personne — l'installer se fait à tes risques et périls, l'app n'est pas responsable de son contenu. Installer maintenant ?",
+          )
+        ) {
+          continue;
+        }
+        try {
+          await importMarketplaceExtension(extensionId);
+          if (!cancelled) setView("skills");
+        } catch (e) {
+          window.alert(`Échec de l'installation de l'extension : ${e}`);
+        }
+      }
+    }
+    (async () => {
+      const { onOpenUrl, getCurrent } = await import("@tauri-apps/plugin-deep-link");
+      const current = await getCurrent();
+      if (current && current.length > 0) await handleUrls(current.map(String));
+      unlisten = await onOpenUrl((urls) => {
+        void handleUrls(urls);
+      });
+    })();
+    return () => {
+      cancelled = true;
+      unlisten?.();
+    };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 

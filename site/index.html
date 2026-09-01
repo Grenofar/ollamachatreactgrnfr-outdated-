@@ -4,7 +4,7 @@
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1" />
 <title>Ollama Chat React</title>
-<meta name="description" content="Discutez avec des LLM en local via Ollama, et codez avec un agent. Application de bureau Windows." />
+<meta name="description" content="Discutez avec des LLM en local via Ollama, codez avec un agent (Codex), contrôlez votre PC avec une IA (Control Me), et étendez le tout avec des extensions communautaires." />
 <style>
   :root {
     color-scheme: dark;
@@ -25,129 +25,142 @@
     font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
     line-height: 1.55;
   }
+  a { color: var(--accent); }
   .wrap {
-    max-width: 820px;
+    max-width: 900px;
     margin: 0 auto;
-    padding: 56px 24px 64px;
+    padding: 0 24px 64px;
   }
   .center { text-align: center; }
-  .brand {
+  h1 {
+    font-size: clamp(1.9rem, 5vw, 2.7rem);
+    margin: 0 0 20px;
+    letter-spacing: -0.01em;
+  }
+  h2 {
+    font-size: 1.3rem;
+    margin: 0 0 12px;
+  }
+  p { color: var(--text-dim); margin: 0 0 12px; }
+  .intro {
+    font-size: 1.08rem;
+    margin: 0 auto 8px;
+    max-width: 640px;
+  }
+
+  section {
+    padding-top: 40px;
+    margin-top: 40px;
+    border-top: 1px solid var(--border);
+  }
+
+  /* ------------------------------------------------------------- header */
+  .site-header {
+    position: sticky;
+    top: 0;
+    z-index: 30;
+    background: rgba(11, 13, 16, 0.85);
+    backdrop-filter: blur(10px);
+    border-bottom: 1px solid var(--border);
+  }
+  .site-header-inner {
+    max-width: 900px;
+    margin: 0 auto;
+    padding: 12px 24px;
+    display: flex;
+    align-items: center;
+    gap: 24px;
+  }
+  .brand-link {
+    font-weight: 700;
+    font-size: 0.95rem;
+    color: var(--text);
+    text-decoration: none;
+    white-space: nowrap;
+  }
+  .site-nav {
+    display: flex;
+    gap: 18px;
+    flex: 1;
+  }
+  .site-nav a {
+    color: var(--text-dim);
+    text-decoration: none;
+    font-size: 0.88rem;
+  }
+  .site-nav a:hover { color: var(--text); }
+  .site-header-actions {
+    display: flex;
+    align-items: center;
+    gap: 14px;
+  }
+  .site-header-actions .btn { padding: 8px 16px; font-size: 0.85rem; }
+
+  /* --------------------------------------------------------------- hero */
+  .hero { padding: 56px 0 8px; }
+  .hero .brand {
     font-weight: 600;
     font-size: 0.9rem;
     color: var(--text-dim);
     margin-bottom: 28px;
   }
-  h1 {
-    font-size: clamp(1.7rem, 4.5vw, 2.4rem);
-    margin: 0 0 20px;
-    letter-spacing: -0.01em;
+  .stats-row {
+    display: flex;
+    justify-content: center;
+    gap: 40px;
+    margin: 32px 0 8px;
   }
-  h2 {
-    font-size: 1.1rem;
-    margin: 0 0 12px;
+  .stat { text-align: center; }
+  .stat-num {
+    display: block;
+    font-size: 2rem;
+    font-weight: 700;
+    color: var(--text);
+    font-variant-numeric: tabular-nums;
   }
-  p { color: var(--text-dim); margin: 0 0 12px; }
-  .intro {
-    font-size: 1.05rem;
-    margin: 0 auto 8px;
-    max-width: 620px;
+  .stat-label {
+    font-size: 0.82rem;
+    color: var(--text-dim);
   }
-
-  section {
-    padding-top: 36px;
-    margin-top: 36px;
-    border-top: 1px solid var(--border);
+  .hero-actions {
+    display: flex;
+    justify-content: center;
+    gap: 12px;
+    margin-top: 28px;
+    flex-wrap: wrap;
   }
 
   .flow {
     display: grid;
-    grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+    grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
     gap: 20px;
   }
-  .flow-item strong { color: var(--text); }
-  .flow-item p { margin: 4px 0 0; font-size: 0.92rem; }
+  .flow-item { background: var(--bg-raised); border: 1px solid var(--border); border-radius: 12px; padding: 16px 18px; }
+  .flow-item strong { color: var(--text); display: block; margin-bottom: 4px; }
+  .flow-item p { margin: 0; font-size: 0.9rem; }
 
-  .pc-warning {
-    font-size: 0.85rem;
-    color: var(--warn);
-    max-width: 620px;
-    margin: 0 auto;
-  }
-
-  .section-hint {
-    font-size: 0.85rem;
-    margin-top: -6px;
-  }
-
-  .calc-grid {
+  .ext-explainer-grid {
     display: grid;
-    grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+    grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
     gap: 16px;
-    align-items: end;
+    margin-top: 16px;
   }
-
-  .calc-field {
-    display: flex;
-    flex-direction: column;
-    gap: 6px;
-  }
-
-  .calc-field label {
-    font-size: 0.82rem;
-    color: var(--text-dim);
-  }
-
-  .calc-field select {
-    background: var(--bg-raised);
-    color: var(--text);
+  .ext-explainer-item {
     border: 1px solid var(--border);
-    border-radius: 8px;
-    padding: 9px 10px;
-    font-size: 0.92rem;
-  }
-
-  .calc-actions {
-    margin-top: 18px;
-  }
-
-  .calc-result {
-    margin-top: 20px;
-    background: var(--bg-raised);
-    border: 1px solid var(--border);
-    border-radius: 10px;
+    border-radius: 12px;
     padding: 16px 18px;
-    font-size: 0.9rem;
   }
-
-  .calc-result h3 {
-    margin: 0 0 8px;
-    font-size: 1rem;
-    color: var(--text);
+  .ext-explainer-item .badge {
+    display: inline-block;
+    font-size: 0.68rem;
+    padding: 2px 8px;
+    border-radius: 8px;
+    background: #1f3a24;
+    color: #7fd0a0;
+    margin-bottom: 8px;
   }
-
-  .calc-result .names {
-    font-family: Consolas, Menlo, monospace;
-    font-size: 0.85rem;
-    color: var(--accent);
-  }
-
-  .calc-result .extra {
-    margin-top: 8px;
-    font-size: 0.85rem;
-  }
-
-  .calc-result .speed {
-    margin-top: 10px;
-    font-size: 0.85rem;
-    color: var(--text-dim);
-  }
-
-  .calc-result .consequences {
-    margin-top: 12px;
-    padding-top: 12px;
-    border-top: 1px solid var(--border);
-    color: var(--text-dim);
-  }
+  .ext-explainer-item strong { display: block; margin-bottom: 4px; color: var(--text); }
+  .ext-explainer-item p { margin: 0; font-size: 0.88rem; }
 
   .note {
     background: var(--bg-raised);
@@ -205,12 +218,6 @@
   }
 
   /* -------------------------------------------------------- account bar */
-  #account-bar-mount {
-    position: fixed;
-    top: 16px;
-    right: 20px;
-    z-index: 20;
-  }
   .account-login-btn {
     padding: 8px 16px;
     font-size: 0.85rem;
@@ -229,7 +236,7 @@
     display: flex;
     flex-direction: column;
     gap: 4px;
-    min-width: 180px;
+    min-width: 200px;
     box-shadow: 0 8px 24px rgba(0, 0, 0, 0.3);
   }
   .account-menu-header {
@@ -279,24 +286,47 @@
 </style>
 </head>
 <body>
-  <div id="account-bar-mount"></div>
+  <header class="site-header">
+    <div class="site-header-inner">
+      <a class="brand-link" href="/">Ollama Chat React</a>
+      <nav class="site-nav">
+        <a href="/extensions">Extensions</a>
+        <a href="/docs">Documentation</a>
+      </nav>
+      <div class="site-header-actions">
+        <a class="btn btn-primary js-cta" data-product="ollamachat">Vérification…</a>
+        <div id="account-bar-mount"></div>
+      </div>
+    </div>
+  </header>
 
   <div class="wrap">
-    <div class="center">
-      <div class="brand">Ollama Chat React</div>
-      <h1>Bonjour. Avec cette app, discutez avec des LLM en local.</h1>
+    <div class="hero center">
+      <div class="brand">Application de bureau Windows — rien n'est envoyé sur le web par défaut</div>
+      <h1>Ton propre poste de travail IA, entièrement local, extensible par tout le monde.</h1>
       <p class="intro">
-        Une application de bureau qui vous connecte à Ollama pour discuter avec
-        des modèles de langage sur votre PC, et qui inclut Codex, un éditeur où
-        un modèle agit en agent sur vos fichiers. Tout tourne en local, rien
-        n'est envoyé sur le web.
+        Discute avec des modèles de langage qui tournent sur ton PC via Ollama, laisse un agent
+        (Codex) lire et modifier tes fichiers comme un vrai développeur, ou donne à une IA
+        (Control Me) le contrôle direct de ta souris et de ton clavier. Le tout étendable par une
+        vraie marketplace communautaire d'extensions, chacune examinée par une IA avant
+        publication.
       </p>
-      <p class="pc-warning">
-        Pensé pour PC (Windows), pas pour du matériel limité : faire tourner un
-        LLM en local sollicite fortement le CPU/RAM (et le GPU si vous en avez
-        un). Le calculateur ci-dessous vous aide à choisir une taille de
-        modèle adaptée à votre config avant d'en installer un trop gros.
-      </p>
+
+      <div class="stats-row">
+        <div class="stat">
+          <span class="stat-num" id="stat-users">—</span>
+          <span class="stat-label">comptes créés</span>
+        </div>
+        <div class="stat">
+          <span class="stat-num" id="stat-exts">—</span>
+          <span class="stat-label">extensions publiées</span>
+        </div>
+      </div>
+
+      <div class="hero-actions">
+        <a class="btn btn-primary js-cta" data-product="ollamachat">Vérification…</a>
+        <a class="btn" href="/extensions">Parcourir les extensions</a>
+      </div>
     </div>
 
     <section>
@@ -304,143 +334,92 @@
       <div class="flow">
         <div class="flow-item">
           <strong>Chat</strong>
-          <p>Choisissez un modèle installé dans Ollama, discutez normalement — l'app garde vos conversations en local.</p>
+          <p>Choisis un modèle installé dans Ollama, discute normalement — l'app garde tes conversations en local.</p>
         </div>
         <div class="flow-item">
           <strong>Codex</strong>
-          <p>Ouvrez un dossier, décrivez ce que vous voulez : le modèle lit, écrit et modifie des fichiers, exécute des commandes, et vous demande votre avis avant chaque action si vous êtes en mode Approbation.</p>
+          <p>Ouvre un dossier, décris ce que tu veux : le modèle lit, écrit et modifie des fichiers, exécute des commandes, et te demande ton avis avant chaque action si tu es en mode Approbation.</p>
+        </div>
+        <div class="flow-item">
+          <strong>Control Me</strong>
+          <p>Une IA (Gemini) prend directement le contrôle de ta souris et de ton clavier à partir de captures d'écran, pour automatiser des tâches sur ton PC. Nécessite ta propre clé API Gemini.</p>
+        </div>
+        <div class="flow-item">
+          <strong>Skills / appareils connectés</strong>
+          <p>Enregistre des connaissances réutilisables pour l'IA, et pilote le chat ou Control Me à distance depuis n'importe quel navigateur, une fois un appareil jumelé (menu de ton compte → Mes appareils).</p>
         </div>
       </div>
     </section>
 
     <section>
-      <h2>Quel modèle pour ta config</h2>
-      <p class="section-hint">
-        Indique ta RAM, ton processeur et ta carte graphique — le calcul se
-        fait dans ton navigateur (rien n'est envoyé nulle part).
+      <h2>Le système d'extensions</h2>
+      <p>
+        Codex, Control Me et Skills sont eux-mêmes construits comme des capacités que l'app
+        expose — la marketplace permet à n'importe qui d'en ajouter de nouvelles, sans attendre
+        une mise à jour de l'app elle-même. Une extension ajoute des instructions/connaissances
+        au modèle (chat de base ou Control Me) : pas de code exécuté, pas d'accès direct au
+        système au-delà de ce que l'app permet déjà.
       </p>
-
-      <div class="calc-grid">
-        <div class="calc-field">
-          <label for="calc-ram">RAM installée</label>
-          <select id="calc-ram">
-            <option value="4">4 Go</option>
-            <option value="8" selected>8 Go</option>
-            <option value="16">16 Go</option>
-            <option value="32">32 Go</option>
-            <option value="64">64 Go ou plus</option>
-          </select>
+      <p>
+        Avant publication, chaque extension est examinée par une IA (Gemini) qui vérifie
+        l'absence d'instructions cachées visant à manipuler le modèle contre toi. Une extension
+        reste marquée <strong style="color: var(--warn);">non officielle</strong> par défaut —
+        l'installer se fait à tes risques et périls, l'app n'est pas responsable de son contenu.
+      </p>
+      <div class="ext-explainer-grid">
+        <div class="ext-explainer-item">
+          <span class="badge">Intégré</span>
+          <strong>Codex</strong>
+          <p>Éditeur agentique façon Claude Code, avec 6 outils (lecture/écriture de fichiers, commandes PowerShell, questions).</p>
         </div>
-
-        <div class="calc-field">
-          <label for="calc-cpu">Processeur</label>
-          <select id="calc-cpu">
-            <option value="old">Ancien / entrée de gamme (≤ 4 cœurs)</option>
-            <option value="mid" selected>Milieu de gamme (Ryzen 5 / Core i5 récents, 6 cœurs)</option>
-            <option value="high">Récent et puissant (Ryzen 7/9, Core i7/i9, 8 cœurs+)</option>
-          </select>
+        <div class="ext-explainer-item">
+          <span class="badge">Intégré</span>
+          <strong>Control Me</strong>
+          <p>Contrôle souris/clavier par IA, capture d'écran ou lecture directe de l'interface Windows.</p>
         </div>
-
-        <div class="calc-field">
-          <label for="calc-gpu">Carte graphique</label>
-          <select id="calc-gpu">
-            <option value="0" selected>Aucune / graphique intégré</option>
-            <optgroup label="NVIDIA">
-              <option value="4">GTX 1650 (4 Go)</option>
-              <option value="6">GTX 1660 / Super / Ti (6 Go)</option>
-              <option value="8">RTX 3050 / 3070 / 4060 (8 Go)</option>
-              <option value="10">RTX 3080 (10 Go)</option>
-              <option value="12">RTX 3060 / 3080 Ti / 4070 / 4070 Ti (12 Go)</option>
-              <option value="16">RTX 4060 Ti 16 Go / 4070 Ti Super / 4080 (16 Go)</option>
-              <option value="24">RTX 3090 / 4090 (24 Go)</option>
-            </optgroup>
-            <optgroup label="AMD">
-              <option value="8">RX 5700 XT / 6600 (XT) (8 Go)</option>
-              <option value="12">RX 6700 XT / 7700 XT (12 Go)</option>
-              <option value="16">RX 6800 (XT) / 7800 XT (16 Go)</option>
-              <option value="20">RX 7900 XT (20 Go)</option>
-              <option value="24">RX 7900 XTX (24 Go)</option>
-            </optgroup>
-          </select>
+        <div class="ext-explainer-item">
+          <span class="badge">Intégré</span>
+          <strong>Skills</strong>
+          <p>Connaissances/instructions nommées que tu choisis de fournir à l'IA, locales ou publiées.</p>
         </div>
       </div>
-
-      <div class="calc-actions">
-        <button type="button" class="btn btn-primary" id="calc-btn">Analyser ma config</button>
-      </div>
-      <div id="calc-result" class="calc-result" hidden></div>
+      <p style="margin-top: 16px;">
+        <a href="/extensions">Parcourir la marketplace</a> · <a href="/docs">Lire la documentation pour créer une extension</a>
+      </p>
     </section>
 
     <section>
       <div class="note">
         <strong>Note Windows :</strong> l'installeur n'est pas encore signé
         numériquement, donc Windows peut afficher un avertissement
-        SmartScreen ("Éditeur inconnu") au premier lancement. Cliquez sur
+        SmartScreen ("Éditeur inconnu") au premier lancement. Clique sur
         "Informations complémentaires" puis "Exécuter quand même" pour
         continuer.
       </div>
     </section>
-
-    <section class="center">
-      <a class="btn js-cta" data-product="ollamachat">Vérification…</a>
-    </section>
-
-    <section>
-      <h2>Control Me</h2>
-      <p>
-        Une IA (Gemini) qui contrôle directement ta souris et ton clavier à
-        partir de captures d'écran, pour automatiser des tâches sur ton PC.
-        Nécessite ta propre clé API Gemini. Installable séparément de
-        l'application de chat ci-dessus.
-      </p>
-      <p class="section-hint">
-        Autonome par défaut (pas d'approbation par action) — des captures
-        d'écran sont envoyées à Google pendant chaque session.
-      </p>
-    </section>
-
-    <section class="center">
-      <a class="btn js-cta" data-product="controlme">Vérification…</a>
-    </section>
-
-    <section>
-      <h2>Interface pour appareil connecté</h2>
-      <p>
-        Une fois l'app installée et un code de jumelage généré (Réglages → Appareils connectés),
-        cette page te permet, depuis n'importe quel navigateur :
-      </p>
-      <p>
-        — de discuter avec le modèle qui tourne sur ton PC, comme dans l'app elle-même ;<br />
-        — si Control Me est activé, de voir son écran en direct et de le piloter avec une IA.
-      </p>
-      <p class="section-hint">
-        Ce qui est proposé dépend de ce qui est activé côté app (extensions) — si Control Me est
-        désactivé, seul le chat apparaît ici.
-      </p>
-    </section>
-
-    <section class="center">
-      <a class="btn btn-primary" href="/controlremote">Ouvrir l'interface</a>
-    </section>
-
-    <section>
-      <h2>Extensions</h2>
-      <p>
-        Des skills et extensions créés par la communauté, installables directement dans l'app —
-        chaque extension est examinée par une IA avant publication. Tu peux aussi publier les
-        tiennes depuis un espace développeur.
-      </p>
-    </section>
-
-    <section class="center">
-      <a class="btn" href="/extensions">Parcourir les extensions</a>
-      <a class="btn" href="/dev" style="margin-left: 10px;">Espace développeur</a>
-    </section>
   </div>
 
   <script type="module">
-    import { renderAccountBar } from "/account.js";
+    import { renderAccountBar, supabase } from "/account.js";
     renderAccountBar(document.getElementById("account-bar-mount"));
+
+    async function loadStats() {
+      const { data, error } = await supabase.rpc("site_stats");
+      if (error || !data || !data[0]) return;
+      document.getElementById("stat-users").textContent = data[0].user_count;
+      document.getElementById("stat-exts").textContent = data[0].extension_count;
+    }
+    loadStats();
+
+    // Real-time counter: re-fetch the (cheap) aggregate whenever a new
+    // account or extension is inserted, via Supabase Realtime
+    // postgres_changes — simpler and less error-prone than trying to keep a
+    // client-side running total in sync across tabs.
+    supabase
+      .channel("site-stats")
+      .on("postgres_changes", { event: "INSERT", schema: "public", table: "profiles" }, loadStats)
+      .on("postgres_changes", { event: "INSERT", schema: "public", table: "extensions" }, loadStats)
+      .subscribe();
   </script>
 
   <script>
@@ -461,11 +440,6 @@
       el.textContent = `Télécharger — v${release.version}`;
     }
 
-    // Each button declares its own product (data-product) so this single
-    // page can offer independent download buttons for each installable
-    // product sharing the same app_releases table (see
-    // supabase/controlme_product_migration.sql) — a button with no matching
-    // release just falls back to "bientôt disponible", same as before.
     async function loadLatestRelease(product) {
       const buttons = document.querySelectorAll(`.js-cta[data-product="${product}"]`);
       if (buttons.length === 0) return;
@@ -492,78 +466,6 @@
     }
 
     loadLatestRelease("ollamachat");
-    loadLatestRelease("controlme");
-
-    // Simple deterministic rule-of-thumb calculator — no network call, no
-    // AI, just arithmetic on numbers the visitor picks themselves. Ratios
-    // consistent with the app's own in-app recommendation: effective(Go) ×
-    // 1.75 on CPU/RAM alone, × 2.2 when it fits in dedicated VRAM (GPU
-    // inference is more memory-efficient per format).
-    const TIERS = [
-      { max: 4, label: "jusqu'à ~3 milliards de paramètres", names: "llama3.2:3b, qwen2.5:3b, phi3:mini" },
-      { max: 9, label: "jusqu'à ~8 milliards de paramètres", names: "llama3.1:8b, qwen2.5:7b" },
-      { max: 16, label: "jusqu'à ~14 milliards de paramètres", names: "qwen2.5:14b, phi3:14b" },
-      { max: 35, label: "jusqu'à ~32 milliards de paramètres", names: "qwen2.5:32b" },
-      { max: Infinity, label: "70 milliards de paramètres et plus", names: "llama3.1:70b" },
-    ];
-
-    const CPU_SPEED = {
-      old: "Génération lente sur CPU seul (plusieurs secondes par mot) — privilégie le bas de la fourchette recommandée.",
-      mid: "Génération correcte sur CPU pour les petits/moyens modèles ; au-delà, ça ralentit nettement.",
-      high: "Assez de cœurs pour rester utilisable même sans GPU, mais un modèle qui tient dans la VRAM restera toujours bien plus rapide.",
-    };
-
-    function pickTier(maxParamsB) {
-      return TIERS.find((t) => maxParamsB < t.max) ?? TIERS[TIERS.length - 1];
-    }
-
-    document.getElementById("calc-btn").addEventListener("click", () => {
-      const ramGb = Number(document.getElementById("calc-ram").value);
-      const cpuTier = document.getElementById("calc-cpu").value;
-      const gpuVramGb = Number(document.getElementById("calc-gpu").value);
-      const hasGpu = gpuVramGb > 0;
-
-      const comfortableB = (hasGpu ? gpuVramGb : ramGb) * (hasGpu ? 2.2 : 1.75);
-      const extendedB = ramGb * 1.75;
-      const tier = pickTier(comfortableB);
-
-      const result = document.getElementById("calc-result");
-      result.hidden = false;
-      result.innerHTML = "";
-
-      const h3 = document.createElement("h3");
-      h3.textContent = hasGpu
-        ? `Avec ${gpuVramGb} Go de VRAM dédiée, vise : ${tier.label}`
-        : `Avec ${ramGb} Go de RAM (pas de GPU dédié), vise : ${tier.label}`;
-      const names = document.createElement("div");
-      names.className = "names";
-      names.textContent = tier.names;
-
-      const speed = document.createElement("div");
-      speed.className = "speed";
-      speed.textContent = CPU_SPEED[cpuTier];
-
-      const consequences = document.createElement("div");
-      consequences.className = "consequences";
-      consequences.textContent =
-        "Prendre un modèle plus gros que recommandé peut fortement ralentir les réponses (le système swap sur le disque), rendre le PC peu réactif pendant la génération, faire tourner les ventilateurs à fond, voire figer l'app ou Windows le temps que ça charge. Un modèle plus petit que la recommandation reste sûr, juste moins capable sur des tâches complexes.";
-
-      result.appendChild(h3);
-      result.appendChild(names);
-
-      if (hasGpu && extendedB > comfortableB) {
-        const extendedTier = pickTier(extendedB);
-        if (extendedTier.label !== tier.label) {
-          const extra = document.createElement("div");
-          extra.className = "extra";
-          extra.textContent = `Avec tes ${ramGb} Go de RAM, tu peux aussi faire tenir des modèles ${extendedTier.label} en partie déchargés sur le CPU — mais nettement plus lent qu'un modèle qui tient entièrement dans la VRAM.`;
-          result.appendChild(extra);
-        }
-      }
-
-      result.appendChild(speed);
-      result.appendChild(consequences);
-    });
   </script>
 </body>
 </html>

@@ -40,6 +40,26 @@ use tauri::{Manager, WindowEvent};
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
+        // Must be registered FIRST (per the plugin's own README) — one-click
+        // "Ajouter" from the site's extension marketplace page opens an
+        // `ollamachat://install-extension/<id>` link. On Windows/Linux the OS
+        // spawns a brand-new process with that URL as its only CLI arg rather
+        // than emitting an event to an already-running instance (verified in
+        // tauri-plugin-deep-link's own README before writing any of this) —
+        // this plugin is what intercepts that second launch, kills it, and
+        // forwards its argv back here so we can hand it to the deep-link
+        // plugin ourselves and bring the (possibly tray-hidden) window
+        // forward. The very first launch (app not running yet, OS starts it
+        // fresh with the URL as argv) needs no code here at all: the
+        // deep-link plugin's own `init()` already parses `std::env::args()`
+        // on setup (confirmed by reading its source, not assumed).
+        .plugin(tauri_plugin_single_instance::init(|app, _args, _cwd| {
+            if let Some(window) = app.get_webview_window("main") {
+                let _ = window.show();
+                let _ = window.set_focus();
+            }
+        }))
+        .plugin(tauri_plugin_deep_link::init())
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_clipboard_manager::init())
         .plugin(tauri_plugin_dialog::init())

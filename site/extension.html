@@ -1,0 +1,247 @@
+<!doctype html>
+<html lang="fr">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Extension</title>
+<meta name="description" content="Page d'une extension de la marketplace Ollama Chat React." />
+<style>
+  :root {
+    color-scheme: dark;
+    --bg: #0b0d10;
+    --bg-raised: #14171b;
+    --border: #23272e;
+    --text: #e8eaed;
+    --text-dim: #9aa0a6;
+    --accent: #6ea8fe;
+    --accent-strong: #4c86e0;
+    --warn: #e0b666;
+    --danger: #e08a8a;
+    --ok: #7fd0a0;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    background: var(--bg);
+    color: var(--text);
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+    line-height: 1.55;
+  }
+  .wrap { max-width: 820px; margin: 0 auto; padding: 40px 20px 64px; }
+  .back-link { display: inline-block; color: var(--text-dim); text-decoration: none; font-size: 0.85rem; margin-bottom: 20px; }
+  .back-link:hover { color: var(--text); }
+  p { color: var(--text-dim); margin: 0 0 12px; }
+  .hero-thumb {
+    width: 100%;
+    max-height: 340px;
+    object-fit: cover;
+    border-radius: 12px;
+    border: 1px solid var(--border);
+    margin-bottom: 20px;
+    display: block;
+  }
+  .ext-header { display: flex; align-items: flex-start; gap: 14px; margin-bottom: 8px; }
+  .ext-header h1 { margin: 0; font-size: 1.6rem; flex: 1; }
+  .badge { font-size: 0.72rem; padding: 3px 9px; border-radius: 8px; white-space: nowrap; }
+  .badge-official { background: #1f3a24; color: var(--ok); }
+  .badge-unofficial { background: #3a2f1f; color: var(--warn); }
+  .badge-target { background: #1c2634; color: var(--accent); }
+  .author-row { display: flex; align-items: center; gap: 8px; font-size: 0.88rem; color: var(--text-dim); margin-bottom: 20px; }
+  .author-row img { width: 26px; height: 26px; border-radius: 50%; object-fit: cover; background: #333; }
+  .summary { font-size: 1.02rem; color: var(--text); margin-bottom: 20px; }
+  .action-row { display: flex; align-items: center; gap: 14px; margin: 24px 0; flex-wrap: wrap; }
+  .btn {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    padding: 12px 24px;
+    border-radius: 10px;
+    border: 1px solid var(--border);
+    background: var(--bg-raised);
+    color: var(--text);
+    font-size: 0.95rem;
+    cursor: pointer;
+    text-decoration: none;
+  }
+  .btn-primary { color: #ffffff; background: var(--accent-strong); border-color: transparent; font-weight: 600; }
+  .btn-primary:hover { background: var(--accent); }
+  .install-hint { font-size: 0.82rem; color: var(--text-dim); }
+  .stats-line { font-size: 0.82rem; color: var(--text-dim); margin-top: 4px; }
+  .note {
+    background: var(--bg-raised);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    padding: 14px 16px;
+    font-size: 0.88rem;
+    color: var(--text-dim);
+    margin: 20px 0;
+  }
+  .note strong { color: var(--warn); }
+  h2 { font-size: 1.05rem; margin: 28px 0 10px; }
+  .description-text { white-space: pre-wrap; }
+  .media-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+    gap: 10px;
+    margin-top: 12px;
+  }
+  .media-grid img, .media-grid video {
+    width: 100%;
+    border-radius: 10px;
+    border: 1px solid var(--border);
+    display: block;
+  }
+  .not-found { text-align: center; padding: 60px 0; color: var(--text-dim); }
+</style>
+</head>
+<body>
+  <div class="wrap">
+    <a class="back-link" href="/extensions">← Marketplace</a>
+    <div id="content"><p>Chargement…</p></div>
+  </div>
+
+  <script type="module">
+    import { supabase, renderAccountBar, avatarUrlFor, getProfile, onProfileChange } from "/account.js";
+
+    const barMount = document.createElement("div");
+    barMount.id = "account-bar-mount";
+    barMount.style.position = "fixed";
+    barMount.style.top = "16px";
+    barMount.style.right = "20px";
+    barMount.style.zIndex = "20";
+    document.body.prepend(barMount);
+    renderAccountBar(barMount);
+
+    const params = new URLSearchParams(location.search);
+    const extensionId = params.get("id");
+    const content = document.getElementById("content");
+    let loadedOwnerId = null;
+
+    // getProfile() can still be null the instant load() finishes (the
+    // auth session check in account.js is async and isn't guaranteed to
+    // resolve before this page's own Supabase queries do) — subscribing
+    // instead of reading it once avoids a race where a logged-in owner
+    // just doesn't see their dashboard link on a fast page load.
+    onProfileChange((profile) => {
+      const el = document.getElementById("owner-dashboard-link");
+      if (!el) return;
+      el.innerHTML =
+        profile && loadedOwnerId && profile.id === loadedOwnerId
+          ? '<p style="margin-top: 24px;"><a href="/dev">Voir dans mon tableau de bord développeur →</a></p>'
+          : "";
+    });
+
+    if (!extensionId) {
+      content.innerHTML = '<div class="not-found">Aucune extension spécifiée.</div>';
+    } else {
+      load(extensionId);
+    }
+
+    async function load(id) {
+      const [{ data: ext, error }, { data: media }, { data: installs }] = await Promise.all([
+        supabase
+          .from("extensions")
+          .select(
+            "id, name, description, summary, thumbnail_url, is_official, owner_id, page_view_count, install_click_count, extension_versions(version, manifest, created_at), profiles(username, avatar_url)",
+          )
+          .eq("id", id)
+          .maybeSingle(),
+        supabase.from("extension_media").select("media_url, media_type").eq("extension_id", id).order("position"),
+        supabase.rpc("extension_install_count", { p_extension_id: id }),
+      ]);
+
+      if (error || !ext) {
+        content.innerHTML = '<div class="not-found">Extension introuvable — elle a peut-être été retirée.</div>';
+        return;
+      }
+
+      // Count a page view once per browser tab session (not on every
+      // refresh/back-navigation) — a lightweight, honest anti-inflation
+      // measure, not a rigorous unique-visitor count.
+      const viewedKey = `ollamachat_viewed_ext_${id}`;
+      if (!sessionStorage.getItem(viewedKey)) {
+        sessionStorage.setItem(viewedKey, "1");
+        supabase.rpc("record_extension_page_view", { p_extension_id: id }).then(() => {});
+      }
+
+      const versions = (ext.extension_versions ?? []).sort((a, b) => (a.created_at < b.created_at ? 1 : -1));
+      const latest = versions[0];
+      const target = latest?.manifest?.target === "chat" ? "Chat de base" : "Control Me";
+      const authorAvatar = avatarUrlFor(ext.profiles, null);
+      const installCount = installs ?? 0;
+
+      content.innerHTML = `
+        ${ext.thumbnail_url ? `<img class="hero-thumb" src="${ext.thumbnail_url}" alt="" />` : ""}
+        <div class="ext-header">
+          <h1>${ext.name}</h1>
+          <span class="badge badge-target">${target}</span>
+          <span class="badge ${ext.is_official ? "badge-official" : "badge-unofficial"}">${ext.is_official ? "Officielle" : "Non officielle"}</span>
+        </div>
+        <div class="author-row">
+          <img src="${authorAvatar}" alt="" />
+          <span>par @${ext.profiles?.username ?? "?"} — v${latest?.version ?? "?"}</span>
+        </div>
+        ${ext.summary ? `<p class="summary">${ext.summary}</p>` : ""}
+
+        <div class="action-row">
+          <button class="btn btn-primary" id="add-btn">Ajouter à l'app</button>
+          <span class="install-hint">Ouvre l'app installée et lance l'installation automatiquement.</span>
+        </div>
+        <div class="stats-line">
+          ${ext.page_view_count ?? 0} visite(s) de cette page · ${ext.install_click_count ?? 0} clic(s) sur Ajouter · ${installCount} installation(s) confirmée(s)
+        </div>
+
+        <div class="note">
+          <strong>Sécurité :</strong> non officielle = vérifiée seulement par une IA (Gemini), pas
+          par une personne. L'installer se fait à tes risques et périls — l'app n'est pas
+          responsable de son contenu. Une double confirmation (ici, puis dans l'app) te sera
+          demandée avant que quoi que ce soit ne soit réellement installé.
+        </div>
+
+        ${ext.description ? `<h2>Description</h2><p class="description-text">${ext.description}</p>` : ""}
+
+        ${
+          media && media.length > 0
+            ? `<h2>Aperçus</h2><div class="media-grid">${media
+                .map((m) =>
+                  m.media_type === "video"
+                    ? `<video src="${m.media_url}" controls></video>`
+                    : `<img src="${m.media_url}" alt="" />`,
+                )
+                .join("")}</div>`
+            : ""
+        }
+
+        <div id="owner-dashboard-link"></div>
+      `;
+
+      loadedOwnerId = ext.owner_id;
+      if (getProfile()?.id === ext.owner_id) {
+        document.getElementById("owner-dashboard-link").innerHTML =
+          '<p style="margin-top: 24px;"><a href="/dev">Voir dans mon tableau de bord développeur →</a></p>';
+      }
+
+      document.getElementById("add-btn").addEventListener("click", async () => {
+        if (
+          !confirm(
+            "Cette extension va être installée automatiquement dans l'app installée sur ce PC. " +
+              "Fais-tu confiance à son créateur ? Une extension non officielle n'a été vérifiée que " +
+              "par une IA, pas par une personne — l'installer se fait à tes risques et périls, l'app " +
+              "n'est pas responsable de son contenu. Continuer ?",
+          )
+        ) {
+          return;
+        }
+        supabase.rpc("record_extension_install_click", { p_extension_id: id }).then(() => {});
+        // Hands off to the desktop app via a custom URL scheme
+        // (tauri-plugin-deep-link, registered as "ollamachat" — see
+        // CLAUDE.md "Marketplace v0.7"). The app itself asks for a SECOND
+        // confirmation before actually writing anything to disk — this is
+        // only the first half of the "double confirmation" already used
+        // for the manual paste-ID flow in Skills.
+        window.location.href = `ollamachat://install-extension/${id}`;
+      });
+    }
+  </script>
+</body>
+</html>

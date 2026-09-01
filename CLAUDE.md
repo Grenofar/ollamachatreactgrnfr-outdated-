@@ -136,6 +136,24 @@ pas devenir obsolète.
   (connexion Google réelle, upload Storage, appel Gemini de revue —
   aucun testable sans navigateur) — à tester explicitement par
   l'utilisateur après exécution de la migration SQL.
+- **[FAIT] v0.7 : refonte du site façon GitHub + installation d'extension
+  en un clic depuis le navigateur.** Page dédiée par extension
+  (`/extension.html?id=...` — résumé court, photo d'impression, galerie
+  photos/vidéos, compteurs vues/clics/installations séparés), grille de
+  recherche à deux colonnes (`/extensions`), bouton "Ajouter" qui installe
+  automatiquement dans l'app via un lien `ollamachat://` (deep link OS,
+  `tauri-plugin-deep-link` + `tauri-plugin-single-instance`), landing page
+  refaite avec compteur temps réel (comptes/extensions, Supabase Realtime)
+  et explication du système d'extensions — RAM calculator, téléchargement
+  Control Me seul et "Interface pour appareil connecté" retirés de la
+  landing (repliés dans le menu du compte). Menu du compte restructuré :
+  avatar Google réel par défaut (plus de dicebear tant qu'aucune photo
+  n'est uploadée), panneau "Notre compte" partagé par toutes les pages,
+  bascule développeur directement dans le menu, déconnexion en rouge.
+  Nouvelle documentation extensive (`/docs`) avec une bibliothèque de
+  fonctions nommées (`clique()`, `tape()`, `raccourci()`...) pour décrire
+  précisément une action Control Me dans le texte d'une extension. Voir
+  "Marketplace v0.7" dans Architecture pour le détail technique complet.
 
 ## Architecture
 
@@ -2058,6 +2076,206 @@ construit un jour — pas promis, juste pas fermé.
   refuse), installation depuis l'app via l'identifiant copié, gestion des
   appareils (renommer, changer).
 
+### Marketplace v0.7 : compte enrichi, page GitHub-like par extension, installation en un clic
+
+Demande explicite, la plus détaillée du projet à ce jour : refonte complète
+du site façon GitHub (landing impressionnante, compteur temps réel,
+grille de recherche à deux colonnes, page dédiée par extension avec
+galerie et bouton "Ajouter" qui installe automatiquement dans l'app sans
+étape manuelle), menu de compte restructuré (avatar Google réel, panneau
+"Notre compte" partagé, bascule développeur dans le menu, déconnexion en
+rouge), et une bibliothèque de fonctions documentées pour écrire des
+extensions plus fiables. S'appuie entièrement sur les fondations de
+"Comptes et marketplace d'extensions (v0.6.3)" ci-dessus — aucune table
+existante retirée, uniquement étendue.
+
+**Installation en un clic — la partie techniquement la plus risquée,
+validée en premier avant le reste.** Le navigateur ne peut pas parler
+directement à une app de bureau installée ; le mécanisme standard est un
+**schéma d'URL personnalisé** (`ollamachat://...`) que l'OS route vers
+l'app plutôt que vers un site web. Deux plugins Tauri officiels ajoutés,
+avec leur documentation/code source lus avant d'écrire quoi que ce soit
+(même discipline que pour enigo/xcap/uiautomation en leur temps) :
+- **`tauri-plugin-deep-link`** — enregistre `ollamachat` comme schéma
+  (`tauri.conf.json` → `plugins.deep-link.desktop.schemes`, forme exacte
+  vérifiée dans le code source de `tauri-utils` — `desktop` accepte un
+  objet unique `{schemes: [...]}}` ou une liste). Sur le tout premier
+  lancement (app pas encore ouverte, l'OS la démarre avec l'URL comme
+  argument), le plugin lit déjà `std::env::args()` tout seul dans son
+  propre `setup()` — vérifié dans son code source, aucun code
+  supplémentaire nécessaire côté `lib.rs` pour ce cas précis.
+- **`tauri-plugin-single-instance`** (feature `deep-link` activée) —
+  **doit être enregistré en premier dans le `Builder`** (exigé
+  explicitement par la doc du plugin). Nécessaire spécifiquement parce que
+  ce projet est Windows-only : sur Windows/Linux, cliquer un lien
+  `ollamachat://` alors que l'app tourne déjà ne déclenche PAS
+  d'événement vers l'instance existante — l'OS relance un **second**
+  processus avec l'URL comme unique argument (documenté explicitement
+  comme limitation par `tauri-plugin-deep-link` lui-même). Ce plugin
+  intercepte ce second lancement, le termine, et transmet son `argv` à
+  l'instance déjà ouverte ; avec la feature `deep-link`, il appelle
+  automatiquement `deep_link.handle_cli_arguments(args)` avant le
+  callback fourni (vérifié dans le code source du plugin, pas supposé) —
+  notre callback se contente de ramener la fenêtre au premier plan
+  (`window.show()` + `set_focus()`, utile si l'app était planquée dans le
+  tray). Sans ce second plugin, cliquer "Ajouter" pendant que l'app est
+  déjà lancée n'aurait strictement rien fait.
+- URL utilisée : `ollamachat://install-extension/<id-extension>`. Côté
+  app, un nouveau `useEffect` dans `App.tsx` importe dynamiquement
+  `@tauri-apps/plugin-deep-link`, vérifie `getCurrent()` au montage (cas
+  premier lancement) **et** s'abonne à `onOpenUrl` (cas app déjà
+  ouverte) — les deux chemins existent réellement selon la doc du plugin,
+  donc les deux sont couverts plutôt que de parier sur un seul. L'URL est
+  parsée avec `new URL(...)` (`hostname === "install-extension"`,
+  `pathname` = l'identifiant), puis réutilise **exactement** le même
+  `importMarketplaceExtension` que le champ de collage manuel dans
+  Skills (v0.6.3) — donc hérite automatiquement de sa restriction
+  existante (seules les extensions ciblant `"controlme"` s'installent
+  réellement, une cible `"chat"` renvoie une erreur claire) sans code
+  supplémentaire. Double confirmation préservée : un `confirm()` côté
+  site juste avant la redirection (`extension.html`), un second
+  `window.confirm()` côté app juste avant l'appel réel — le clic seul sur
+  "Ajouter" n'installe jamais rien sans ce second geste explicite.
+- Capability `deep-link:default` ajoutée à `capabilities/default.json`
+  (même pattern que chaque plugin précédent). Schéma enregistré
+  uniquement pour l'app de chat principale (`tauri.conf.json`), pas pour
+  le build standalone Control Me (`tauri.controlme.conf.json`) — Skills
+  et la Sidebar complète n'existent que dans l'app principale, c'est elle
+  la cible naturelle d'un clic "Ajouter".
+
+- **`supabase/marketplace_v2_migration.sql`** (nouveau, **à exécuter par
+  l'utilisateur** après `accounts_marketplace_migration.sql`) : étend
+  `extensions` avec `summary` (résumé court, contrainte `char_length <= 220`
+  en plus de la limite déjà posée côté formulaire — défense en profondeur,
+  même logique que `profiles.username`), `thumbnail_url`,
+  `page_view_count`/`install_click_count` (deux compteurs distincts de
+  `extension_install_count` déjà existant : "combien ont ouvert la page"
+  et "combien ont cliqué Ajouter" sont des mesures différentes d'une
+  installation réellement confirmée côté app). Nouvelle table
+  `extension_media` (galerie photos/vidéos, RLS : lecture publique,
+  écriture réservée au propriétaire de l'extension visée). Nouveau bucket
+  Storage `extension-media` (public, 10 Mo max, types image/vidéo
+  courants posés directement sur le bucket) avec policies vérifiant
+  `(storage.foldername(name))[1]` contre `extensions.owner_id` via une
+  sous-requête — même schéma que la policy d'avatar déjà en place, RLS
+  Storage acceptant très bien une jointure vers une autre table. Fonction
+  `site_stats()` (`security definer`, compte `profiles`+`extensions`) et
+  ajout de ces deux tables à la publication `supabase_realtime` (pour le
+  compteur temps réel de la landing, voir plus bas) — écrit dans un bloc
+  `do $$ ... exception when duplicate_object then null; end $$` pour que
+  le fichier reste ré-exécutable sans erreur si les tables y sont déjà,
+  même discipline que les migrations précédentes de ce projet.
+  **Compteurs de vues/clics volontairement non protégés contre le
+  spam** (RPC `security definer` appelable par `anon` sans limite de
+  fréquence) — même compromis assumé qu'ailleurs dans ce projet (code de
+  jumelage à distance, dossier caché de connaissances) : un frein normal,
+  pas une garantie face à un attaquant motivé.
+- **`site/account.js`** : `avatarUrlFor(profile, session)` — utilise
+  désormais **la vraie photo Google** du compte
+  (`session.user.user_metadata.avatar_url`/`.picture`, remplie
+  automatiquement par Supabase Auth lors du login OAuth) comme valeur par
+  défaut, avant de retomber sur l'identicon dicebear généré — seulement
+  si aucune photo n'a jamais été uploadée manuellement
+  (`profiles.avatar_url` reste toujours prioritaire une fois définie).
+  Nouveau panneau **"Notre compte"** (modale, `openAccountModal()`) —
+  pseudo + photo de profil, avant réservé à `dev.html` et donc invisible
+  pour un compte non développeur ; maintenant accessible à n'importe quel
+  compte connecté, depuis n'importe quelle page, via le menu déroulant.
+  **Bascule "Mode développeur" déplacée directement dans le menu**
+  (glissière animée, même style que celle qui vivait avant dans
+  `dev.html`) — l'activer fait apparaître l'entrée "Espace développeur"
+  juste en dessous, sans recharger la page ni naviguer ailleurs.
+  "Se déconnecter" stylé en rouge (`.account-signout-btn`) comme demandé
+  explicitement. Toutes ces nouvelles classes sont injectées une seule
+  fois via un `<style>` généré par `ensureStyles()` plutôt que dupliquées
+  dans le bloc `<style>` de chaque page HTML — les classes déjà stylées
+  par chaque page (`.account-bar`/`.account-menu`/etc.) ne sont pas
+  touchées, donc aucun risque de régression visuelle sur ce qui existait
+  déjà.
+- **`site/index.html`** (refait) : nouvel en-tête collant (`.site-header`,
+  `backdrop-filter: blur`) avec le nom du projet, une nav ("Extensions",
+  "Documentation"), le bouton d'installation et le menu de compte — plus
+  besoin de faire défiler toute la page pour les retrouver. Section héros
+  avec un **compteur temps réel** (`site_stats()` au chargement, puis
+  ré-appelé automatiquement via un canal Supabase Realtime
+  `postgres_changes` abonné aux `INSERT` sur `profiles`/`extensions` —
+  plus simple et plus fiable qu'essayer de maintenir un total local
+  incrémenté à la main, qui désynchroniserait entre onglets/visiteurs).
+  Grille "Comment ça marche" étendue à 4 cartes (Chat/Codex/Control
+  Me/Skills, contre 2 avant) et nouvelle section "Le système
+  d'extensions" expliquant que Codex/Control Me/Skills sont eux-mêmes
+  les capacités "intégrées" que la marketplace complète, avec liens vers
+  `/extensions` et `/docs`. **Retiré, comme demandé explicitement** : le
+  calculateur de config RAM (existait depuis plusieurs versions, voir
+  Journal), la section de téléchargement Control Me seul, et la section
+  "Interface pour appareil connecté" — leur fonction reste accessible
+  (Control Me s'installe/se configure depuis l'app elle-même ; les
+  appareils connectés restent à un clic via "Mes appareils" dans le menu
+  de compte, inchangé depuis v0.5.7).
+- **`site/extensions.html`** (refait) : grille à **deux colonnes**
+  (`grid-template-columns: repeat(2, 1fr)`, une seule colonne sous 620px)
+  de cartes cliquables — miniature (`thumbnail_url`, un dégradé de
+  substitution si absente), nom en gras, badge officiel/non-officiel,
+  résumé tronqué à 3 lignes (`-webkit-line-clamp`), avatar + pseudo de
+  l'auteur en petit. Remplace l'ancienne liste verticale avec case
+  UUID/bouton copier — l'installation ne passe plus par ce
+  copier-coller, chaque carte mène directement à la page de l'extension.
+- **`site/extension.html`** (nouveau) — la page GitHub-like par
+  extension : photo d'impression en hero, nom, badges cible/officiel,
+  auteur, résumé, bouton **"Ajouter à l'app"** (voir le mécanisme de deep
+  link plus haut), trois statistiques affichées côte à côte (vues de la
+  page / clics sur Ajouter / installations confirmées), description
+  complète, galerie photos/vidéos, et un lien vers le tableau de bord si
+  le visiteur connecté est l'auteur. **Comptage de vue anti-doublon
+  léger** : une clé `sessionStorage` par extension évite qu'un simple
+  rechargement de page ne gonfle `page_view_count` à chaque F5 — mesure
+  honnête mais pas rigoureuse (contournable en navigation privée),
+  documentée comme telle plutôt que présentée comme un vrai comptage de
+  visiteurs uniques.
+- **`site/dev.html`** (restructuré) : l'édition de pseudo/photo en a été
+  **retirée** (vit maintenant dans "Notre compte", partagée par toutes
+  les pages — plus besoin d'être développeur pour changer sa photo).
+  Nouveau bouton "Documentation" en en-tête vers `/docs`. Formulaire de
+  publication étendu : résumé court (compteur de caractères en direct,
+  220 max), upload de la photo d'impression, upload multiple de
+  photos/vidéos de démonstration — les fichiers sont envoyés vers le
+  bucket `extension-media` sous le chemin `{id-extension}/...` **après**
+  la création (ou mise à jour) de la ligne `extensions`, dans cet ordre
+  précis parce que la policy Storage a besoin que la ligne existe déjà
+  pour vérifier la propriété via la sous-requête. "Mes extensions"
+  affiche maintenant les **trois métriques séparément** par extension
+  (vues de page, clics sur Ajouter, installations confirmées — cette
+  dernière toujours récupérée via `extension_install_count`, inchangée).
+- **`site/docs.html`** (nouveau) — documentation extensive demandée
+  explicitement ("ajoute un maximum d'information"), avec sommaire
+  collant. Couvre le format exact du manifeste, chaque champ du
+  formulaire de publication avec ses limites, et surtout une
+  **bibliothèque de fonctions nommées** (`clique(x, y)`, `tape("...")`,
+  `raccourci("Ctrl+S")`, `lit_interface()`, `retiens(fait, categorie)`...)
+  à citer dans le texte d'une extension Control Me pour décrire une
+  action sans ambiguïté. **Ce ne sont pas de vraies fonctions
+  exécutées** — le contenu d'une extension reste du texte libre ajouté
+  au prompt système (décision de scope v0.6.3, non remise en cause ici) ;
+  c'est un vocabulaire documenté qui correspond un-à-un aux outils déjà
+  câblés côté Control Me (`click`, `type`, `hotkey`, `read_ui_elements`,
+  `remember_fact`...), pour que le modèle reconnaisse directement à quelle
+  capacité réelle chaque terme renvoie plutôt que de laisser l'auteur
+  décrire la même chose en prose libre à chaque fois. Section équivalente
+  pour une extension `"chat"`, qui documente à la place les 6 outils fixes
+  de Codex (pas de nouvel outil possible pour cette cible, seulement du
+  contexte qui influence comment ils sont utilisés). Deux exemples de
+  manifeste complets (assistant Spotify pour Control Me, style de revue
+  de code pour Chat/Codex).
+- `npx tsc --noEmit` passé à 0 erreur. `cargo check` lancé après ajout des
+  deux nouveaux plugins Rust — voir Journal des changements pour le
+  résultat. **Aucune vérification de bout en bout possible dans cet
+  environnement** (nécessite un vrai clic "Ajouter" depuis un navigateur
+  sur le site déployé, avec l'app installée en face, pour confirmer que
+  le schéma `ollamachat://` est bien enregistré par l'installeur NSIS et
+  que Windows route effectivement vers l'app) — à tester explicitement
+  par l'utilisateur après build + déploiement Vercel + exécution de la
+  migration SQL.
+
 ### Les 6 outils de l'agent
 1. `read_file` — lecture texte (limite 5 Mo), chemin absolu
 2. `list_dir` — listing un niveau, chemin absolu
@@ -2248,8 +2466,16 @@ réseau sortants dans `src-tauri/src/commands/` à cette date :
    connaissances Control Me (v0.5.7)" dans Architecture pour le détail
    complet (première écriture `anon` de tout ce projet, RLS et
    implications documentées explicitement à cet endroit).
+7. **`import_marketplace_extension`** (skills.rs) → API REST Supabase, en
+   lecture seule (récupère le nom/la description/le dernier manifeste
+   d'une extension) — sur action explicite de l'utilisateur : soit un
+   identifiant collé à la main dans Skills, soit (depuis v0.7, voir
+   "Marketplace v0.7" dans Architecture) un clic sur "Ajouter" sur le
+   site suivi d'une confirmation **dans l'app** avant tout appel réseau.
+   Rien n'est écrit côté Supabase par cette commande — seul le contenu
+   récupéré est écrit localement (fichier skill).
 
-En dehors de ces six cas, aucune autre destination réseau n'existe dans
+En dehors de ces sept cas, aucune autre destination réseau n'existe dans
 le code (pas de télémétrie, pas d'analytics, pas d'appel automatique à un
 service tiers non listé ici). Si tu ajoutes un nouvel appel réseau, vérifie
 qu'il tombe dans un de ces cas — sinon, demande confirmation avant d'envoyer
@@ -3072,6 +3298,57 @@ l'utilisateur confirme qu'elle est bien dans `.env` local.
   OAuth Google, upload Storage, appel de revue Gemini, aucun testable
   sans navigateur — à tester explicitement par l'utilisateur après
   exécution de `supabase/accounts_marketplace_migration.sql`.
+- **2026-09-01** — v0.7.0 : refonte du site façon GitHub + installation
+  d'extension en un clic, demande la plus détaillée du projet à ce jour
+  (compte enrichi avec avatar Google réel/panneau "Notre compte"/bascule
+  développeur dans le menu, landing avec compteur temps réel, marketplace
+  en grille à deux colonnes, page dédiée par extension avec galerie et
+  bouton "Ajouter" qui installe automatiquement via un lien
+  `ollamachat://`, documentation extensive avec une bibliothèque de
+  fonctions nommées pour décrire des actions Control Me). Voir
+  "Marketplace v0.7" dans Architecture pour le détail technique complet
+  — mécanisme de deep link (`tauri-plugin-deep-link` +
+  `tauri-plugin-single-instance`, la partie la plus risquée, validée en
+  premier), nouvelle migration `supabase/marketplace_v2_migration.sql`.
+  Un vrai bug trouvé et corrigé en relisant `extension.html` avant de le
+  considérer fini (pas après) : le lien "tableau de bord développeur"
+  vérifiait `getProfile()` une seule fois, juste après le chargement de
+  la page — une vraie course possible entre la vérification de session
+  (asynchrone, côté `account.js`) et le chargement de l'extension
+  elle-même pouvait laisser ce lien absent pour un propriétaire
+  pourtant connecté ; corrigé en s'abonnant à `onProfileChange` pour
+  réévaluer dès que l'état de connexion se stabilise, plutôt qu'une
+  lecture synchrone unique. **Deuxième vrai piège rencontré, cette
+  fois en publiant plutôt qu'en codant** : `source .env && npm run
+  tauri build` ne suffit *pas* à propager les variables d'environnement
+  de signature aux sous-processus (`cargo`/le bundler) — `source` seul
+  ne fait qu'assigner des variables shell, pas les exporter ; sans
+  `export` explicite dans `.env` (aucun ici) ou un `set -a` autour du
+  `source`, le build réussit quand même (comme documenté) mais publie
+  un installeur non signé. Repéré aux DEUX builds de cette version
+  (l'app principale d'abord, puis Control Me — même erreur reproduite
+  deux fois de suite avant de la corriger pour de bon) : plutôt que de
+  relancer un build de 40+ minutes, signature après coup via
+  `npx tauri signer sign -k "$TAURI_SIGNING_PRIVATE_KEY" -p "$TAURI_SIGNING_PRIVATE_KEY_PASSWORD" <fichier>`
+  (sous-commande CLI dédiée, découverte à cette occasion) — **à
+  retenir pour toute future publication** : soit `set -a && source
+  .env && set +a` avant le build, soit accepter de re-signer
+  séparément après coup plutôt que de re-builder. `npx tsc --noEmit`
+  et `cargo check` passés à 0 erreur avant le build (21 min pour
+  `cargo check` avec les deux nouveaux plugins, jamais compilés avant
+  sur cette machine). App de chat principale publiée et vérifiée via
+  la clé **anon** (fichier : 200 OK, 7 019 349 octets ;
+  `latest_release_manifest` sans paramètre : renvoie bien la v0.7.0
+  avec signature et URL). Control Me standalone publié et vérifié de
+  la même façon (fichier : 200 OK, 7 015 266 octets ;
+  `latest_release_manifest?p_product=controlme` : renvoie bien la
+  v0.7.0) — les deux endpoints reconfirmés indépendants l'un de
+  l'autre après les deux publications. **Aucune vérification de bout
+  en bout possible dans cet environnement** pour la partie site/deep
+  link elle-même (nécessite un vrai clic "Ajouter" depuis un
+  navigateur sur le site déployé, avec l'app installée en face) — à
+  tester explicitement par l'utilisateur après déploiement Vercel et
+  exécution de `supabase/marketplace_v2_migration.sql`.
 
 ## Prochaines étapes (dans l'ordre du fichier de passation d'origine)
 
