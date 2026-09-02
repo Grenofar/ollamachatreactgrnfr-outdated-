@@ -48,6 +48,21 @@
     margin: 0 0 20px;
     letter-spacing: -0.01em;
   }
+  .hero h1 {
+    background: linear-gradient(100deg, var(--text) 30%, var(--accent) 50%, var(--text) 70%);
+    background-size: 200% 100%;
+    -webkit-background-clip: text;
+    background-clip: text;
+    color: transparent;
+    animation: hero-shine 6s ease-in-out infinite;
+  }
+  @keyframes hero-shine {
+    0%, 100% { background-position: 200% 0; }
+    50% { background-position: 0% 0; }
+  }
+  @media (prefers-reduced-motion: reduce) {
+    .hero h1 { animation: none; background-position: 0% 0; }
+  }
   h2 {
     font-size: 1.3rem;
     margin: 0 0 12px;
@@ -95,11 +110,24 @@
     flex: 1;
   }
   .site-nav a {
+    position: relative;
     color: var(--text-dim);
     text-decoration: none;
     font-size: 0.88rem;
+    padding-bottom: 2px;
   }
   .site-nav a:hover { color: var(--text); }
+  .site-nav a::after {
+    content: "";
+    position: absolute;
+    left: 0; right: 100%;
+    bottom: -3px;
+    height: 2px;
+    background: var(--accent);
+    border-radius: 2px;
+    transition: right 0.25s var(--ease-out, ease);
+  }
+  .site-nav a:hover::after { right: 0; }
   .site-header-actions {
     display: flex;
     align-items: center;
@@ -420,11 +448,15 @@
       mountThemeToggle,
       mountScrollReveal,
       animateCounter,
+      mountCardGlow,
+      mountMagnetic,
     } from "/account.js";
     renderAccountBar(document.getElementById("account-bar-mount"));
     mountThemeToggle(document.getElementById("theme-toggle-mount"));
     mountMobileNav(document.querySelector(".site-nav"));
     mountScrollReveal();
+    mountCardGlow(document.body, ".flow-item, .ext-explainer-item");
+    mountMagnetic(document.body, ".btn-primary");
 
     let statsLoadedOnce = false;
     async function loadStats() {

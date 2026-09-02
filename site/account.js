@@ -338,6 +338,82 @@ function ensureStyles() {
       text-decoration: none; font-size: 0.85rem;
     }
     .link-btn:hover { border-color: var(--accent, #6ea8fe); }
+
+    html { scroll-behavior: smooth; }
+    @media (prefers-reduced-motion: reduce) { html { scroll-behavior: auto; } }
+
+    /* Diagonal light sweep across primary buttons on hover — a small,
+       common "premium SaaS" touch (a highlight band that travels left to
+       right), layered on top of the existing color/lift transitions
+       rather than replacing them. */
+    .btn-primary {
+      position: relative;
+      overflow: hidden;
+    }
+    .btn-primary::after {
+      content: "";
+      position: absolute;
+      top: 0; left: -60%;
+      width: 40%; height: 100%;
+      background: linear-gradient(115deg, transparent, rgba(255, 255, 255, 0.35), transparent);
+      transform: skewX(-20deg);
+      transition: left 0.6s ease;
+      pointer-events: none;
+    }
+    .btn-primary:hover::after { left: 130%; }
+
+    /* Cursor-follow glow on cards (extension grid, flow/explainer items) —
+       a soft radial highlight that tracks the pointer, opacity 0 until
+       hovered. mountCardGlow (below) sets --mx/--my per pointer move;
+       cheap (one repaint of a pseudo-element, no layout) and skipped
+       entirely under reduced-motion. */
+    .card-glow { position: relative; overflow: hidden; }
+    .card-glow::before {
+      content: "";
+      position: absolute;
+      inset: 0;
+      z-index: 0;
+      opacity: 0;
+      background: radial-gradient(220px circle at var(--mx, 50%) var(--my, 50%), color-mix(in srgb, var(--accent, #6ea8fe) 16%, transparent), transparent 70%);
+      transition: opacity 0.25s ease;
+    }
+    .card-glow:hover::before { opacity: 1; }
+    .card-glow > * { position: relative; z-index: 1; }
+    @media (prefers-reduced-motion: reduce) {
+      .card-glow::before { display: none; }
+      .btn-primary::after { display: none; }
+    }
+
+    /* Subtle grain over the whole page — the "premium SaaS" texture used
+       by sites like Linear/Vercel to keep a flat dark background from
+       looking dead flat, without an image asset: a tiny inline SVG
+       feTurbulence noise, tiled, at very low opacity, screen-blended so
+       it only ever lightens (never muddies text contrast). */
+    body::after {
+      content: "";
+      position: fixed;
+      inset: 0;
+      z-index: 999;
+      pointer-events: none;
+      opacity: 0.035;
+      mix-blend-mode: overlay;
+      background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='120' height='120'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='2' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E");
+    }
+
+    /* Magnetic pull on primary buttons — the button nudges a few pixels
+       toward the cursor while hovered (mountMagnetic below sets --tx/--ty
+       per pointer move) instead of staying rigidly still, a small but
+       recognizable "premium" interaction (Linear/Vercel/Stripe-style
+       marketing CTAs). Capped low (see JS) so it reads as responsive, not
+       like the button is chasing the cursor around. */
+    .magnetic {
+      transform: translate(var(--tx, 0), var(--ty, 0));
+      transition: transform 0.15s ease-out;
+    }
+    .magnetic:active { transition: transform 0.05s ease-out; }
+    @media (prefers-reduced-motion: reduce) {
+      .magnetic { transform: none !important; }
+    }
     /* Hero content (above the fold, visible immediately) still animates in
        on load — below-the-fold content uses .reveal + mountScrollReveal
        instead (see further down), triggered by actually scrolling into
@@ -435,6 +511,23 @@ function ensureStyles() {
       background: color-mix(in srgb, var(--accent, #6ea8fe) 20%, transparent) !important;
     }
 
+    /* Plain custom properties are NOT smoothly animatable by default —
+       without registering their syntax, the browser treats each
+       @keyframes stop as a hard jump (no interpolation in between) rather
+       than tweening the value, which is exactly why this drifted in
+       visible steps instead of smoothly ("1 frame every 30s") before this
+       was added. @property with a <percentage> syntax opts these into
+       real interpolation, same fix applied in App.css for the app's own
+       version of this background. Unsupported browsers just keep the
+       old stepped behavior (graceful, not broken — @property has broad
+       support by now regardless). */
+    @property --blob1-x { syntax: '<percentage>'; inherits: false; initial-value: 15%; }
+    @property --blob1-y { syntax: '<percentage>'; inherits: false; initial-value: 20%; }
+    @property --blob2-x { syntax: '<percentage>'; inherits: false; initial-value: 85%; }
+    @property --blob2-y { syntax: '<percentage>'; inherits: false; initial-value: 15%; }
+    @property --blob3-x { syntax: '<percentage>'; inherits: false; initial-value: 50%; }
+    @property --blob3-y { syntax: '<percentage>'; inherits: false; initial-value: 90%; }
+
     /* Animated mesh-style background: three soft radial blobs whose
        positions drift slowly (60s+ loops, barely perceptible frame to
        frame, never distracting) — layered radial-gradients is the
@@ -464,16 +557,52 @@ function ensureStyles() {
       body::before { animation: none; background: var(--bg); }
     }
 
-    /* ------------------------------------------------------ theme toggle */
-    .theme-toggle-btn {
-      display: inline-flex; align-items: center; justify-content: center;
-      width: 36px; height: 36px; border-radius: 50%;
+    /* ------------------------------------------------------ theme toggle
+       A real switch, not a button whose icon swaps: a pill track with
+       both faces (sun + moon) always present, and a round knob that
+       physically slides between them — role="switch" + aria-checked for
+       the same reason (semantics of a toggle, not a push button). */
+    .theme-switch {
+      position: relative;
+      width: 56px; height: 28px;
+      border-radius: 999px;
       border: 1px solid var(--border, #23272e);
       background: var(--bg-raised, #14171b);
-      color: var(--text, #e8eaed);
-      cursor: pointer; font-size: 1rem; line-height: 1; flex-shrink: 0;
+      cursor: pointer;
+      padding: 0;
+      flex-shrink: 0;
+      transition: background 0.3s ease, border-color 0.3s ease, transform 0.12s ease;
     }
-    .theme-toggle-btn:hover { border-color: var(--accent, #6ea8fe); transform: translateY(-1px) rotate(12deg); }
+    .theme-switch:hover { border-color: var(--accent, #6ea8fe); }
+    .theme-switch:active { transform: scale(0.96); }
+    .theme-switch-icon {
+      position: absolute;
+      top: 50%;
+      width: 14px; height: 14px;
+      transform: translateY(-50%);
+      display: flex; z-index: 2;
+      transition: opacity 0.3s ease, color 0.3s ease;
+    }
+    .theme-switch-icon svg { width: 100%; height: 100%; }
+    .theme-switch-icon-sun { left: 5px; color: #f0b03e; opacity: 0.45; }
+    .theme-switch-icon-moon { right: 5px; color: #b9c6e0; opacity: 1; }
+    .theme-switch-light .theme-switch-icon-sun { opacity: 1; }
+    .theme-switch-light .theme-switch-icon-moon { opacity: 0.4; }
+    .theme-switch-knob {
+      position: absolute;
+      top: 3px; left: 3px;
+      width: 20px; height: 20px;
+      border-radius: 50%;
+      z-index: 1;
+      background: linear-gradient(150deg, #3a4048, #1c1f24);
+      box-shadow: 0 2px 5px rgba(0, 0, 0, 0.35);
+      transform: translateX(28px); /* default = dark = resting near the moon */
+      transition: transform 0.4s cubic-bezier(0.34, 1.56, 0.64, 1), background 0.3s ease;
+    }
+    .theme-switch-light .theme-switch-knob {
+      transform: translateX(0); /* light = resting near the sun */
+      background: linear-gradient(150deg, #fff8ea, #ffe9b8);
+    }
     ::view-transition-old(root), ::view-transition-new(root) { animation: none; mix-blend-mode: normal; }
     ::view-transition-new(root) { animation: theme-reveal 0.5s ease forwards; }
     @keyframes theme-reveal {
@@ -535,27 +664,42 @@ export function applyStoredTheme() {
   }
 }
 
-// Mounts a sun/moon toggle button into `container`. Independent of login
-// state (theme is a per-browser preference, not tied to an account) — call
-// on every page, right next to renderAccountBar's own mount point.
+// Crisp at any size, no emoji-font-rendering inconsistency across
+// platforms — plain inline SVG paths instead, used by the switch below.
+const SUN_SVG =
+  '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="12" cy="12" r="4.2" fill="currentColor" stroke="none"/><path d="M12 2v2.5M12 19.5V22M4.2 4.2l1.8 1.8M18 18l1.8 1.8M2 12h2.5M19.5 12H22M4.2 19.8L6 18M18 6l1.8-1.8"/></svg>';
+const MOON_SVG =
+  '<svg viewBox="0 0 24 24" fill="currentColor"><path d="M20.2 14.9A8.5 8.5 0 1 1 9.1 3.8a7 7 0 0 0 11.1 11.1z"/></svg>';
+
+// A real switch — track with both faces always present (sun/moon, so the
+// two states are visible at a glance) and a round knob that slides
+// between them — not a single button whose icon swaps, which read as a
+// plain button rather than a toggle.
 export function mountThemeToggle(container) {
   ensureStyles();
   applyStoredTheme();
 
   const btn = document.createElement("button");
-  btn.className = "theme-toggle-btn";
+  btn.className = "theme-switch";
   btn.type = "button";
   btn.setAttribute("aria-label", "Changer de thème");
+  btn.innerHTML = `
+    <span class="theme-switch-knob"></span>
+    <span class="theme-switch-icon theme-switch-icon-sun">${SUN_SVG}</span>
+    <span class="theme-switch-icon theme-switch-icon-moon">${MOON_SVG}</span>
+  `;
 
   function currentTheme() {
     if (document.documentElement.dataset.theme === "light") return "light";
     if (document.documentElement.dataset.theme === "dark") return "dark";
     return window.matchMedia?.("(prefers-color-scheme: light)").matches ? "light" : "dark";
   }
-  function paintIcon() {
-    btn.textContent = currentTheme() === "light" ? "🌙" : "☀️";
+  function paint() {
+    btn.classList.toggle("theme-switch-light", currentTheme() === "light");
+    btn.setAttribute("aria-checked", String(currentTheme() === "light"));
   }
-  paintIcon();
+  btn.setAttribute("role", "switch");
+  paint();
 
   btn.addEventListener("click", () => {
     const next = currentTheme() === "light" ? "dark" : "light";
@@ -566,7 +710,7 @@ export function mountThemeToggle(container) {
     const apply = () => {
       document.documentElement.dataset.theme = next;
       localStorage.setItem(THEME_STORAGE_KEY, next);
-      paintIcon();
+      paint();
     };
     // startViewTransition is Chromium-only (this site's two real audiences
     // — the Tauri app's WebView2, and most visitors' Chrome/Edge — both
@@ -619,6 +763,53 @@ export function animateCounter(el, value, duration = 900) {
     if (t < 1) requestAnimationFrame(tick);
   }
   requestAnimationFrame(tick);
+}
+
+// Adds the .card-glow class (see ensureStyles) plus a mousemove listener
+// to every element matching `selector` under `root`, tracking the pointer
+// into --mx/--my so the CSS radial-gradient highlight follows the cursor.
+// Uses event delegation on `root` (one listener, not one per card) so it
+// keeps working for cards added later (e.g. after an async fetch re-renders
+// the grid) without needing to be called again.
+export function mountCardGlow(root, selector) {
+  if (window.matchMedia?.("(prefers-reduced-motion: reduce)").matches) return;
+  root.addEventListener("mousemove", (e) => {
+    const card = e.target.closest?.(selector);
+    if (!card || !root.contains(card)) return;
+    card.classList.add("card-glow");
+    const rect = card.getBoundingClientRect();
+    card.style.setProperty("--mx", `${e.clientX - rect.left}px`);
+    card.style.setProperty("--my", `${e.clientY - rect.top}px`);
+  });
+}
+
+// Adds the .magnetic class plus a subtle cursor-pull to every element
+// matching `selector` — nudges toward the pointer while hovered, capped at
+// `strength` px so it reads as a responsive detail rather than the button
+// visibly chasing the cursor. Same event-delegation approach as
+// mountCardGlow, for the same reason (works for elements added later).
+export function mountMagnetic(root, selector, strength = 10) {
+  if (window.matchMedia?.("(prefers-reduced-motion: reduce)").matches) return;
+  root.addEventListener("mousemove", (e) => {
+    const el = e.target.closest?.(selector);
+    if (!el || !root.contains(el)) return;
+    el.classList.add("magnetic");
+    const rect = el.getBoundingClientRect();
+    const relX = (e.clientX - (rect.left + rect.width / 2)) / (rect.width / 2);
+    const relY = (e.clientY - (rect.top + rect.height / 2)) / (rect.height / 2);
+    el.style.setProperty("--tx", `${relX * strength}px`);
+    el.style.setProperty("--ty", `${relY * strength}px`);
+  });
+  root.addEventListener(
+    "mouseout",
+    (e) => {
+      const el = e.target.closest?.(selector);
+      if (!el || el.contains(e.relatedTarget)) return;
+      el.style.setProperty("--tx", "0px");
+      el.style.setProperty("--ty", "0px");
+    },
+    true,
+  );
 }
 
 // Collapses a desktop nav (an element matching navSelector, e.g. ".site-nav")

@@ -133,10 +133,12 @@
       onProfileChange,
       escapeHtml,
       mountThemeToggle,
+      mountMagnetic,
     } from "/account.js";
 
     renderAccountBar(document.getElementById("account-bar-mount"));
     mountThemeToggle(document.getElementById("theme-toggle-mount"));
+    mountMagnetic(document.body, ".btn-primary");
     const params = new URLSearchParams(location.search);
     const extensionId = params.get("id");
     const content = document.getElementById("content");

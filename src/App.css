@@ -112,6 +112,17 @@ body {
   position: relative;
 }
 
+/* Plain custom properties don't smoothly animate by default — without
+   registering their syntax, the browser hard-jumps between @keyframes
+   stops instead of interpolating, which is exactly what made this drift
+   look like a slideshow instead of smooth motion. @property with a
+   <percentage> syntax opts these into real interpolation (same fix in
+   account.js for the site's version of this background). */
+@property --glow1-x { syntax: '<percentage>'; inherits: false; initial-value: 12%; }
+@property --glow1-y { syntax: '<percentage>'; inherits: false; initial-value: 15%; }
+@property --glow2-x { syntax: '<percentage>'; inherits: false; initial-value: 88%; }
+@property --glow2-y { syntax: '<percentage>'; inherits: false; initial-value: 85%; }
+
 /* Subtle, slow-drifting mesh-style glow behind the whole app — shows
    through anywhere that doesn't set its own opaque background (the main
    chat/Codex/Control Me panel does not), same layered-radial-gradients

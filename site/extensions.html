@@ -157,10 +157,18 @@
   </div>
 
   <script type="module">
-    import { supabase, renderAccountBar, avatarUrlFor, escapeHtml, mountThemeToggle } from "/account.js";
+    import {
+      supabase,
+      renderAccountBar,
+      avatarUrlFor,
+      escapeHtml,
+      mountThemeToggle,
+      mountCardGlow,
+    } from "/account.js";
 
     renderAccountBar(document.getElementById("account-bar-mount"));
     mountThemeToggle(document.getElementById("theme-toggle-mount"));
+    mountCardGlow(document.getElementById("list"), ".ext-card");
 
     const listEl = document.getElementById("list");
     const searchInput = document.getElementById("search-input");

@@ -50,9 +50,12 @@
     font-size: 0.82rem;
     color: var(--text-dim);
     text-decoration: none;
-    padding: 4px 0;
+    padding: 4px 0 4px 10px;
+    border-left: 2px solid transparent;
+    transition: color 0.15s ease, border-color 0.15s ease;
   }
   .toc a:hover { color: var(--text); }
+  .toc a.toc-active { color: var(--accent); border-left-color: var(--accent); }
   .wrap { flex: 1; max-width: 760px; padding: 40px 24px 100px; min-width: 0; }
   .back-link { display: inline-block; color: var(--text-dim); text-decoration: none; font-size: 0.85rem; margin-bottom: 20px; }
   .back-link:hover { color: var(--text); }
@@ -448,6 +451,27 @@ Voici ce que je veux que mon extension fasse : [DÉCRIS ICI CE QUE TU VEUX]</cod
       e.target.textContent = "Copié !";
       setTimeout(() => (e.target.textContent = "Copier"), 1500);
     });
+
+    // Highlights whichever section is currently in view in the sticky
+    // table of contents — a small but expected touch on a long docs page,
+    // so scrolling always shows "you are here" without hunting for it.
+    const tocLinks = new Map(
+      Array.from(document.querySelectorAll(".toc a")).map((a) => [a.getAttribute("href").slice(1), a]),
+    );
+    const sectionObserver = new IntersectionObserver(
+      (entries) => {
+        for (const entry of entries) {
+          const link = tocLinks.get(entry.target.id);
+          if (!link) continue;
+          link.classList.toggle("toc-active", entry.isIntersecting);
+        }
+      },
+      { rootMargin: "-10% 0px -70% 0px" },
+    );
+    for (const id of tocLinks.keys()) {
+      const el = document.getElementById(id);
+      if (el) sectionObserver.observe(el);
+    }
   </script>
 </body>
 </html>
