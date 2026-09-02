@@ -3,6 +3,17 @@
 <head>
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1" />
+<script>
+  // Applies a stored explicit theme choice before the stylesheet below is
+  // matched against the DOM, so a visitor who picked "light" never sees a
+  // flash of dark (or vice versa) on load — see applyStoredTheme in
+  // account.js, which this mirrors exactly for the case where the module
+  // script hasn't run yet by first paint.
+  try {
+    var t = localStorage.getItem("ollamachat_theme");
+    if (t === "light" || t === "dark") document.documentElement.dataset.theme = t;
+  } catch (e) {}
+</script>
 <title>Ollama Chat React</title>
 <meta name="description" content="Discutez avec des LLM en local via Ollama, codez avec un agent (Codex), contrôlez votre PC avec une IA (Control Me), et étendez le tout avec des extensions communautaires." />
 <style>
@@ -295,6 +306,7 @@
       </nav>
       <div class="site-header-actions">
         <a class="btn btn-primary js-cta" data-product="ollamachat">Vérification…</a>
+        <div id="theme-toggle-mount"></div>
         <div id="account-bar-mount"></div>
       </div>
     </div>
@@ -314,11 +326,11 @@
 
       <div class="stats-row">
         <div class="stat">
-          <span class="stat-num" id="stat-users">—</span>
+          <span class="stat-num skeleton" id="stat-users">00</span>
           <span class="stat-label">comptes créés</span>
         </div>
         <div class="stat">
-          <span class="stat-num" id="stat-exts">—</span>
+          <span class="stat-num skeleton" id="stat-exts">00</span>
           <span class="stat-label">extensions publiées</span>
         </div>
       </div>
@@ -329,7 +341,7 @@
       </div>
     </div>
 
-    <section>
+    <section class="reveal">
       <h2>Comment ça marche</h2>
       <div class="flow">
         <div class="flow-item">
@@ -351,7 +363,7 @@
       </div>
     </section>
 
-    <section>
+    <section class="reveal">
       <h2>Le système d'extensions</h2>
       <p>
         Codex, Control Me et Skills sont eux-mêmes construits comme des capacités que l'app
@@ -389,7 +401,7 @@
       </div>
     </section>
 
-    <section>
+    <section class="reveal">
       <div class="note">
         <strong>Note Windows :</strong> l'installeur n'est pas encore signé
         numériquement, donc Windows peut afficher un avertissement
@@ -401,15 +413,38 @@
   </div>
 
   <script type="module">
-    import { renderAccountBar, supabase, mountMobileNav } from "/account.js";
+    import {
+      renderAccountBar,
+      supabase,
+      mountMobileNav,
+      mountThemeToggle,
+      mountScrollReveal,
+      animateCounter,
+    } from "/account.js";
     renderAccountBar(document.getElementById("account-bar-mount"));
+    mountThemeToggle(document.getElementById("theme-toggle-mount"));
     mountMobileNav(document.querySelector(".site-nav"));
+    mountScrollReveal();
 
+    let statsLoadedOnce = false;
     async function loadStats() {
       const { data, error } = await supabase.rpc("site_stats");
       if (error || !data || !data[0]) return;
-      document.getElementById("stat-users").textContent = data[0].user_count;
-      document.getElementById("stat-exts").textContent = data[0].extension_count;
+      const userEl = document.getElementById("stat-users");
+      const extEl = document.getElementById("stat-exts");
+      userEl.classList.remove("skeleton");
+      extEl.classList.remove("skeleton");
+      // Only animate the count-up on the very first load — a live update
+      // arriving later (someone else just signed up) should just update
+      // the number, not replay the whole animation.
+      if (statsLoadedOnce) {
+        userEl.textContent = data[0].user_count;
+        extEl.textContent = data[0].extension_count;
+      } else {
+        animateCounter(userEl, data[0].user_count);
+        animateCounter(extEl, data[0].extension_count);
+        statsLoadedOnce = true;
+      }
     }
     loadStats();
 

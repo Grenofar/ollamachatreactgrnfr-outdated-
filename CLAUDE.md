@@ -193,6 +193,19 @@ pas devenir obsolète.
   documentation). `cargo check`/`npx tsc --noEmit` à 0 erreur, JS de
   chaque page vérifié avec `node --check`. Voir "Passe UI/sécurité et
   commandes clavier (v0.7.1)" dans Architecture pour le détail complet.
+- **[FAIT] v0.7.2 : deuxième passe UI, uniquement présentation** — bascule
+  jour/nuit sur les 6 pages du site (animation en cercle via la View
+  Transitions API, recherche web faite avant d'implémenter), fond en
+  dégradé animé façon mesh-gradient (site **et** app), écran de démarrage
+  animé dans l'app, chargement à effet shimmer sur les pages qui
+  attendent Supabase, compteurs de la landing qui comptent en montant,
+  entrée en cascade des cartes d'extension, révélation au scroll
+  (au lieu d'une animation groupée au chargement). Un vrai bug de
+  contraste trouvé et corrigé avant publication (pas après) : plusieurs
+  badges avaient un fond sombre fixe pairé à un texte thémé — correct en
+  thème sombre, illisible (texte sombre sur fond sombre) une fois le
+  thème clair ajouté. Voir "Bascule jour/nuit et fond animé (v0.7.2)"
+  dans Architecture pour le détail complet.
 
 ## Architecture
 
@@ -2557,6 +2570,123 @@ documenté ailleurs.
 
 `cargo check` relancé après ces trois correctifs pour confirmer 0 erreur
 avant de considérer la passe terminée.
+
+### Bascule jour/nuit et fond animé (v0.7.2)
+
+Demande explicite, uniquement présentation cette fois ("ton seul but
+améliorer un maximum l'UI du site et de l'app") : un maximum d'animation,
+un écran de chargement, un fond dynamique, une bascule jour/nuit fluide,
+et une meilleure page d'extension. Recherche web faite avant d'implémenter
+(demandée explicitement) plutôt que deviné : technique de fond en
+dégradé animé ("mesh gradient", plusieurs `radial-gradient` superposés —
+CSS n'a pas encore de vrai mesh-gradient natif), animation de bascule de
+thème via la View Transitions API (`document.startViewTransition`, un
+cercle qui grandit depuis le bouton cliqué via `clip-path`), et tendances
+2026 de landing page SaaS (animations "avec un but", pas du mouvement
+permanent — d'où le choix de révélation au scroll plutôt qu'une
+animation groupée au chargement pour tout).
+
+- **`site/account.js`** (chargé par les 6 pages, donc le seul endroit qui
+  les touche toutes en une fois) gagne :
+  - `applyStoredTheme()`/`mountThemeToggle(container)` : bouton rond
+    ☀️/🌙, persiste le choix dans `localStorage`
+    (`ollamachat_theme`), et anime la transition via
+    `document.startViewTransition()` quand disponible (Chromium — les
+    deux vrais publics de ce site, le WebView2 de l'app et
+    Chrome/Edge, l'ont ; ailleurs, retour silencieux à un changement
+    instantané, adouci par les `transition` CSS déjà posées sur
+    `body`). Chaque page reçoit aussi un petit `<script>` **synchrone**
+    (pas `type="module"`, qui s'exécute trop tard) tout en haut du
+    `<head>`, avant le bloc `<style>`, qui relit `localStorage` et pose
+    `data-theme` avant le premier rendu — sans ça, un visiteur ayant
+    choisi le clair verrait le sombre flasher une fraction de seconde
+    au chargement.
+  - **Palette claire centralisée** : plutôt que dupliquer un bloc
+    `[data-theme="light"]` dans les 6 fichiers, une seule règle
+    `:root[data-theme="light"] { --bg: ...; ... }` dans `account.js`
+    écrase les variables que chaque page déclare déjà sur son propre
+    `:root` (même nom de variable partout : `--bg`/`--bg-raised`/
+    `--border`/`--text`/`--text-dim`/`--accent`/`--accent-strong`/
+    `--warn`/`--danger`/`--ok`) — spécificité égale à un éventuel bloc
+    `[data-theme="dark"]` existant, l'ordre d'injection (après coup,
+    donc plus tard dans le document) tranche en sa faveur. `index.html`/
+    `controlremote.html` avaient déjà un mécanisme de suivi automatique
+    du thème système (`@media (prefers-color-scheme: light)`) — laissé
+    tel quel, il reste le comportement par défaut tant que l'utilisateur
+    n'a jamais cliqué le bouton ; une fois cliqué, `data-theme` posé
+    explicitement prend le dessus dans tous les cas, y compris à
+    contre-courant du thème système.
+  - `mountScrollReveal(root)` : `IntersectionObserver` générique, ajoute
+    `.reveal-visible` (déclenche l'animation d'entrée) la première fois
+    qu'un élément `.reveal` croise le viewport puis arrête de
+    l'observer — une seule fois, pas à chaque scroll. Remplace la
+    règle globale `section, .ext-card, ... { animation: ... }` de la
+    v0.7.1 (tout animait au chargement, y compris hors écran) par un
+    marquage explicite `.reveal` posé section par section dans
+    `index.html`.
+  - `animateCounter(el, value)` : anime un nombre de 0 à sa valeur
+    finale (easing cubique), utilisé pour les deux compteurs de la
+    landing — seulement au tout premier chargement, une mise à jour
+    temps réel ultérieure (quelqu'un vient de s'inscrire) met juste à
+    jour le chiffre sans rejouer l'animation.
+  - Classe `.skeleton` (dégradé qui glisse en boucle) pour tout ce qui
+    dépend d'un appel Supabase — compteurs de la landing, grille
+    d'extensions, en-tête de la page d'extension — au lieu d'un espace
+    vide ou d'un "—" pendant le chargement.
+  - **Vrai bug de contraste trouvé et corrigé avant publication** :
+    plusieurs badges (`.badge-official`/`.badge-unofficial` sur
+    `extensions.html`/`extension.html`/`dev.html`,
+    `.badge-target`/`.memory-category`/`.remote-step` sur
+    `extension.html`/`controlremote.html`) codaient leur fond en dur
+    (ex. `background: #1f3a24`) tout en laissant le texte suivre une
+    variable de thème (`color: var(--ok)`). En sombre, cohérent avec
+    la variable d'origine. En clair, `--ok`/`--warn`/`--accent`
+    deviennent des teintes **foncées** (pensées pour rester lisibles
+    sur un fond clair) — posées sur un fond resté sombre en dur, texte
+    et fond finissent presque de la même couleur. Corrigé en dérivant
+    le fond de badge de la **même** variable que le texte via
+    `color-mix(in srgb, var(--ok) 20%, transparent)` — fond et texte
+    restent alors toujours de la même famille de couleur, dans les deux
+    thèmes, un seul correctif centralisé dans `account.js` plutôt que
+    trois correctifs par page. Deux survivants isolés dans `dev.html`
+    (`.file-label:hover`, `.command-remove:hover`) avaient le même
+    défaut avec des couleurs différentes — corrigés directement dans le
+    fichier, trop spécifiques à cette page pour valoir une règle
+    partagée.
+- **`src/App.tsx`/`App.css`** (l'app elle-même) :
+  - **Écran de démarrage animé** (`.app-splash`) — délibérément un temps
+    d'entrée de marque plutôt qu'un indicateur "patiente" : le
+    chargement réel (réglages/modèles/conversations, tout en local) est
+    quasi instantané, donc affiché un minimum fixe (~650ms) même si les
+    données sont déjà prêtes, avant un fondu croisé vers l'app réelle.
+    **Ne touche pas** au mécanisme anti-flash existant (fenêtre cachée
+    jusqu'à `getCurrentWindow().show()`, voir v0.3.2/v0.6.2) — l'écran
+    de démarrage est peint une fois la fenêtre déjà visible à sa bonne
+    taille, il ne cherche pas à la remplacer.
+  - **Fond en dégradé animé** derrière tout `body` (donc visible dans
+    le panneau principal chat/Codex/Control Me, qui ne pose pas son
+    propre fond opaque) — même technique que le site, couleurs reprises
+    de l'accent bleu déjà utilisé par `.send-btn` (`#3d6dd8`) plutôt
+    qu'inventées.
+  - **Pas de bascule jour/nuit dans l'app** — décision de scope
+    assumée, pas une case oubliée : `App.css` (plus de 2000 lignes)
+    n'a **aucune** variable CSS de couleur, chaque composant code sa
+    couleur en dur depuis le début du projet (vérifié par grep avant
+    de commencer, pas supposé) — retokeniser tout ça à l'aveugle pour
+    ajouter un thème clair aurait un risque élevé de régression
+    visuelle sur des dizaines de composants, pour un chantier qui
+    mériterait sa propre passe dédiée plutôt qu'être improvisé au
+    milieu d'une passe UI plus large. Le site, lui, avait déjà cette
+    infrastructure de variables (posée dès la v0.7), d'où la bascule
+    beaucoup plus simple à y ajouter.
+- `npx tsc --noEmit`, `npm run build` (tsc + vite) passés à 0 erreur ;
+  JS de chaque page du site revérifié avec `node --check`. **Pas de
+  vérification visuelle possible dans cet environnement** (pas d'accès
+  GUI) — à confirmer par l'utilisateur : bascule de thème sur les 6
+  pages (l'animation en cercle en particulier, qui ne peut être vue
+  qu'en vrai), lisibilité des badges dans les deux thèmes, écran de
+  démarrage de l'app, et que le fond animé ne nuit pas à la lisibilité
+  du texte par-dessus.
 
 ### Les 6 outils de l'agent
 1. `read_file` — lecture texte (limite 5 Mo), chemin absolu

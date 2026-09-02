@@ -3,6 +3,12 @@
 <head>
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1" />
+<script>
+  try {
+    var t = localStorage.getItem("ollamachat_theme");
+    if (t === "light" || t === "dark") document.documentElement.dataset.theme = t;
+  } catch (e) {}
+</script>
 <title>Contrôle à distance</title>
 <meta name="description" content="Discute avec le modèle qui tourne sur ton PC, ou prends le contrôle de son écran, depuis ce navigateur — jumelé avec l'app via un code." />
 <style>
@@ -367,6 +373,7 @@
 </head>
 <body>
   <div id="account-bar-mount"></div>
+  <div id="theme-toggle-mount" style="position: fixed; top: 16px; right: 68px; z-index: 20;"></div>
 
   <div class="wrap">
     <a class="back-link" href="/">← Ollama Chat React</a>
@@ -477,9 +484,17 @@
 
   <script type="module">
     import { createClient } from "https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/+esm";
-    import { renderAccountBar, onProfileChange, listDevices, renameDevice, attachDevice } from "/account.js";
+    import {
+      renderAccountBar,
+      onProfileChange,
+      listDevices,
+      renameDevice,
+      attachDevice,
+      mountThemeToggle,
+    } from "/account.js";
 
     renderAccountBar(document.getElementById("account-bar-mount"));
+    mountThemeToggle(document.getElementById("theme-toggle-mount"));
 
     const SUPABASE_URL = "https://cihuwuiyziarnghethbi.supabase.co";
     const SUPABASE_ANON_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImNpaHV3dWl5emlhcm5naGV0aGJpIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODgwNjM3OTQsImV4cCI6MjEwMzYzOTc5NH0.AkAe00Vzu4506nHSjh2bl99x5hZUSejZRm3pJwVuGtI";

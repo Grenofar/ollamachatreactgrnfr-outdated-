@@ -109,6 +109,31 @@ body,
 body {
   background: #161616;
   color: #eaeaea;
+  position: relative;
+}
+
+/* Subtle, slow-drifting mesh-style glow behind the whole app — shows
+   through anywhere that doesn't set its own opaque background (the main
+   chat/Codex/Control Me panel does not), same layered-radial-gradients
+   technique as the site's background. Fixed + z-index -1 so it never
+   repaints on scroll or intercepts clicks. */
+body::before {
+  content: "";
+  position: fixed;
+  inset: 0;
+  z-index: -1;
+  background:
+    radial-gradient(30vw 30vw at var(--glow1-x, 12%) var(--glow1-y, 15%), rgba(61, 109, 216, 0.10), transparent 70%),
+    radial-gradient(26vw 26vw at var(--glow2-x, 88%) var(--glow2-y, 85%), rgba(127, 208, 160, 0.07), transparent 70%);
+  animation: app-glow-drift 55s ease-in-out infinite alternate;
+}
+@keyframes app-glow-drift {
+  0% { --glow1-x: 8%; --glow1-y: 10%; --glow2-x: 92%; --glow2-y: 90%; }
+  50% { --glow1-x: 22%; --glow1-y: 25%; --glow2-x: 78%; --glow2-y: 72%; }
+  100% { --glow1-x: 12%; --glow1-y: 8%; --glow2-x: 90%; --glow2-y: 88%; }
+}
+@media (prefers-reduced-motion: reduce) {
+  body::before { animation: none; }
 }
 
 .app {
@@ -116,6 +141,75 @@ body {
   height: 100vh;
   width: 100vw;
   overflow: hidden;
+  position: relative;
+}
+
+/* -------------------------------------------------------------- splash
+   A deliberate branded entrance beat, not a "please wait" indicator —
+   startup data (settings/models/conversations, all local) is normally
+   near-instant, so this is shown for a fixed minimum stretch regardless
+   (App.tsx), then cross-fades out. Sits above the whole app (z-index),
+   same window that's already shown at its final restored size — this
+   never affects the anti-flash hidden-until-ready startup sequence, it's
+   purely what's painted first once the window is already visible. */
+.app-splash {
+  position: absolute;
+  inset: 0;
+  z-index: 500;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 22px;
+  background: #141414;
+  overflow: hidden;
+  animation: splash-in 0.4s var(--ease-out) both;
+}
+.app-splash-exit {
+  animation: splash-out 0.4s var(--ease-out) both;
+}
+@keyframes splash-in {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+@keyframes splash-out {
+  from { opacity: 1; transform: scale(1); }
+  to { opacity: 0; transform: scale(1.04); }
+}
+.app-splash-orb {
+  position: absolute;
+  inset: -20%;
+  background:
+    radial-gradient(32vw 32vw at 25% 30%, rgba(61, 109, 216, 0.28), transparent 70%),
+    radial-gradient(30vw 30vw at 75% 70%, rgba(127, 208, 160, 0.18), transparent 70%);
+  animation: splash-drift 6s ease-in-out infinite alternate;
+}
+@keyframes splash-drift {
+  from { transform: translate(-2%, -1%) scale(1); }
+  to { transform: translate(2%, 1%) scale(1.05); }
+}
+.app-splash-ring {
+  width: 46px;
+  height: 46px;
+  border-radius: 50%;
+  border: 3px solid rgba(255, 255, 255, 0.12);
+  border-top-color: #4c7ae0;
+  animation: splash-spin 0.9s linear infinite;
+}
+@keyframes splash-spin {
+  to { transform: rotate(360deg); }
+}
+.app-splash-mark {
+  position: relative;
+  color: #eaeaea;
+  font-size: 15px;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+}
+@media (prefers-reduced-motion: reduce) {
+  .app-splash, .app-splash-exit, .app-splash-orb, .app-splash-ring {
+    animation-duration: 0.01ms !important;
+  }
 }
 
 /* ---------------------------------------------------------------- sidebar */

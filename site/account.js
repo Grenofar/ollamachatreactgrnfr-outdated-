@@ -338,8 +338,12 @@ function ensureStyles() {
       text-decoration: none; font-size: 0.85rem;
     }
     .link-btn:hover { border-color: var(--accent, #6ea8fe); }
-    section, .ext-card, .flow-item, .ext-explainer-item {
-      animation: site-fade-up 0.4s ease both;
+    /* Hero content (above the fold, visible immediately) still animates in
+       on load — below-the-fold content uses .reveal + mountScrollReveal
+       instead (see further down), triggered by actually scrolling into
+       view rather than firing for everything at once on load. */
+    .hero, .hero * {
+      animation: site-fade-up 0.5s var(--ease-out, ease) both;
     }
     @keyframes site-fade-up {
       from { opacity: 0; transform: translateY(8px); }
@@ -382,8 +386,239 @@ function ensureStyles() {
       .mobile-nav-menu a:last-child { border-bottom: none; }
     }
     .mobile-nav-toggle { display: none; }
+
+    /* ---------------------------------------------------------- theming
+       Every page already declares --bg/--bg-raised/--border/--text/
+       --text-dim/--accent/--accent-strong/--warn (and some also --danger/
+       --ok) as custom properties on a bare :root — this light palette
+       overrides all of them at once from here rather than duplicating it
+       six times, matching by selector specificity ([data-theme="light"]
+       is (0,1,0), same as a page's own [data-theme="dark"] block where one
+       exists, both beat a bare :root's (0,0,1) regardless of injection
+       order). Values match what index.html's own light override already
+       used pre-v0.7 so the toggle doesn't introduce a new, unreviewed
+       palette on that page.
+       Kept last-of-file so no more specific rule anywhere above can
+       accidentally out-rank it for these variable names. */
+    :root[data-theme="light"] {
+      --bg: #f7f8fa;
+      --bg-raised: #ffffff;
+      --border: #e2e5e9;
+      --text: #1c1e21;
+      --text-dim: #5f6570;
+      --accent: #2f6fed;
+      --accent-strong: #2857c4;
+      --warn: #9a6b17;
+      --danger: #c23f3f;
+      --ok: #1f7a4d;
+    }
+    body {
+      transition: background-color 0.3s ease, color 0.3s ease;
+    }
+    /* extensions.html/extension.html/dev.html hardcode .badge-official/
+       .badge-unofficial backgrounds as fixed dark colors (#1f3a24/#3a2f1f)
+       with only the text color themed via var(--ok)/var(--warn) — fine
+       against the dark palette these were written for, but in light mode
+       the same fixed dark background paired with the light palette's much
+       darker --ok/--warn text (chosen for contrast on a LIGHT page
+       background) becomes near-illegible dark-on-dark. Deriving the
+       background as a translucent tint of the same variable via
+       color-mix keeps foreground/background paired to the same color in
+       both themes, correct contrast either way, one shared fix instead of
+       patching three pages' hardcoded hex values individually. */
+    .badge-official { background: color-mix(in srgb, var(--ok, #7fd0a0) 20%, transparent) !important; }
+    .badge-unofficial { background: color-mix(in srgb, var(--warn, #e0b666) 20%, transparent) !important; }
+    /* Same fix, same reason, for every other place that pairs a fixed
+       #1c2634 background with color: var(--accent) — .badge-target
+       (extension.html), .memory-category/.remote-step (controlremote.html). */
+    .badge-target, .memory-category, .remote-step {
+      background: color-mix(in srgb, var(--accent, #6ea8fe) 20%, transparent) !important;
+    }
+
+    /* Animated mesh-style background: three soft radial blobs whose
+       positions drift slowly (60s+ loops, barely perceptible frame to
+       frame, never distracting) — layered radial-gradients is the
+       standard pure-CSS mesh-gradient technique (no native CSS
+       mesh-gradient exists yet). Sits behind body's own flat color via
+       the pseudo-element so text contrast is completely unaffected;
+       fixed positioning means it doesn't repaint on scroll. */
+    body::before {
+      content: "";
+      position: fixed;
+      inset: 0;
+      z-index: -1;
+      background:
+        radial-gradient(38vw 38vw at var(--blob1-x, 15%) var(--blob1-y, 20%), color-mix(in srgb, var(--accent) 18%, transparent), transparent 70%),
+        radial-gradient(34vw 34vw at var(--blob2-x, 85%) var(--blob2-y, 15%), color-mix(in srgb, var(--ok, #7fd0a0) 14%, transparent), transparent 70%),
+        radial-gradient(42vw 42vw at var(--blob3-x, 50%) var(--blob3-y, 90%), color-mix(in srgb, var(--accent-strong) 14%, transparent), transparent 70%),
+        var(--bg);
+      background-repeat: no-repeat;
+      animation: mesh-drift 50s ease-in-out infinite alternate;
+    }
+    @keyframes mesh-drift {
+      0% { --blob1-x: 10%; --blob1-y: 15%; --blob2-x: 88%; --blob2-y: 10%; --blob3-x: 45%; --blob3-y: 95%; }
+      50% { --blob1-x: 25%; --blob1-y: 35%; --blob2-x: 75%; --blob2-y: 30%; --blob3-x: 60%; --blob3-y: 80%; }
+      100% { --blob1-x: 15%; --blob1-y: 10%; --blob2-x: 90%; --blob2-y: 25%; --blob3-x: 35%; --blob3-y: 92%; }
+    }
+    @supports not (background: color-mix(in srgb, red, blue)) {
+      body::before { animation: none; background: var(--bg); }
+    }
+
+    /* ------------------------------------------------------ theme toggle */
+    .theme-toggle-btn {
+      display: inline-flex; align-items: center; justify-content: center;
+      width: 36px; height: 36px; border-radius: 50%;
+      border: 1px solid var(--border, #23272e);
+      background: var(--bg-raised, #14171b);
+      color: var(--text, #e8eaed);
+      cursor: pointer; font-size: 1rem; line-height: 1; flex-shrink: 0;
+    }
+    .theme-toggle-btn:hover { border-color: var(--accent, #6ea8fe); transform: translateY(-1px) rotate(12deg); }
+    ::view-transition-old(root), ::view-transition-new(root) { animation: none; mix-blend-mode: normal; }
+    ::view-transition-new(root) { animation: theme-reveal 0.5s ease forwards; }
+    @keyframes theme-reveal {
+      from { clip-path: circle(0% at var(--theme-toggle-x, 100%) var(--theme-toggle-y, 0%)); }
+      to { clip-path: circle(150% at var(--theme-toggle-x, 100%) var(--theme-toggle-y, 0%)); }
+    }
+
+    /* -------------------------------------------------- loading states
+       Shimmering placeholder blocks for anything fetched async (stat
+       numbers, extension grid, extension detail hero) — shown instead of
+       a bare "—"/blank gap so the page never looks broken mid-load. */
+    .skeleton {
+      display: inline-block;
+      background: linear-gradient(90deg, var(--bg-raised, #14171b) 25%, var(--border, #23272e) 50%, var(--bg-raised, #14171b) 75%);
+      background-size: 200% 100%;
+      animation: skeleton-shimmer 1.4s ease-in-out infinite;
+      border-radius: 6px;
+      color: transparent !important;
+    }
+    @keyframes skeleton-shimmer {
+      0% { background-position: 200% 0; }
+      100% { background-position: -200% 0; }
+    }
+
+    /* ------------------------------------------------ scroll reveal
+       Purposeful, not constant motion: elements marked .reveal start
+       faded/offset and animate in only once, the first time they cross
+       into the viewport (IntersectionObserver, mountScrollReveal below) —
+       deliberately not applied to everything on the page at once. */
+    .reveal { opacity: 0; transform: translateY(16px); }
+    .reveal.reveal-visible {
+      animation: reveal-in 0.5s var(--ease-out, ease) forwards;
+    }
+    @keyframes reveal-in {
+      to { opacity: 1; transform: translateY(0); }
+    }
+
+    @media (prefers-reduced-motion: reduce) {
+      body::before { animation: none; }
+      ::view-transition-new(root) { animation: none; }
+      .reveal { opacity: 1; transform: none; }
+      .reveal.reveal-visible { animation: none; }
+    }
   `;
   document.head.appendChild(style);
+}
+
+const THEME_STORAGE_KEY = "ollamachat_theme";
+
+// Applied as early as possible by a tiny inline <script> in each page's
+// <head> too (before this module even loads) to avoid a flash of the
+// wrong theme on first paint — this export exists so that inline snippet
+// and the toggle button below share the exact same read/apply logic
+// instead of two copies drifting apart.
+export function applyStoredTheme() {
+  const stored = localStorage.getItem(THEME_STORAGE_KEY);
+  if (stored === "light" || stored === "dark") {
+    document.documentElement.dataset.theme = stored;
+  }
+}
+
+// Mounts a sun/moon toggle button into `container`. Independent of login
+// state (theme is a per-browser preference, not tied to an account) — call
+// on every page, right next to renderAccountBar's own mount point.
+export function mountThemeToggle(container) {
+  ensureStyles();
+  applyStoredTheme();
+
+  const btn = document.createElement("button");
+  btn.className = "theme-toggle-btn";
+  btn.type = "button";
+  btn.setAttribute("aria-label", "Changer de thème");
+
+  function currentTheme() {
+    if (document.documentElement.dataset.theme === "light") return "light";
+    if (document.documentElement.dataset.theme === "dark") return "dark";
+    return window.matchMedia?.("(prefers-color-scheme: light)").matches ? "light" : "dark";
+  }
+  function paintIcon() {
+    btn.textContent = currentTheme() === "light" ? "🌙" : "☀️";
+  }
+  paintIcon();
+
+  btn.addEventListener("click", () => {
+    const next = currentTheme() === "light" ? "dark" : "light";
+    const rect = btn.getBoundingClientRect();
+    document.documentElement.style.setProperty("--theme-toggle-x", `${rect.left + rect.width / 2}px`);
+    document.documentElement.style.setProperty("--theme-toggle-y", `${rect.top + rect.height / 2}px`);
+
+    const apply = () => {
+      document.documentElement.dataset.theme = next;
+      localStorage.setItem(THEME_STORAGE_KEY, next);
+      paintIcon();
+    };
+    // startViewTransition is Chromium-only (this site's two real audiences
+    // — the Tauri app's WebView2, and most visitors' Chrome/Edge — both
+    // have it) — everywhere else this just falls back to an instant swap,
+    // still smoothed by the plain color transitions declared above.
+    if (document.startViewTransition && !window.matchMedia?.("(prefers-reduced-motion: reduce)").matches) {
+      document.startViewTransition(apply);
+    } else {
+      apply();
+    }
+  });
+
+  container.appendChild(btn);
+}
+
+// Observes every .reveal element currently in `root` (default: whole
+// document) and adds .reveal-visible the first time each crosses into the
+// viewport, then stops watching it — a one-shot entrance, not a
+// scroll-position-linked animation. Call after the relevant DOM exists
+// (including after any async render that adds more .reveal elements).
+export function mountScrollReveal(root = document) {
+  const io = new IntersectionObserver(
+    (entries) => {
+      for (const entry of entries) {
+        if (entry.isIntersecting) {
+          entry.target.classList.add("reveal-visible");
+          io.unobserve(entry.target);
+        }
+      }
+    },
+    { threshold: 0.15 },
+  );
+  root.querySelectorAll(".reveal:not(.reveal-visible)").forEach((el) => io.observe(el));
+  return io;
+}
+
+// Animates a number counting up from 0 to `value` over `duration` ms —
+// used for the landing page's live stats. Respects reduced-motion by
+// jumping straight to the final value.
+export function animateCounter(el, value, duration = 900) {
+  if (window.matchMedia?.("(prefers-reduced-motion: reduce)").matches) {
+    el.textContent = String(value);
+    return;
+  }
+  const start = performance.now();
+  function tick(now) {
+    const t = Math.min(1, (now - start) / duration);
+    const eased = 1 - Math.pow(1 - t, 3);
+    el.textContent = String(Math.round(eased * value));
+    if (t < 1) requestAnimationFrame(tick);
+  }
+  requestAnimationFrame(tick);
 }
 
 // Collapses a desktop nav (an element matching navSelector, e.g. ".site-nav")

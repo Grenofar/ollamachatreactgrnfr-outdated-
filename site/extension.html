@@ -3,6 +3,12 @@
 <head>
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1" />
+<script>
+  try {
+    var t = localStorage.getItem("ollamachat_theme");
+    if (t === "light" || t === "dark") document.documentElement.dataset.theme = t;
+  } catch (e) {}
+</script>
 <title>Extension</title>
 <meta name="description" content="Page d'une extension de la marketplace Ollama Chat React." />
 <style>
@@ -92,26 +98,45 @@
     display: block;
   }
   .not-found { text-align: center; padding: 60px 0; color: var(--text-dim); }
+  .top-bar { display: flex; align-items: center; justify-content: space-between; gap: 10px; margin-bottom: 20px; }
+  .top-bar-actions { display: flex; align-items: center; gap: 8px; }
+  .skeleton-hero { height: 340px; border-radius: 12px; margin-bottom: 20px; }
+  .skeleton-line { height: 1em; margin-bottom: 10px; border-radius: 4px; }
+  #content { animation: content-in 0.35s ease both; }
+  @keyframes content-in { from { opacity: 0; } to { opacity: 1; } }
+  @media (prefers-reduced-motion: reduce) { #content { animation: none; } }
 </style>
 </head>
 <body>
   <div class="wrap">
-    <a class="back-link" href="/extensions">← Marketplace</a>
-    <div id="content"><p>Chargement…</p></div>
+    <div class="top-bar">
+      <a class="back-link" href="/extensions" style="margin-bottom: 0;">← Marketplace</a>
+      <div class="top-bar-actions">
+        <div id="theme-toggle-mount"></div>
+        <div id="account-bar-mount"></div>
+      </div>
+    </div>
+    <div id="content">
+      <div class="skeleton-hero skeleton"></div>
+      <div class="skeleton-line skeleton" style="width: 60%; height: 1.6rem;"></div>
+      <div class="skeleton-line skeleton" style="width: 40%;"></div>
+      <div class="skeleton-line skeleton" style="width: 90%;"></div>
+    </div>
   </div>
 
   <script type="module">
-    import { supabase, renderAccountBar, avatarUrlFor, getProfile, onProfileChange, escapeHtml } from "/account.js";
+    import {
+      supabase,
+      renderAccountBar,
+      avatarUrlFor,
+      getProfile,
+      onProfileChange,
+      escapeHtml,
+      mountThemeToggle,
+    } from "/account.js";
 
-    const barMount = document.createElement("div");
-    barMount.id = "account-bar-mount";
-    barMount.style.position = "fixed";
-    barMount.style.top = "16px";
-    barMount.style.right = "20px";
-    barMount.style.zIndex = "20";
-    document.body.prepend(barMount);
-    renderAccountBar(barMount);
-
+    renderAccountBar(document.getElementById("account-bar-mount"));
+    mountThemeToggle(document.getElementById("theme-toggle-mount"));
     const params = new URLSearchParams(location.search);
     const extensionId = params.get("id");
     const content = document.getElementById("content");

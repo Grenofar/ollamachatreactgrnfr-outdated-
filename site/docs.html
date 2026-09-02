@@ -3,6 +3,12 @@
 <head>
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1" />
+<script>
+  try {
+    var t = localStorage.getItem("ollamachat_theme");
+    if (t === "light" || t === "dark") document.documentElement.dataset.theme = t;
+  } catch (e) {}
+</script>
 <title>Documentation — créer une extension</title>
 <meta name="description" content="Tout ce qu'il faut savoir pour créer et publier une extension pour Ollama Chat React." />
 <style>
@@ -419,7 +425,7 @@ Voici ce que je veux que mon extension fasse : [DÉCRIS ICI CE QUE TU VEUX]</cod
   </div>
 
   <script type="module">
-    import { renderAccountBar } from "/account.js";
+    import { renderAccountBar, mountThemeToggle } from "/account.js";
     const barMount = document.createElement("div");
     barMount.id = "account-bar-mount";
     barMount.style.position = "fixed";
@@ -428,6 +434,14 @@ Voici ce que je veux que mon extension fasse : [DÉCRIS ICI CE QUE TU VEUX]</cod
     barMount.style.zIndex = "20";
     document.body.prepend(barMount);
     renderAccountBar(barMount);
+
+    const themeMount = document.createElement("div");
+    themeMount.style.position = "fixed";
+    themeMount.style.top = "16px";
+    themeMount.style.right = "68px";
+    themeMount.style.zIndex = "20";
+    document.body.prepend(themeMount);
+    mountThemeToggle(themeMount);
 
     document.getElementById("copy-prompt-btn").addEventListener("click", (e) => {
       navigator.clipboard.writeText(document.getElementById("ai-prompt-text").textContent).catch(() => {});

@@ -68,6 +68,8 @@ export default function App() {
   const [updateError, setUpdateError] = useState<string | null>(null);
   const [checkingUpdate, setCheckingUpdate] = useState(false);
   const [upToDate, setUpToDate] = useState(false);
+  const [splashVisible, setSplashVisible] = useState(true);
+  const [splashLeaving, setSplashLeaving] = useState(false);
   const scrollRef = useRef<HTMLDivElement>(null);
   const stickToBottomRef = useRef(true);
   const graceTimeoutRef = useRef<number | null>(null);
@@ -119,6 +121,16 @@ export default function App() {
       } finally {
         const { getCurrentWindow } = await import("@tauri-apps/api/window");
         await getCurrentWindow().show();
+        // The splash is deliberately shown for a minimum stretch even
+        // though loading itself is usually near-instant (local settings/
+        // conversations/model list) — a branded entrance beat rather than
+        // a loading indicator for something that actually takes time.
+        // Two-phase so the fade-out (app-splash-exit) actually gets to
+        // play before the element unmounts, instead of vanishing instantly.
+        setTimeout(() => {
+          setSplashLeaving(true);
+          setTimeout(() => setSplashVisible(false), 420);
+        }, 650);
       }
     })();
     // Fire-and-forget, off the critical startup path: spawns a PowerShell
@@ -551,6 +563,13 @@ export default function App() {
 
   return (
     <div className="app">
+      {splashVisible && (
+        <div className={`app-splash ${splashLeaving ? "app-splash-exit" : ""}`}>
+          <div className="app-splash-orb" />
+          <div className="app-splash-mark">Ollama Chat React</div>
+          <div className="app-splash-ring" />
+        </div>
+      )}
       <Sidebar
         conversations={conversations}
         currentId={currentConv?.id ?? null}
