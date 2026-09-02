@@ -400,6 +400,18 @@ function ensureStyles() {
       background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='120' height='120'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='2' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E");
     }
 
+    /* Glassmorphism on every .note/info panel (each page declares its own
+       opaque version) — frosted-glass over the animated background looks
+       far better than a flat opaque card sitting on top of it, same
+       backdrop-filter technique already used for the sticky header.
+       color-mix against --bg-raised (not a hardcoded rgba) keeps the tint
+       correct in both themes automatically. */
+    .note {
+      background: color-mix(in srgb, var(--bg-raised) 65%, transparent) !important;
+      backdrop-filter: blur(10px);
+      -webkit-backdrop-filter: blur(10px);
+    }
+
     /* Magnetic pull on primary buttons — the button nudges a few pixels
        toward the cursor while hovered (mountMagnetic below sets --tx/--ty
        per pointer move) instead of staying rigidly still, a small but
