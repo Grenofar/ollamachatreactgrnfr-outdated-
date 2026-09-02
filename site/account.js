@@ -763,15 +763,16 @@ export function mountScrollReveal(root = document) {
 // used for the landing page's live stats. Respects reduced-motion by
 // jumping straight to the final value.
 export function animateCounter(el, value, duration = 900) {
+  const format = (n) => n.toLocaleString("fr-FR");
   if (window.matchMedia?.("(prefers-reduced-motion: reduce)").matches) {
-    el.textContent = String(value);
+    el.textContent = format(value);
     return;
   }
   const start = performance.now();
   function tick(now) {
     const t = Math.min(1, (now - start) / duration);
     const eased = 1 - Math.pow(1 - t, 3);
-    el.textContent = String(Math.round(eased * value));
+    el.textContent = format(Math.round(eased * value));
     if (t < 1) requestAnimationFrame(tick);
   }
   requestAnimationFrame(tick);

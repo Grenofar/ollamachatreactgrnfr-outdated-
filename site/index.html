@@ -17,6 +17,9 @@
 <title>Ollama Chat React</title>
 <meta name="description" content="Discutez avec des LLM en local via Ollama, codez avec un agent (Codex), contrôlez votre PC avec une IA (Control Me), et étendez le tout avec des extensions communautaires." />
 <style>
+  @view-transition {
+    navigation: auto;
+  }
   :root {
     color-scheme: dark;
     --bg: #0b0d10;
@@ -470,8 +473,8 @@
       // arriving later (someone else just signed up) should just update
       // the number, not replay the whole animation.
       if (statsLoadedOnce) {
-        userEl.textContent = data[0].user_count;
-        extEl.textContent = data[0].extension_count;
+        userEl.textContent = data[0].user_count.toLocaleString("fr-FR");
+        extEl.textContent = data[0].extension_count.toLocaleString("fr-FR");
       } else {
         animateCounter(userEl, data[0].user_count);
         animateCounter(extEl, data[0].extension_count);
