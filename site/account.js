@@ -412,30 +412,30 @@ function ensureStyles() {
       -webkit-backdrop-filter: blur(10px);
     }
 
-    /* Magnetic pull on primary buttons — the button nudges a few pixels
-       toward the cursor while hovered (mountMagnetic below sets --tx/--ty
-       per pointer move) instead of staying rigidly still, a small but
-       recognizable "premium" interaction (Linear/Vercel/Stripe-style
-       marketing CTAs). Capped low (see JS) so it reads as responsive, not
-       like the button is chasing the cursor around. */
-    .magnetic {
-      transform: translate(var(--tx, 0), var(--ty, 0));
-      transition: transform 0.15s ease-out;
-    }
-    .magnetic:active { transition: transform 0.05s ease-out; }
-    @media (prefers-reduced-motion: reduce) {
-      .magnetic { transform: none !important; }
-    }
     /* Hero content (above the fold, visible immediately) still animates in
        on load — below-the-fold content uses .reveal + mountScrollReveal
        instead (see further down), triggered by actually scrolling into
-       view rather than firing for everything at once on load. */
+       view rather than firing for everything at once on load.
+       Opacity-only, deliberately no transform: animating transform on
+       every descendant (".hero *" reaches the version-picker dropdown
+       nested many levels down inside .hero-actions) leaves each of them
+       sitting at "transform: translateY(0)" once the animation ends —
+       and per the CSS spec, any transform value other than the literal
+       keyword none creates a new stacking context, even at an identity
+       transform. That trapped the dropdown's z-index inside .hero's own
+       stacking context, so the very next sibling section ("Comment ça
+       marche", an ordinary untransformed element painting later in
+       normal flow) rendered on top of the whole .hero subtree — dropdown
+       included, no matter how high its own z-index was set. Dropping
+       transform from this keyframe removes the stacking context these
+       elements would otherwise pick up, which fixes it at the source
+       instead of chasing z-index numbers around. */
     .hero, .hero * {
       animation: site-fade-up 0.5s var(--ease-out, ease) both;
     }
     @keyframes site-fade-up {
-      from { opacity: 0; transform: translateY(8px); }
-      to { opacity: 1; transform: translateY(0); }
+      from { opacity: 0; }
+      to { opacity: 1; }
     }
     @media (prefers-reduced-motion: reduce) {
       *, *::before, *::after { animation-duration: 0.01ms !important; transition-duration: 0.01ms !important; }
@@ -794,35 +794,6 @@ export function mountCardGlow(root, selector) {
     card.style.setProperty("--mx", `${e.clientX - rect.left}px`);
     card.style.setProperty("--my", `${e.clientY - rect.top}px`);
   });
-}
-
-// Adds the .magnetic class plus a subtle cursor-pull to every element
-// matching `selector` — nudges toward the pointer while hovered, capped at
-// `strength` px so it reads as a responsive detail rather than the button
-// visibly chasing the cursor. Same event-delegation approach as
-// mountCardGlow, for the same reason (works for elements added later).
-export function mountMagnetic(root, selector, strength = 10) {
-  if (window.matchMedia?.("(prefers-reduced-motion: reduce)").matches) return;
-  root.addEventListener("mousemove", (e) => {
-    const el = e.target.closest?.(selector);
-    if (!el || !root.contains(el)) return;
-    el.classList.add("magnetic");
-    const rect = el.getBoundingClientRect();
-    const relX = (e.clientX - (rect.left + rect.width / 2)) / (rect.width / 2);
-    const relY = (e.clientY - (rect.top + rect.height / 2)) / (rect.height / 2);
-    el.style.setProperty("--tx", `${relX * strength}px`);
-    el.style.setProperty("--ty", `${relY * strength}px`);
-  });
-  root.addEventListener(
-    "mouseout",
-    (e) => {
-      const el = e.target.closest?.(selector);
-      if (!el || el.contains(e.relatedTarget)) return;
-      el.style.setProperty("--tx", "0px");
-      el.style.setProperty("--ty", "0px");
-    },
-    true,
-  );
 }
 
 // Collapses a desktop nav (an element matching navSelector, e.g. ".site-nav")
