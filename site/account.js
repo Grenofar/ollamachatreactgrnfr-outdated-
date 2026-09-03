@@ -388,12 +388,19 @@ function ensureStyles() {
        by sites like Linear/Vercel to keep a flat dark background from
        looking dead flat, without an image asset: a tiny inline SVG
        feTurbulence noise, tiled, at very low opacity, screen-blended so
-       it only ever lightens (never muddies text contrast). */
+       it only ever lightens (never muddies text contrast).
+       z-index 2, not the 999 this originally shipped with: pointer-events
+       is none so it never blocked clicks, but at that height it still
+       painted over every dropdown/menu on the site (the version-picker
+       included) in the stacking order — harmless-looking at 3.5% opacity,
+       real nonetheless. 2 is enough to sit above the plain page content
+       and the hero's own z-index:1 while staying under every menu/dropdown
+       (all z-index 20+). */
     body::after {
       content: "";
       position: fixed;
       inset: 0;
-      z-index: 999;
+      z-index: 2;
       pointer-events: none;
       opacity: 0.035;
       mix-blend-mode: overlay;
