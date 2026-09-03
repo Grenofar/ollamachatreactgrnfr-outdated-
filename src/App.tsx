@@ -100,6 +100,25 @@ export default function App() {
   }
 
   useEffect(() => {
+    // Deliberately its own timer, NOT nested inside the data-loading
+    // finally below — an earlier version scheduled the splash's hide
+    // there, which meant any one of settings/models/conversations loading
+    // unusually slowly (a slow disk, a large conversation history, an
+    // Ollama host that doesn't actively refuse but silently black-holes
+    // the connection attempt for tens of seconds before listModels'
+    // catch clause finally sees it) held the splash hostage along with
+    // it — reported as the app "stuck on the loading screen". This timer
+    // always fires ~1070ms after mount no matter what the loading effect
+    // below is doing, so the splash can never wait on it again.
+    const leaveTimer = setTimeout(() => {
+      setSplashLeaving(true);
+      setTimeout(() => setSplashVisible(false), 420);
+    }, 650);
+    return () => clearTimeout(leaveTimer);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  useEffect(() => {
     // The window starts hidden (tauri.conf.json's app.windows[0].visible:
     // false) specifically so it's only ever shown once, already at its
     // final tauri-plugin-window-state-restored size with real content
@@ -121,16 +140,6 @@ export default function App() {
       } finally {
         const { getCurrentWindow } = await import("@tauri-apps/api/window");
         await getCurrentWindow().show();
-        // The splash is deliberately shown for a minimum stretch even
-        // though loading itself is usually near-instant (local settings/
-        // conversations/model list) — a branded entrance beat rather than
-        // a loading indicator for something that actually takes time.
-        // Two-phase so the fade-out (app-splash-exit) actually gets to
-        // play before the element unmounts, instead of vanishing instantly.
-        setTimeout(() => {
-          setSplashLeaving(true);
-          setTimeout(() => setSplashVisible(false), 420);
-        }, 650);
       }
     })();
     // Fire-and-forget, off the critical startup path: spawns a PowerShell

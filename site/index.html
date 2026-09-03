@@ -169,6 +169,62 @@
     flex-wrap: wrap;
   }
 
+  /* Split install button: the main "Télécharger" link plus a small arrow
+     that reveals every past version. The arrow points UP while the menu
+     is closed and rotates to point DOWN once opened. */
+  .install-split { position: relative; display: inline-flex; }
+  .install-split .js-cta-main { border-radius: 10px 0 0 10px; }
+  .js-cta-arrow {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 34px;
+    border-radius: 0 10px 10px 0;
+    border-left: 1px solid rgba(255, 255, 255, 0.18);
+    background: var(--accent-strong);
+    color: #fff;
+    cursor: pointer;
+  }
+  .js-cta-arrow:hover { background: var(--accent); }
+  .js-cta-arrow svg {
+    width: 15px;
+    height: 15px;
+    transition: transform 0.2s var(--ease-out, ease);
+  }
+  .js-cta-arrow-open svg { transform: rotate(180deg); }
+  .js-cta-menu {
+    position: absolute;
+    top: calc(100% + 8px);
+    right: 0;
+    min-width: 180px;
+    max-height: 260px;
+    overflow-y: auto;
+    background: var(--bg-raised);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    padding: 6px;
+    box-shadow: 0 12px 28px rgba(0, 0, 0, 0.3);
+    z-index: 30;
+    animation: menu-in 0.15s var(--ease-out, ease) both;
+  }
+  @keyframes menu-in {
+    from { opacity: 0; transform: translateY(-4px); }
+    to { opacity: 1; transform: translateY(0); }
+  }
+  .js-cta-menu-item {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 10px;
+    padding: 7px 10px;
+    border-radius: 6px;
+    color: var(--text);
+    text-decoration: none;
+    font-size: 0.85rem;
+  }
+  .js-cta-menu-item:hover { background: color-mix(in srgb, var(--accent) 14%, transparent); }
+  .js-cta-menu-latest { font-size: 0.7rem; color: var(--ok); }
+
   .flow {
     display: grid;
     grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
@@ -333,7 +389,13 @@
         <a href="/docs">Documentation</a>
       </nav>
       <div class="site-header-actions">
-        <a class="btn btn-primary js-cta" data-product="ollamachat">Vérification…</a>
+        <div class="install-split" data-product="ollamachat">
+          <a class="btn btn-primary js-cta-main">Vérification…</a>
+          <button class="js-cta-arrow" type="button" aria-label="Autres versions" aria-expanded="false" hidden>
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="18 15 12 9 6 15"></polyline></svg>
+          </button>
+          <div class="js-cta-menu" hidden></div>
+        </div>
         <div id="theme-toggle-mount"></div>
         <div id="account-bar-mount"></div>
       </div>
@@ -364,7 +426,13 @@
       </div>
 
       <div class="hero-actions">
-        <a class="btn btn-primary js-cta" data-product="ollamachat">Vérification…</a>
+        <div class="install-split" data-product="ollamachat">
+          <a class="btn btn-primary js-cta-main">Vérification…</a>
+          <button class="js-cta-arrow" type="button" aria-label="Autres versions" aria-expanded="false" hidden>
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="18 15 12 9 6 15"></polyline></svg>
+          </button>
+          <div class="js-cta-menu" hidden></div>
+        </div>
         <a class="btn" href="/extensions">Parcourir les extensions</a>
       </div>
     </div>
@@ -497,44 +565,81 @@
     const SUPABASE_URL = "https://cihuwuiyziarnghethbi.supabase.co";
     const SUPABASE_ANON_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImNpaHV3dWl5emlhcm5naGV0aGJpIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODgwNjM3OTQsImV4cCI6MjEwMzYzOTc5NH0.AkAe00Vzu4506nHSjh2bl99x5hZUSejZRm3pJwVuGtI";
 
-    function renderComingSoon(el) {
-      el.className = "btn js-cta";
-      el.removeAttribute("href");
-      el.textContent = "Téléchargement bientôt disponible";
+    function renderComingSoon(mainEl) {
+      mainEl.className = "btn js-cta-main";
+      mainEl.removeAttribute("href");
+      mainEl.textContent = "Téléchargement bientôt disponible";
     }
 
-    function renderDownload(el, release) {
-      el.className = "btn btn-primary js-cta";
-      el.href = release.download_url;
-      el.textContent = `Télécharger — v${release.version}`;
+    function renderDownload(mainEl, release) {
+      mainEl.className = "btn btn-primary js-cta-main";
+      mainEl.href = release.download_url;
+      mainEl.textContent = `Télécharger — v${release.version}`;
     }
 
-    async function loadLatestRelease(product) {
-      const buttons = document.querySelectorAll(`.js-cta[data-product="${product}"]`);
-      if (buttons.length === 0) return;
+    // Split button: the main link always installs the latest version (same
+    // behavior as before) — the small arrow reveals every older version
+    // still on record, each a direct download for that exact build,
+    // for anyone who explicitly wants to roll back or grab a specific one.
+    function wireSplitButton(wrap, releases) {
+      const mainEl = wrap.querySelector(".js-cta-main");
+      const arrowBtn = wrap.querySelector(".js-cta-arrow");
+      const menu = wrap.querySelector(".js-cta-menu");
+      const latest = releases[0];
+
+      if (latest && /^https?:\/\//i.test(String(latest.download_url))) {
+        renderDownload(mainEl, latest);
+      } else {
+        renderComingSoon(mainEl);
+      }
+
+      // Nothing to pick between with 0-1 versions on record — arrow stays
+      // hidden (its default state in the HTML) rather than opening onto an
+      // empty or single-item list.
+      if (releases.length < 2) return;
+
+      menu.innerHTML = releases
+        .map(
+          (r) =>
+            `<a href="${r.download_url}" class="js-cta-menu-item"><span>v${r.version}</span>${
+              r === latest ? '<span class="js-cta-menu-latest">actuelle</span>' : ""
+            }</a>`,
+        )
+        .join("");
+
+      arrowBtn.hidden = false;
+      function setOpen(open) {
+        menu.hidden = !open;
+        arrowBtn.setAttribute("aria-expanded", String(open));
+        arrowBtn.classList.toggle("js-cta-arrow-open", open);
+      }
+      arrowBtn.addEventListener("click", (e) => {
+        e.stopPropagation();
+        setOpen(menu.hidden);
+      });
+      document.addEventListener("click", (e) => {
+        if (!wrap.contains(e.target)) setOpen(false);
+      });
+    }
+
+    async function loadReleaseHistory(product) {
+      const wraps = document.querySelectorAll(`.install-split[data-product="${product}"]`);
+      if (wraps.length === 0) return;
       try {
         const res = await fetch(
-          `${SUPABASE_URL}/rest/v1/app_releases?select=version,download_url,notes,published_at&product=eq.${encodeURIComponent(product)}&order=published_at.desc&limit=1`,
+          `${SUPABASE_URL}/rest/v1/app_releases?select=version,download_url,notes,published_at&product=eq.${encodeURIComponent(product)}&order=published_at.desc`,
           { headers: { apikey: SUPABASE_ANON_KEY, Authorization: `Bearer ${SUPABASE_ANON_KEY}` } },
         );
         if (!res.ok) throw new Error("bad status");
-        const rows = await res.json();
-        const latest = rows[0];
-
-        buttons.forEach((el) => {
-          if (latest && /^https?:\/\//i.test(String(latest.download_url))) {
-            renderDownload(el, latest);
-          } else {
-            renderComingSoon(el);
-          }
-        });
+        const releases = await res.json();
+        wraps.forEach((wrap) => wireSplitButton(wrap, releases));
       } catch {
         // offline, unreachable, or table/column not created yet: fall back quietly
-        buttons.forEach(renderComingSoon);
+        wraps.forEach((wrap) => renderComingSoon(wrap.querySelector(".js-cta-main")));
       }
     }
 
-    loadLatestRelease("ollamachat");
+    loadReleaseHistory("ollamachat");
   </script>
 </body>
 </html>
