@@ -775,6 +775,23 @@ pub async fn run_control_me_core(
                 format!("Compétence(s) fournie(s) pour cette session :\n{skills_text}\n\n{instruction_with_context}");
         }
     }
+    // Batching hint, windows_ui mode only: computer_use is Google's own
+    // protocol, not something a prompt hint can reliably steer towards
+    // returning several actions per turn, so this only applies where this
+    // app defines the tools itself. The actual latency cost is the round
+    // trip to Gemini, not local execution — a short, low-risk, sequential
+    // batch (type then press Enter, click a field then type into it) cuts
+    // that cost by several actions worth of round trips in one go. Left
+    // entirely to the model's own judgment per turn, not forced.
+    if use_ui_mode {
+        instruction_with_context = format!(
+            "{instruction_with_context}\n\nPour aller plus vite : si tu es certain d'une courte séquence \
+             d'actions qui n'a pas besoin d'être revérifiée à l'écran entre chaque étape (par exemple taper \
+             du texte puis appuyer sur Entrée, ou cliquer un champ puis y taper directement), tu peux renvoyer \
+             plusieurs actions dans le même tour au lieu d'une seule à la fois. Si tu n'es pas sûr du résultat \
+             d'une action, préfère une seule action à la fois pour rester fiable."
+        );
+    }
 
     let mut body = json!({
         "model": model,
@@ -849,75 +866,105 @@ pub async fn run_control_me_core(
             return Err(message);
         }
 
-        let call = function_calls[0];
-        let call_id = call["id"].as_str().unwrap_or("").to_string();
-        let action_name = call["name"].as_str().unwrap_or("").to_string();
-        let mut args = call["arguments"].clone();
-        let intent = args["intent"].as_str().map(|s| s.to_string());
+        // Gemini can return more than one function_call in the same turn
+        // (parallel tool calling, part of the standard protocol — the code
+        // already collected them all into a Vec above, but used to only
+        // ever act on index 0). Executed in a batch by user request to cut
+        // down round-trips to Gemini (the actual latency bottleneck, not
+        // local processing) for a short, confident sequence — e.g. click a
+        // field then type into it, or type then press Enter — without
+        // waiting for a fresh observation between each. Real trade-off,
+        // accepted explicitly: an action later in the batch can miss its
+        // target if the screen didn't end up in the state Gemini assumed
+        // when it planned the whole sequence up front. Only one fresh
+        // observation is taken, once, after the whole batch finishes,
+        // attached to the last action's function_result — matching the
+        // single-action shape this already had (text result plus an
+        // observation part together) rather than inventing a new shape.
+        let mut function_results: Vec<Value> = Vec::with_capacity(function_calls.len());
+        let mut any_visual_effect = false;
+        let mut last_action_name = String::new();
 
-        let (transcript_label, result_text, error_text) = if args["safety_decision"]["decision"] == "require_confirmation" {
-            let explanation = args["safety_decision"]["explanation"]
-                .as_str()
-                .unwrap_or("Action jugée sensible par le modèle.")
-                .to_string();
-            let (tx, rx) = oneshot::channel::<bool>();
+        for call in &function_calls {
+            let call_id = call["id"].as_str().unwrap_or("").to_string();
+            let action_name = call["name"].as_str().unwrap_or("").to_string();
+            let mut args = call["arguments"].clone();
+            let intent = args["intent"].as_str().map(|s| s.to_string());
+
+            let (transcript_label, result_text, error_text) = if args["safety_decision"]["decision"]
+                == "require_confirmation"
             {
-                let mut guard = confirmation
-                    .lock()
-                    .map_err(|_| "État de confirmation corrompu".to_string())?;
-                *guard = Some(tx);
-            }
-            let _ = app.emit(
-                "control-me-confirmation-required",
-                json!({ "action": action_name, "explanation": explanation }),
-            );
-
-            // Pauses this command in place rather than ending it — resolve_
-            // control_me_confirmation sends into `rx` to resume the same
-            // run, instead of the user having to send a whole new message.
-            let accepted = tokio::select! {
-                result = rx => result.unwrap_or(false),
-                _ = wait_for_cancel(flag.clone()) => {
-                    let _ = app.emit("control-me-cancelled", ());
-                    return Err(CANCELLED_MESSAGE.to_string());
+                let explanation = args["safety_decision"]["explanation"]
+                    .as_str()
+                    .unwrap_or("Action jugée sensible par le modèle.")
+                    .to_string();
+                let (tx, rx) = oneshot::channel::<bool>();
+                {
+                    let mut guard = confirmation
+                        .lock()
+                        .map_err(|_| "État de confirmation corrompu".to_string())?;
+                    *guard = Some(tx);
                 }
+                let _ = app.emit(
+                    "control-me-confirmation-required",
+                    json!({ "action": action_name, "explanation": explanation }),
+                );
+
+                // Pauses this command in place rather than ending it —
+                // resolve_control_me_confirmation sends into `rx` to resume
+                // the same run, instead of the user having to send a whole
+                // new message.
+                let accepted = tokio::select! {
+                    result = rx => result.unwrap_or(false),
+                    _ = wait_for_cancel(flag.clone()) => {
+                        let _ = app.emit("control-me-cancelled", ());
+                        return Err(CANCELLED_MESSAGE.to_string());
+                    }
+                };
+
+                if !accepted {
+                    let msg = "Action refusée par l'utilisateur.".to_string();
+                    (msg.clone(), msg, None)
+                } else {
+                    // Google's documented protocol for this exact flag: mark
+                    // it acknowledged before re-attempting the action.
+                    if let Some(obj) = args.as_object_mut() {
+                        obj.insert("safety_acknowledgement".to_string(), json!(true));
+                    }
+                    dispatch_action(&app, &action_name, &args, width, height)
+                }
+            } else {
+                dispatch_action(&app, &action_name, &args, width, height)
             };
 
-            if !accepted {
-                let msg = "Action refusée par l'utilisateur.".to_string();
-                (msg.clone(), msg, None)
-            } else {
-                // Google's documented protocol for this exact flag: mark it
-                // acknowledged before re-attempting the action.
-                if let Some(obj) = args.as_object_mut() {
-                    obj.insert("safety_acknowledgement".to_string(), json!(true));
-                }
-                dispatch_action(&app, &action_name, &args, width, height)
+            let _ = app.emit(
+                "control-me-step",
+                StepPayload { intent, action: action_name.clone(), label: transcript_label },
+            );
+
+            if flag.load(Ordering::SeqCst) {
+                let _ = app.emit("control-me-cancelled", ());
+                return Err(CANCELLED_MESSAGE.to_string());
             }
-        } else {
-            dispatch_action(&app, &action_name, &args, width, height)
-        };
 
-        let _ = app.emit(
-            "control-me-step",
-            StepPayload { intent, action: action_name.clone(), label: transcript_label },
-        );
+            if !NO_VISUAL_EFFECT_TOOLS.contains(&action_name.as_str()) {
+                any_visual_effect = true;
+            }
+            last_action_name = action_name.clone();
 
-        if flag.load(Ordering::SeqCst) {
-            let _ = app.emit("control-me-cancelled", ());
-            return Err(CANCELLED_MESSAGE.to_string());
+            function_results.push(json!({
+                "type": "function_result",
+                "call_id": call_id,
+                "name": action_name,
+                "result": [{ "type": "text", "text": error_text.clone().unwrap_or_else(|| result_text.clone()) }],
+            }));
         }
 
-        let mut result_parts = vec![json!({ "type": "text", "text": error_text.clone().unwrap_or_else(|| result_text.clone()) })];
-
+        // One observation for the whole batch, appended to the last
+        // action's own result — same skip conditions as before, just
+        // evaluated once for the batch instead of per action.
         if use_ui_mode {
-            // No screenshots at all in this mode — the observation is
-            // always the accessibility tree as text. read_ui_elements
-            // already returned it as result_text above, no need to read
-            // it again; every other action gets a short fixed settle
-            // delay (no pixels to diff against, unlike wait_for_settle)
-            // then a fresh read.
-            if action_name != "read_ui_elements" {
+            if last_action_name != "read_ui_elements" {
                 tokio::time::sleep(Duration::from_millis(UI_MODE_SETTLE_MS)).await;
                 if flag.load(Ordering::SeqCst) {
                     let _ = app.emit("control-me-cancelled", ());
@@ -925,29 +972,24 @@ pub async fn run_control_me_core(
                 }
                 let refreshed = read_foreground_ui_elements(width, height)
                     .unwrap_or_else(|e| format!("Erreur de lecture de l'interface : {e}"));
-                result_parts.push(json!({ "type": "text", "text": refreshed }));
+                if let Some(last) = function_results.last_mut() {
+                    if let Some(parts) = last["result"].as_array_mut() {
+                        parts.push(json!({ "type": "text", "text": refreshed }));
+                    }
+                }
             }
-        } else if !NO_VISUAL_EFFECT_TOOLS.contains(&action_name.as_str()) {
-            // read_ui_elements and remember_fact never touch the screen —
-            // the whole point of read_ui_elements is to be a fast,
-            // screenshot-free alternative to computer_use. Waiting to
-            // "settle" and attaching a full screenshot after one anyway
-            // would silently cancel out that speed gain for no reason
-            // (nothing visual changed to wait for or show). Skipped only
-            // for these two; every action that can actually affect the
-            // screen still gets the settle wait + a fresh screenshot,
-            // unchanged.
-            //
-            // Adaptive settle wait (see wait_for_settle) instead of a
-            // fixed delay, so the next screenshot reflects the action's
-            // actual visual effect without waiting longer than necessary.
+        } else if any_visual_effect {
             wait_for_settle(flag.clone()).await;
             if flag.load(Ordering::SeqCst) {
                 let _ = app.emit("control-me-cancelled", ());
                 return Err(CANCELLED_MESSAGE.to_string());
             }
             let (screenshot, _, _) = capture_screenshot_base64()?;
-            result_parts.push(json!({ "type": "image", "data": screenshot, "mime_type": "image/jpeg" }));
+            if let Some(last) = function_results.last_mut() {
+                if let Some(parts) = last["result"].as_array_mut() {
+                    parts.push(json!({ "type": "image", "data": screenshot, "mime_type": "image/jpeg" }));
+                }
+            }
         }
 
         body = json!({
@@ -955,12 +997,7 @@ pub async fn run_control_me_core(
             "previous_interaction_id": interaction_id,
             "tools": tools,
             "generation_config": generation_config,
-            "input": [{
-                "type": "function_result",
-                "call_id": call_id,
-                "name": action_name,
-                "result": result_parts,
-            }],
+            "input": function_results,
         });
     }
 }
