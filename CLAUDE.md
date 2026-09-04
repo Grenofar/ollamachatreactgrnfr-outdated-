@@ -228,13 +228,6 @@ pas devenir obsolète.
   à une inquiétude de sécurité de la chaîne d'approvisionnement npm
   signalée par l'utilisateur). Voir "Voix et raccourci clavier global
   (v0.7.5)" dans Architecture pour le détail complet.
-- **[FAIT] v0.7.6 : Control Me peut regrouper plusieurs actions par tour**
-  — demandé après un retour "toujours trop lent" une fois toutes les
-  autres pistes (modèle le plus rapide déjà utilisé, autres fournisseurs
-  écartés, LLM local écarté) épuisées. Le seul levier restant : moins
-  d'allers-retours vers Gemini plutôt que des allers-retours plus
-  rapides. Voir "Actions Control Me groupées par tour (v0.7.6)" dans
-  Architecture pour le détail complet et le compromis fiabilité assumé.
 
 ## Architecture
 
@@ -2823,63 +2816,6 @@ fonctionnalités sont construites pour ne jamais en avoir besoin.
   l'utilisateur : dictée fonctionnelle dans le chat et Control Me,
   lecture à voix haute d'une réponse, et que Ctrl+Alt+O ramène bien la
   fenêtre au premier plan depuis n'importe quelle autre application.
-
-### Actions Control Me groupées par tour (v0.7.6)
-
-Demandé explicitement après un retour "toujours trop lent" sur la
-latence Gemini (voir le fil de discussion qui a mené ici : modèle déjà
-le plus rapide de la gamme Gemini vérifié par recherche web, Groq/
-OpenRouter écartés faute de `computer_use`, LLM local écarté pour
-fiabilité — un premier refus de cette approche, revenu dessus ensuite).
-Le vrai goulot n'est pas le traitement local (déjà minimal) mais le
-nombre d'allers-retours vers l'API Gemini elle-même — réduire ce nombre,
-pas accélérer chaque appel (déjà au plancher), est le seul levier qui
-restait.
-
-- **Découverte en lisant le code avant d'écrire quoi que ce soit** : la
-  boucle de `run_control_me_core` collectait déjà TOUS les
-  `function_call` d'un tour dans un `Vec` (`let function_calls: Vec<&Value>
-  = steps.iter().filter(...)`) mais n'agissait que sur `function_calls[0]`
-  — l'infrastructure pour un appel de fonction "parallèle" (plusieurs
-  actions décidées dans le même tour, un protocole standard chez les
-  principaux fournisseurs de function-calling) était donc déjà à moitié
-  là, jamais exploitée.
-- Chaque action du lot est exécutée dans l'ordre (même logique
-  `safety_decision`/confirmation qu'avant, par action), mais **une seule
-  observation fraîche** (capture d'écran ou lecture d'interface,
-  seulement à la toute fin du lot) est prise plutôt qu'une par action —
-  attachée au `function_result` de la **dernière** action du lot, même
-  forme que l'ancien code (texte + observation ensemble). Un lot d'un
-  seul élément (le cas normal, si Gemini ne renvoie qu'une action)
-  retombe exactement sur le comportement d'avant.
-- **Vrai compromis assumé, pas caché** : les actions du lot après la
-  première s'exécutent sans revoir l'écran entre elles — si l'interface
-  ne réagit pas comme prévu en plein milieu (popup, chargement plus long
-  que prévu), une action suivante peut rater sa cible. Accepté
-  explicitement par l'utilisateur après explication de ce risque
-  (`AskUserQuestion`), revenu sur son premier refus une fois la lenteur
-  jugée encore trop gênante.
-- **Amorce du groupement limitée au mode Windows UI** : `computer_use`
-  est un protocole propriétaire de Google, pas quelque chose qu'une
-  consigne de prompt peut fiablement pousser à regrouper — cette
-  incitation ("si tu es certain d'une courte séquence... tu peux
-  renvoyer plusieurs actions dans le même tour") n'est ajoutée à
-  l'instruction que pour `windows_ui`, seul mode où les outils sont
-  définis par cette app elle-même. Laissé entièrement au jugement du
-  modèle tour par tour, pas forcé — le mode capture garde le même code
-  de traitement de lot par sécurité/cohérence (dégrade sans risque vers
-  un lot d'un seul élément si `computer_use` ne renvoie jamais plusieurs
-  actions à la fois, ce qui reste probable mais non vérifié).
-- `cargo check` passé à 0 erreur. **Aucune vérification empirique
-  possible dans cet environnement** (nécessite une vraie clé API Gemini
-  et un accès GUI) — en particulier, impossible de confirmer ici que
-  Gemini accepte bien plusieurs `function_result` dans le même `input`
-  suivant (implémenté selon le motif standard documenté pour l'appel de
-  fonction parallèle chez les principaux fournisseurs, pas vérifié
-  contre la vraie API Gemini) ni que le modèle choisit effectivement de
-  regrouper des actions en pratique — à tester explicitement par
-  l'utilisateur : le gain de vitesse perçu, et qu'aucune action ne parte
-  dans le vide suite à un regroupement mal jugé par le modèle.
 
 ### Les 6 outils de l'agent
 1. `read_file` — lecture texte (limite 5 Mo), chemin absolu
