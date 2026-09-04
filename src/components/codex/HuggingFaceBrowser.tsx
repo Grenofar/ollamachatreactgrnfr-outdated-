@@ -8,6 +8,15 @@ import type { HfModel } from "../../types";
 // a Q4 quantization (~0.55 Go/milliard de paramètres, generously rounded).
 const PARAMS_PER_GB = 1.75;
 
+// Temporarily disabled on explicit request following a reported security
+// incident at Hugging Face — no search request or hf.co install reference
+// should reach their infrastructure until this is lifted. Gates both the
+// auto-search on mount below and the rendered UI, rather than just hiding
+// the entry point (which would still let an already-open instance fire a
+// request). Manual install of a local/non-HF Ollama model tag is
+// unaffected — this only touches the Hugging Face-specific path.
+const HF_DISABLED = true;
+
 function formatBytes(n: number): string {
   if (!n) return "";
   const gb = n / 1024 / 1024 / 1024;
@@ -49,7 +58,7 @@ export default function HuggingFaceBrowser({
   const [manualRef, setManualRef] = useState("hf.co/bartowski/Qwen2.5-Coder-14B-Instruct-abliterated-GGUF:Q4_K_M");
 
   useEffect(() => {
-    handleSearch();
+    if (!HF_DISABLED) handleSearch();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
@@ -114,6 +123,24 @@ export default function HuggingFaceBrowser({
       const bFits = b.paramsB === null || b.paramsB <= maxRecommendedB;
       return aFits === bFits ? 0 : aFits ? -1 : 1;
     });
+
+  if (HF_DISABLED) {
+    return (
+      <div className="modal-overlay" onClick={onClose}>
+        <div className="modal" onClick={(e) => e.stopPropagation()}>
+          <h2>Modèles Hugging Face</h2>
+          <div className="install-error">
+            Fonctionnalité désactivée temporairement suite à un incident de sécurité signalé chez
+            Hugging Face — aucune recherche ni installation depuis Hugging Face n'est possible pour
+            l'instant, par précaution.
+          </div>
+          <div className="modal-actions">
+            <button onClick={onClose}>Fermer</button>
+          </div>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="modal-overlay" onClick={onClose}>

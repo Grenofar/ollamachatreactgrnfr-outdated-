@@ -134,9 +134,13 @@ export default function App() {
       try {
         const s = await loadSettings();
         setSettings(s);
-        const list = await refreshModels(s.ollama_host);
+        await refreshModels(s.ollama_host);
         await refreshConversations();
-        if (list.length === 0) setShowInstall(true);
+        // No longer auto-opening HuggingFaceBrowser on an empty model list
+        // — that modal is temporarily disabled anyway (see its own
+        // HF_DISABLED flag, following a reported Hugging Face security
+        // incident), and auto-opening it would have meant firing a search
+        // request with zero user action even if it weren't.
       } finally {
         const { getCurrentWindow } = await import("@tauri-apps/api/window");
         await getCurrentWindow().show();
