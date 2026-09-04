@@ -332,6 +332,35 @@ export default function SettingsView({
                       )}
                       {" "}Enregistre pour appliquer.
                     </div>
+
+                    <label>Comment l'IA planifie ses actions</label>
+                    <div className="mode-toggle">
+                      <button
+                        className={form.control_me_action_mode === "live" ? "mode-toggle-active" : ""}
+                        onClick={() => setForm({ ...form, control_me_action_mode: "live" })}
+                      >
+                        En direct
+                      </button>
+                      <button
+                        className={form.control_me_action_mode === "predefined" ? "mode-toggle-active" : ""}
+                        onClick={() => setForm({ ...form, control_me_action_mode: "predefined" })}
+                      >
+                        Prédéfini
+                      </button>
+                    </div>
+                    <div className="modal-hint">
+                      {form.control_me_action_mode === "predefined" ? (
+                        <>
+                          L'IA peut décider plusieurs actions d'un coup (ex. cliquer un champ puis y taper du
+                          texte) sans revoir l'écran entre chacune — moins d'allers-retours vers Gemini, donc
+                          plus rapide, mais une action peut rater sa cible si l'écran ne réagit pas comme prévu
+                          en plein milieu de la séquence.
+                        </>
+                      ) : (
+                        "Comportement actuel : une action à la fois, l'écran est revérifié après chacune — le plus fiable."
+                      )}
+                      {" "}Enregistre pour appliquer.
+                    </div>
                   </div>
                 )}
               </div>

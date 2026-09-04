@@ -34,6 +34,7 @@ export interface Settings {
   gemini_model: string;
   remote_code?: string | null;
   control_me_perception_mode: "capture" | "windows_ui";
+  control_me_action_mode: "live" | "predefined";
   disabled_extensions: string[];
   update_popup_enabled: boolean;
 }

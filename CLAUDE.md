@@ -228,6 +228,16 @@ pas devenir obsolète.
   à une inquiétude de sécurité de la chaîne d'approvisionnement npm
   signalée par l'utilisateur). Voir "Voix et raccourci clavier global
   (v0.7.5)" dans Architecture pour le détail complet.
+- **[FAIT] v0.8.0 : Control Me peut regrouper plusieurs actions Gemini par
+  tour, en bascule explicite (pas le seul comportement)** — une première
+  version forcée pour tout le monde (publiée en interne sous le nom
+  v0.7.6, jamais diffusée) a été annulée (`git revert`) et refaite en
+  vrai réglage après retour explicite de l'utilisateur : nouveau réglage
+  `control_me_action_mode` ("live", par défaut, une action à la fois —
+  ou "predefined", plusieurs actions par tour), même famille que le
+  bascule `control_me_perception_mode` déjà existant (capture/Windows
+  UI). Voir "Actions Control Me groupées par tour, en bascule (v0.8.0)"
+  dans Architecture pour le détail complet.
 
 ## Architecture
 
@@ -2816,6 +2826,77 @@ fonctionnalités sont construites pour ne jamais en avoir besoin.
   l'utilisateur : dictée fonctionnelle dans le chat et Control Me,
   lecture à voix haute d'une réponse, et que Ctrl+Alt+O ramène bien la
   fenêtre au premier plan depuis n'importe quelle autre application.
+
+### Actions Control Me groupées par tour, en bascule (v0.8.0)
+
+Demandé après un retour "toujours trop lent" sur la latence Gemini (fil
+de discussion complet : modèle déjà le plus rapide de la gamme Gemini
+vérifié par recherche web, Groq/OpenRouter écartés faute de
+`computer_use`, LLM local écarté pour fiabilité — le seul levier
+restant était de réduire le nombre d'allers-retours vers Gemini, pas
+d'accélérer chaque appel individuellement, déjà au plancher). **Historique
+de cette fonctionnalité, assumé** : une première version a été construite
+en forçant ce comportement pour tout le monde (publiée en interne sous le
+nom "v0.7.6", jamais réellement diffusée) — l'utilisateur est revenu
+dessus explicitement ("supprime 7.6") pour en faire un vrai réglage
+optionnel plutôt que le seul comportement, annulée proprement avec
+`git revert` (pas un rejeu manuel des changements) avant de reconstruire
+la version actuelle par-dessus le code v0.7.5 propre.
+
+- **Découverte en lisant le code avant d'écrire quoi que ce soit** : la
+  boucle de `run_control_me_core` collectait déjà TOUS les
+  `function_call` d'un tour dans un `Vec` (`let function_calls: Vec<&Value>
+  = steps.iter().filter(...)`) mais n'agissait que sur `function_calls[0]`
+  — l'infrastructure pour un appel de fonction "parallèle" (plusieurs
+  actions décidées dans le même tour, un protocole standard chez les
+  principaux fournisseurs de function-calling) était donc déjà à moitié
+  là, jamais exploitée.
+- **Nouveau réglage `Settings.control_me_action_mode`** (`"live"` par
+  défaut, ou `"predefined"`) — même famille que le bascule existant
+  `control_me_perception_mode` (capture/Windows UI), même emplacement
+  dans Réglages > Extensions > Control Me (`SettingsView.tsx`, juste
+  après le bascule de perception). `"live"` : une seule action traitée
+  par tour, comportement identique à avant que cette fonctionnalité
+  n'existe (`&function_calls[..1]`, le reste ignoré si jamais Gemini en
+  renvoyait plusieurs sans y être invité). `"predefined"` : toutes les
+  actions du tour sont traitées (`&function_calls`), dans l'ordre, avec
+  la même logique `safety_decision`/confirmation par action qu'avant.
+- **Une seule observation fraîche par tour traité**, pas une par action
+  — capture d'écran ou lecture d'interface prise une seule fois après la
+  dernière action du tour (qu'il y en ait une ou plusieurs), attachée au
+  `function_result` de cette dernière action, même forme qu'avant (texte
+  + observation ensemble). En mode `"live"`, ça retombe exactement sur
+  le comportement d'origine (un seul élément traité, donc une seule
+  observation, comme toujours).
+- **Vrai compromis assumé, pas caché** : en mode `"predefined"`, les
+  actions du tour après la première s'exécutent sans revoir l'écran
+  entre elles — si l'interface ne réagit pas comme prévu en plein milieu
+  (popup, chargement plus long que prévu), une action suivante peut
+  rater sa cible. C'est explicitement pour ça que ce n'est **pas** le
+  comportement par défaut.
+- **Amorce du groupement limitée au mode Windows UI** : `computer_use`
+  est un protocole propriétaire de Google, pas quelque chose qu'une
+  consigne de prompt peut fiablement pousser à regrouper — l'incitation
+  ("si tu es certain d'une courte séquence... tu peux renvoyer plusieurs
+  actions dans le même tour") n'est ajoutée à l'instruction que si
+  `control_me_action_mode == "predefined"` **et** `control_me_perception_mode
+  == "windows_ui"` en même temps. Laissé entièrement au jugement du
+  modèle tour par tour, pas forcé — le mode capture garde le même code
+  de traitement de lot par sécurité/cohérence (dégrade sans risque vers
+  un lot d'un seul élément si `computer_use` ne renvoie jamais plusieurs
+  actions à la fois, ce qui reste probable mais non vérifié).
+- `cargo check`/`npx tsc --noEmit` passés à 0 erreur. **Aucune
+  vérification empirique possible dans cet environnement** (nécessite
+  une vraie clé API Gemini et un accès GUI) — en particulier, impossible
+  de confirmer ici que Gemini accepte bien plusieurs `function_result`
+  dans le même `input` suivant (implémenté selon le motif standard
+  documenté pour l'appel de fonction parallèle chez les principaux
+  fournisseurs, pas vérifié contre la vraie API Gemini) ni que le modèle
+  choisit effectivement de regrouper des actions en pratique une fois le
+  réglage activé — à tester explicitement par l'utilisateur : que
+  `"live"` reste bien identique au comportement déjà connu, le gain de
+  vitesse perçu une fois basculé sur `"predefined"`, et qu'aucune action
+  ne parte dans le vide suite à un regroupement mal jugé par le modèle.
 
 ### Les 6 outils de l'agent
 1. `read_file` — lecture texte (limite 5 Mo), chemin absolu

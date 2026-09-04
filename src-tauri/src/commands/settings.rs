@@ -20,6 +20,8 @@ pub struct Settings {
     pub remote_code: Option<String>,
     #[serde(default = "default_control_me_perception_mode")]
     pub control_me_perception_mode: String,
+    #[serde(default = "default_control_me_action_mode")]
+    pub control_me_action_mode: String,
     // Extension ids ("codex" | "controlme") the user toggled off from the
     // Extensions view. Purely a show/hide switch — nothing is actually
     // uninstalled (everything ships in the same binary), see
@@ -60,6 +62,19 @@ fn default_control_me_perception_mode() -> String {
     "windows_ui".to_string()
 }
 
+// "live" (one action per Gemini turn, screen re-observed between each —
+// the original, safest behavior) or "predefined" (Gemini may return
+// several actions in the same turn, executed as a batch with only one
+// fresh observation at the end — fewer round-trips to Gemini, the actual
+// latency bottleneck, at the cost of a later action in the batch possibly
+// missing its target if the screen didn't react as expected). Defaulted
+// to "live": the speed/reliability trade-off is real enough that it
+// should be an explicit opt-in, not something a fresh install is silently
+// exposed to.
+fn default_control_me_action_mode() -> String {
+    "live".to_string()
+}
+
 fn default_settings() -> Settings {
     Settings {
         ollama_host: "http://127.0.0.1:11434".to_string(),
@@ -75,6 +90,7 @@ fn default_settings() -> Settings {
         gemini_model: default_gemini_model(),
         remote_code: None,
         control_me_perception_mode: default_control_me_perception_mode(),
+        control_me_action_mode: default_control_me_action_mode(),
         disabled_extensions: Vec::new(),
         update_popup_enabled: true,
     }
