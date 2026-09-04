@@ -1,7 +1,8 @@
-import { useMemo, type CSSProperties, type MouseEvent } from "react";
+import { useState, useMemo, type CSSProperties, type MouseEvent } from "react";
 import { marked } from "marked";
 import DOMPurify from "dompurify";
 import { writeText } from "@tauri-apps/plugin-clipboard-manager";
+import { isSpeechSynthesisSupported, speak, stopSpeaking } from "../voice";
 
 function escapeHtml(s: string): string {
   return s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
@@ -55,6 +56,30 @@ export default function MessageBubble({
 }) {
   const html = useMemo(() => renderMarkdown(content), [content]);
   const isTypingPlaceholder = streaming && content.trim() === "· · ·";
+  const [speaking, setSpeaking] = useState(false);
+
+  function toggleReadAloud() {
+    if (speaking) {
+      stopSpeaking();
+      setSpeaking(false);
+      return;
+    }
+    // Strip markdown syntax that would otherwise be read aloud literally
+    // ("astérisque astérisque gras astérisque astérisque") — a plain-text
+    // approximation, not a real parser, but good enough for speech.
+    const plain = content.replace(/```[\s\S]*?```/g, "").replace(/[*_`#>[\]()]/g, "");
+    speak(plain);
+    setSpeaking(true);
+    // speechSynthesis has no "done" promise — polling is the documented
+    // way to know when an utterance actually finishes, so the button can
+    // revert on its own instead of staying stuck on "stop" forever.
+    const check = setInterval(() => {
+      if (!window.speechSynthesis.speaking) {
+        setSpeaking(false);
+        clearInterval(check);
+      }
+    }, 300);
+  }
 
   async function handleClick(e: MouseEvent<HTMLDivElement>) {
     const btn = (e.target as HTMLElement).closest(".code-copy-btn") as HTMLButtonElement | null;
@@ -88,6 +113,19 @@ export default function MessageBubble({
           onClick={handleClick}
           dangerouslySetInnerHTML={{ __html: html }}
         />
+      )}
+      {role === "assistant" && !streaming && content.trim() && isSpeechSynthesisSupported() && (
+        <button
+          className={`read-aloud-btn ${speaking ? "read-aloud-btn-active" : ""}`}
+          onClick={toggleReadAloud}
+          title={speaking ? "Arrêter la lecture" : "Lire à voix haute"}
+        >
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+            <polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5" />
+            <path d="M15.5 8.5a5 5 0 0 1 0 7" />
+            <path d="M18.5 5.5a9 9 0 0 1 0 13" />
+          </svg>
+        </button>
       )}
     </div>
   );

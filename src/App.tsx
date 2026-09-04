@@ -6,6 +6,7 @@ import Sidebar from "./components/Sidebar";
 import MessageBubble from "./components/MessageBubble";
 import HuggingFaceBrowser from "./components/codex/HuggingFaceBrowser";
 import SendButton from "./components/SendButton";
+import MicButton from "./components/MicButton";
 import ModelSelect from "./components/ModelSelect";
 
 const CodexView = lazy(() => import("./components/codex/CodexView"));
@@ -721,6 +722,7 @@ export default function App() {
             />
             <div className="input-controls">
               <ModelSelect models={models} value={selectedModel} onChange={setSelectedModel} />
+              <MicButton onTranscript={setInput} disabled={sending} />
               <SendButton
                 busy={sending}
                 disabled={!input.trim() || !selectedModel}

@@ -206,6 +206,28 @@ pas devenir obsolète.
   thème sombre, illisible (texte sombre sur fond sombre) une fois le
   thème clair ajouté. Voir "Bascule jour/nuit et fond animé (v0.7.2)"
   dans Architecture pour le détail complet.
+- **[FAIT] v0.7.3** : correctif de l'écran de démarrage qui pouvait rester
+  bloqué (minuteur de disparition découplé du chargement des données —
+  voir "Écran de démarrage découplé du chargement (v0.7.3)" dans
+  Architecture), sélecteur de version sur le bouton Installer du site,
+  plusieurs correctifs de superposition CSS.
+- **[FAIT] v0.7.4 : sécurité** — recherche/installation de modèles
+  Hugging Face désactivée temporairement (flag `HF_DISABLED`) suite à un
+  incident de sécurité signalé chez Hugging Face, et retrait de
+  l'ouverture automatique du navigateur de modèles au premier lancement
+  sans modèle installé (elle contactait Hugging Face sans la moindre
+  action de l'utilisateur). Voir "Désactivation temporaire de Hugging
+  Face (v0.7.4)" dans Architecture.
+- **[FAIT] v0.7.5 : entrée/sortie vocale (chat et Control Me) + raccourci
+  clavier global** — bouton micro (dictée, Web Speech API du navigateur,
+  aucune dépendance ajoutée) dans le chat et Control Me, bouton "lire à
+  voix haute" sur les réponses de l'assistant, et un raccourci global
+  (Ctrl+Alt+O) qui ramène la fenêtre au premier plan depuis n'importe où
+  (crate `global-hotkey`, pas le plugin officiel — sa partie JS
+  demanderait un `npm install`, explicitement exclu cette session suite
+  à une inquiétude de sécurité de la chaîne d'approvisionnement npm
+  signalée par l'utilisateur). Voir "Voix et raccourci clavier global
+  (v0.7.5)" dans Architecture pour le détail complet.
 
 ## Architecture
 
@@ -2688,6 +2710,113 @@ animation groupée au chargement pour tout).
   démarrage de l'app, et que le fond animé ne nuit pas à la lisibilité
   du texte par-dessus.
 
+### Écran de démarrage découplé du chargement (v0.7.3)
+
+Signalé par l'utilisateur : l'app pouvait rester bloquée sur l'écran de
+démarrage animé (v0.7.2). Cause : le minuteur qui déclenche la disparition
+de l'écran de démarrage (`setSplashLeaving`/`setSplashVisible`) était
+imbriqué dans le même bloc `finally` que le chargement des réglages/
+modèles/conversations — si l'un de ces appels traînait anormalement
+longtemps (un hôte Ollama qui ne refuse pas activement la connexion mais
+la laisse pendre plutôt que de la rejeter immédiatement), le minuteur de
+l'écran de démarrage attendait avec lui. Corrigé en donnant à ce minuteur
+son propre `useEffect` indépendant (`App.tsx`) qui se déclenche
+systématiquement ~1070ms après le montage, peu importe l'état du
+chargement des données — celui-ci garde son propre `finally` (toujours
+nécessaire pour ne jamais laisser la fenêtre invisible), mais ne pilote
+plus l'écran de démarrage.
+
+### Désactivation temporaire de Hugging Face (v0.7.4)
+
+Demandé explicitement suite à un incident de sécurité signalé chez
+Hugging Face — l'utilisateur a aussi fait remarquer que
+`HuggingFaceBrowser` lançait une recherche automatiquement dès son
+montage (`useEffect(() => { handleSearch(); }, [])`), et qu'`App.tsx`
+ouvrait ce composant automatiquement dès qu'aucun modèle Ollama n'était
+installé (`if (list.length === 0) setShowInstall(true)`) — combinés, un
+premier lancement de l'app sans modèle contactait Hugging Face sans la
+moindre action de l'utilisateur. Corrigé en deux temps :
+`HuggingFaceBrowser.tsx` gagne un flag `HF_DISABLED` (actuellement `true`)
+qui coupe à la fois la recherche automatique au montage et remplace toute
+l'interface habituelle par un message explicite ("désactivé
+temporairement suite à un incident de sécurité...") — recherche **et**
+installation manuelle par référence `hf.co/...` sont toutes les deux
+coupées, pas seulement la recherche ; et `App.tsx` n'ouvre plus jamais ce
+composant automatiquement. À réactiver (repasser `HF_DISABLED` à `false`)
+seulement quand l'utilisateur confirme que l'incident est clarifié — ne
+pas le faire de sa propre initiative.
+
+### Voix et raccourci clavier global (v0.7.5)
+
+Demandé explicitement : entrée/sortie vocale façon ChatGPT/Gemini pour le
+chat et Control Me, et des raccourcis clavier. Contrainte forte de la
+session : **aucun `npm install`**, suite à une inquiétude de sécurité de
+la chaîne d'approvisionnement npm signalée par l'utilisateur — les deux
+fonctionnalités sont construites pour ne jamais en avoir besoin.
+
+- **Voix** (`src/voice.ts`, nouveau) : entièrement basé sur l'API Web
+  Speech du navigateur (`SpeechRecognition`/`SpeechSynthesis`), déjà
+  disponible dans WebView2 sans la moindre dépendance — vérifié par
+  recherche web avant d'écrire le code (Windows/WebView2 étant basé sur
+  Chromium, "les deux parties de l'API fonctionnent normalement", contrairement à
+  Linux/webkitgtk, non pertinent pour ce projet Windows-only). Le lib DOM
+  de TypeScript n'a pas de types pour `SpeechRecognition` (toujours non
+  standardisé) — les formes minimales utilisées ici sont déclarées à la
+  main plutôt que d'ajouter un paquet `@types/dom-speech-recognition`
+  (aurait nécessité un `npm install`, exclu).
+  - `MicButton.tsx` (nouveau, partagé) : bouton micro dans la barre de
+    saisie du chat (`App.tsx`) et de Control Me (`ControlMeView.tsx`) —
+    dictée en direct qui remplit le champ de texte, ne rend rien si le
+    navigateur ne supporte pas `SpeechRecognition` plutôt qu'un bouton
+    qui échouerait silencieusement au clic.
+  - Bouton "lire à voix haute" ajouté directement dans `MessageBubble.tsx`
+    (donc disponible partout où ce composant est déjà utilisé — chat de
+    base et Control Me) sur les réponses de l'assistant non-streaming :
+    bascule lecture/arrêt, sondage de `speechSynthesis.speaking` toutes
+    les 300ms pour revenir à l'état "lire" une fois la lecture terminée
+    (l'API n'expose pas de promesse "terminé"). Le texte lu retire la
+    syntaxe markdown la plus commune (blocs de code, `*`/`_`/`` ` ``/`#`)
+    pour ne pas lire les caractères de mise en forme à voix haute — une
+    approximation texte brut, pas un vrai analyseur.
+  - **Nouvelle exception réseau documentée** (voir Confidentialité
+    réseau) : `SpeechRecognition` est fourni par WebView2/Chromium
+    lui-même, qui peut envoyer l'audio à un service de reconnaissance
+    externe — ce n'est pas un appel que ce projet initie ou contrôle,
+    documenté par honnêteté. La synthèse vocale reste entièrement locale
+    (Windows), aucune réserve de ce type pour elle.
+- **Raccourci clavier global** (Ctrl+Alt+O, ramène la fenêtre principale
+  au premier plan depuis n'importe où) : crate `global-hotkey` (`cargo
+  add`, donc autorisée malgré la contrainte — celle-ci ne visait que
+  npm) plutôt que `tauri-plugin-global-shortcut` officiel, dont la
+  moitié JS (`@tauri-apps/plugin-global-shortcut`) aurait justement
+  demandé le `npm install` exclu — cette crate est d'ailleurs ce que ce
+  plugin utilise en interne, seulement sans son wrapper JS. Enregistré
+  dans `lib.rs > setup()` (le gestionnaire doit être créé sur le thread
+  qui fait tourner la boucle d'événements Win32, vérifié dans le README
+  de la crate avant d'écrire le code — c'est le thread principal d'une
+  app Tauri) ; les événements sont ensuite reçus depuis un thread dédié
+  (`std::thread::spawn`, simple boucle bloquante sur
+  `GlobalHotKeyEvent::receiver().recv()` — un canal, donc sûr à lire
+  depuis n'importe quel thread, contrairement à la création du
+  gestionnaire). **Vrai piège de compilation rencontré et corrigé** :
+  `GlobalHotKeyManager` contient un `HWND` qui est en réalité un
+  `*mut c_void` dans cette version de la crate — un pointeur brut, donc
+  ni `Send` ni `Sync` par défaut en Rust, quelle que soit sa sécurité
+  réelle d'usage — empêchant `app.manage(...)` (qui exige les deux) de
+  compiler. Corrigé avec un petit type enveloppe local
+  (`HotkeyManagerHolder`) et des `unsafe impl Send`/`unsafe impl Sync`
+  explicites dessus, justifiés en commentaire : le gestionnaire n'est
+  jamais ré-accédé après l'enregistrement, il est seulement gardé en vie
+  dans l'état managé pour repousser son `Drop` (qui désenregistrerait le
+  raccourci) jusqu'à la fermeture de l'app — pas un vrai partage
+  concurrent qui nécessiterait une synchronisation réelle.
+- `cargo check`/`npx tsc --noEmit` passés à 0 erreur. **Pas de
+  vérification GUI possible dans cet environnement** (ni pour la
+  reconnaissance vocale, ni pour le raccourci global) — à confirmer par
+  l'utilisateur : dictée fonctionnelle dans le chat et Control Me,
+  lecture à voix haute d'une réponse, et que Ctrl+Alt+O ramène bien la
+  fenêtre au premier plan depuis n'importe quelle autre application.
+
 ### Les 6 outils de l'agent
 1. `read_file` — lecture texte (limite 5 Mo), chemin absolu
 2. `list_dir` — listing un niveau, chemin absolu
@@ -2886,8 +3015,22 @@ réseau sortants dans `src-tauri/src/commands/` à cette date :
    site suivi d'une confirmation **dans l'app** avant tout appel réseau.
    Rien n'est écrit côté Supabase par cette commande — seul le contenu
    récupéré est écrit localement (fichier skill).
+8. **[2026-09-04, exception explicite] Reconnaissance vocale** (`voice.ts`,
+   bouton micro dans le chat et Control Me) → passe par l'API navigateur
+   `SpeechRecognition` de WebView2, **uniquement quand l'utilisateur clique
+   sur le bouton micro**. Contrairement à tout le reste de cette liste, ce
+   n'est **pas un appel réseau que ce projet contrôle** — `SpeechRecognition`
+   est fourni par le moteur Chromium de WebView2 lui-même, qui peut envoyer
+   l'audio à un service de reconnaissance vocale externe (typiquement
+   Microsoft, potentiellement Google selon la configuration) pour le
+   transcrire, exactement comme dans n'importe quel site web utilisant cette
+   API standard. Documenté ici par honnêteté (l'app ne peut ni le confirmer
+   ni l'empêcher), pas parce que le code de ce projet initie lui-même cet
+   appel. La synthèse vocale (bouton "lire à voix haute", `speechSynthesis`)
+   n'a pas cette réserve — elle est traitée entièrement en local par Windows,
+   aucune donnée n'est envoyée nulle part pour ça.
 
-En dehors de ces sept cas, aucune autre destination réseau n'existe dans
+En dehors de ces huit cas, aucune autre destination réseau n'existe dans
 le code (pas de télémétrie, pas d'analytics, pas d'appel automatique à un
 service tiers non listé ici). Si tu ajoutes un nouvel appel réseau, vérifie
 qu'il tombe dans un de ces cas — sinon, demande confirmation avant d'envoyer

@@ -25,6 +25,10 @@ use commands::skills::{
 };
 use commands::watchdog::{close_app, spawn_watchdog_thread, Watchdog};
 use commands::SUPABASE_ANON_KEY;
+use global_hotkey::{
+    hotkey::{Code, HotKey, Modifiers},
+    GlobalHotKeyEvent, GlobalHotKeyManager, HotKeyState,
+};
 use std::sync::atomic::AtomicBool;
 use std::sync::Arc;
 use tauri::menu::{Menu, MenuItem};
@@ -93,6 +97,57 @@ pub fn run() {
             // of persisting it is that the site reconnects on its own,
             // which only works if the app is also already listening.
             resume_remote_on_startup(app.handle().clone());
+
+            // Global shortcut (Ctrl+Alt+O) to summon the app from anywhere,
+            // even while it's tray-only/minimized/behind other windows —
+            // requested alongside voice input/output. Deliberately the
+            // `global-hotkey` crate directly (Cargo-only) rather than
+            // tauri-plugin-global-shortcut, whose JS side would need
+            // `npm install @tauri-apps/plugin-global-shortcut` — explicitly
+            // off-limits this session over a reported npm supply-chain
+            // security concern. This crate is what that plugin uses
+            // internally anyway, just without its JS wrapper: the manager
+            // must be created on this thread (the one running the Win32
+            // event loop, per the crate's own README — true of Tauri's main
+            // thread), so it's registered here in setup() rather than from
+            // a spawned task. The manager is kept in managed state for the
+            // app's whole lifetime — dropping it would unregister the hotkey
+            // (its Drop impl tears down the hidden window it uses to
+            // receive WM_HOTKEY).
+            if let Ok(hotkey_manager) = GlobalHotKeyManager::new() {
+                let summon_hotkey = HotKey::new(Some(Modifiers::CONTROL | Modifiers::ALT), Code::KeyO);
+                if hotkey_manager.register(summon_hotkey).is_ok() {
+                    let summon_id = summon_hotkey.id();
+                    let app_handle = app.handle().clone();
+                    // GlobalHotKeyEvent::receiver() is a plain channel, safe
+                    // to block-receive from any thread — only creating the
+                    // manager itself was thread-sensitive.
+                    std::thread::spawn(move || {
+                        while let Ok(event) = GlobalHotKeyEvent::receiver().recv() {
+                            if event.id() == summon_id && event.state() == HotKeyState::Pressed {
+                                if let Some(window) = app_handle.get_webview_window("main") {
+                                    let _ = window.show();
+                                    let _ = window.set_focus();
+                                }
+                            }
+                        }
+                    });
+                }
+                // GlobalHotKeyManager wraps a raw HWND (*mut c_void), which
+                // Rust never auto-derives Send/Sync for regardless of
+                // whether it's actually safe to move around — Tauri's
+                // .manage() requires both. This is genuinely fine here: the
+                // handle is only ever read by the crate's own Windows API
+                // calls (never dereferenced as a real pointer by us), it's
+                // never touched again after this line, and the only reason
+                // to keep it in managed state at all is to defer its Drop
+                // (which unregisters the hotkey) until the app itself exits
+                // — not to share or synchronize access to it.
+                struct HotkeyManagerHolder(#[allow(dead_code)] GlobalHotKeyManager);
+                unsafe impl Send for HotkeyManagerHolder {}
+                unsafe impl Sync for HotkeyManagerHolder {}
+                app.manage(HotkeyManagerHolder(hotkey_manager));
+            }
 
             // Minimize-to-tray: closing the window (the X button) hides it
             // instead of quitting, since this is meant to stay open in the

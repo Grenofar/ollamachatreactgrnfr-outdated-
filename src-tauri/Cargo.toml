@@ -1,6 +1,6 @@
 [package]
 name = "ollama-chat-react"
-version = "0.7.4"
+version = "0.7.5"
 description = "Client de chat pour Ollama avec éditeur de code agentique (Codex)"
 authors = ["Grenofar"]
 edition = "2021"
@@ -45,6 +45,7 @@ futures-util = { version = "0.3", default-features = false, features = ["sink", 
 rand = "0.8"
 tauri-plugin-deep-link = "2.4.10"
 tauri-plugin-single-instance = { version = "2.4.4", features = ["deep-link"] }
+global-hotkey = "0.8.0"
 
 [target.'cfg(windows)'.dependencies]
 webview2-com = "0.38"

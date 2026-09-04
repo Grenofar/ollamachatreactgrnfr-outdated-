@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState, type CSSProperties, type KeyboardEvent } from "react";
 import MessageBubble, { renderMarkdown } from "../MessageBubble";
 import SendButton from "../SendButton";
+import MicButton from "../MicButton";
 import {
   cancelControlMe,
   clearControlMeMemory,
@@ -481,6 +482,7 @@ export default function ControlMeView({
             disabled={running || !apiKey}
           />
           <div className="input-controls">
+            <MicButton onTranscript={setInstruction} disabled={running || !apiKey} />
             <SendButton
               busy={running}
               disabled={!instruction.trim() || !apiKey}
