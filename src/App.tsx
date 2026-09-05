@@ -7,6 +7,7 @@ import MessageBubble from "./components/MessageBubble";
 import HuggingFaceBrowser from "./components/codex/HuggingFaceBrowser";
 import SendButton from "./components/SendButton";
 import MicButton from "./components/MicButton";
+import VoiceMode from "./components/VoiceMode";
 import ModelSelect from "./components/ModelSelect";
 
 const CodexView = lazy(() => import("./components/codex/CodexView"));
@@ -69,6 +70,7 @@ export default function App() {
   const [updateError, setUpdateError] = useState<string | null>(null);
   const [checkingUpdate, setCheckingUpdate] = useState(false);
   const [upToDate, setUpToDate] = useState(false);
+  const [voiceMode, setVoiceMode] = useState(false);
   const [splashVisible, setSplashVisible] = useState(true);
   const [splashLeaving, setSplashLeaving] = useState(false);
   const scrollRef = useRef<HTMLDivElement>(null);
@@ -450,9 +452,17 @@ export default function App() {
   }
 
   async function handleSend() {
-    if (sending || !input.trim() || !settings || !selectedModel) return;
+    if (!input.trim()) return;
     const text = input.trim();
     setInput("");
+    await sendText(text);
+  }
+
+  // Same path as handleSend but with the text passed in rather than read
+  // from the input box — voice mode has no input box to read from.
+  async function sendText(raw: string) {
+    if (sending || !raw.trim() || !settings || !selectedModel) return;
+    const text = raw.trim();
 
     const base: Conversation =
       currentConv ?? {
@@ -574,6 +584,11 @@ export default function App() {
       )
     : 0;
   const totalTokens = conversations.reduce((sum, c) => sum + c.total_tokens, 0);
+  // Voice mode speaks whatever the newest assistant message is — it only
+  // ever reads a given one once (VoiceMode tracks that itself), so passing
+  // the same value again across unrelated re-renders is harmless.
+  const lastAssistantReply =
+    [...messages].reverse().find((m) => m.role === "assistant")?.content ?? null;
 
   return (
     <div className="app">
@@ -653,6 +668,18 @@ export default function App() {
       <div className="main">
         {connError && <div className="banner banner-error">{connError}</div>}
 
+        {voiceMode ? (
+          <VoiceMode
+            title="Conversation vocale"
+            subtitle={selectedModel ? `Modèle : ${selectedModel}` : undefined}
+            assistantName="L'assistant"
+            busy={sending}
+            reply={lastAssistantReply}
+            onUserMessage={sendText}
+            onClose={() => setVoiceMode(false)}
+          />
+        ) : (
+        <>
         <div className="chat-scroll" ref={scrollRef} onScroll={handleChatScroll}>
           {messages.length === 0 && !sending ? (
             <div className="empty-state">
@@ -723,6 +750,20 @@ export default function App() {
             <div className="input-controls">
               <ModelSelect models={models} value={selectedModel} onChange={setSelectedModel} />
               <MicButton onTranscript={setInput} disabled={sending} />
+              <button
+                className="voice-mode-btn"
+                onClick={() => setVoiceMode(true)}
+                disabled={!selectedModel}
+                title="Conversation vocale (mains libres)"
+              >
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
+                  <line x1="4" y1="10" x2="4" y2="14" />
+                  <line x1="8" y1="7" x2="8" y2="17" />
+                  <line x1="12" y1="4" x2="12" y2="20" />
+                  <line x1="16" y1="7" x2="16" y2="17" />
+                  <line x1="20" y1="10" x2="20" y2="14" />
+                </svg>
+              </button>
               <SendButton
                 busy={sending}
                 disabled={!input.trim() || !selectedModel}
@@ -732,6 +773,8 @@ export default function App() {
             </div>
           </div>
         </div>
+        </>
+        )}
       </div>
       )}
 

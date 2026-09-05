@@ -85,6 +85,23 @@ async fn wait_for_cancel(flag: Arc<AtomicBool>) {
     }
 }
 
+// read_foreground_ui_elements is a synchronous walk of cross-process COM
+// calls — measured at 65 ms on a light window but ~845 ms on a
+// control-dense one (see src-tauri/examples/uia_bench.rs). Calling it
+// straight from this async loop parked a Tokio worker thread for that whole
+// time, which also stalls whatever else shares the runtime — most visibly
+// the remote-control WebSocket's heartbeat and screen-frame ticks during a
+// session being watched from the site. spawn_blocking moves it off the
+// async workers; it doesn't make the read itself faster.
+async fn read_ui_off_runtime(width: u32, height: u32) -> String {
+    tokio::task::spawn_blocking(move || {
+        read_foreground_ui_elements(width, height)
+            .unwrap_or_else(|e| format!("Erreur de lecture de l'interface : {e}"))
+    })
+    .await
+    .unwrap_or_else(|e| format!("Erreur de lecture de l'interface : {e}"))
+}
+
 fn primary_monitor() -> Result<Monitor, String> {
     let monitors = Monitor::all().map_err(|e| e.to_string())?;
     monitors
@@ -734,8 +751,7 @@ pub async fn run_control_me_core(
 
     let (width, height, initial_observation) = if use_ui_mode {
         let (w, h) = primary_screen_size()?;
-        let text = read_foreground_ui_elements(w, h)
-            .unwrap_or_else(|e| format!("Erreur de lecture de l'interface : {e}"));
+        let text = read_ui_off_runtime(w, h).await;
         (w, h, json!({ "type": "text", "text": text }))
     } else {
         let (screenshot, w, h) = capture_screenshot_base64()?;
@@ -973,8 +989,7 @@ pub async fn run_control_me_core(
                     let _ = app.emit("control-me-cancelled", ());
                     return Err(CANCELLED_MESSAGE.to_string());
                 }
-                let refreshed = read_foreground_ui_elements(width, height)
-                    .unwrap_or_else(|e| format!("Erreur de lecture de l'interface : {e}"));
+                let refreshed = read_ui_off_runtime(width, height).await;
                 if let Some(last) = function_results.last_mut() {
                     if let Some(parts) = last["result"].as_array_mut() {
                         parts.push(json!({ "type": "text", "text": refreshed }));

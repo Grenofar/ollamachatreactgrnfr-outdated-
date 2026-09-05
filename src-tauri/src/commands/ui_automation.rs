@@ -76,7 +76,10 @@ fn walk(
                 let nx = normalize(cx, screen_width);
                 let ny = normalize(cy, screen_height);
                 let state = if enabled { "activé" } else { "désactivé" };
-                let label = if label.len() > 80 { format!("{}…", &label[..80]) } else { label };
+                // `&label[..80]` here would panic outright whenever byte 80
+                // lands mid-character — entirely reachable with accented
+                // French labels, emoji in a window title, or any CJK text.
+                let label = truncate_label(&label);
                 out.push(format!("- {control_type} \"{label}\" ({state}) @ ({nx}, {ny})"));
                 budget.recorded += 1;
             }
@@ -103,6 +106,17 @@ fn walk(
     }
 }
 
+// Byte-slicing a label at a fixed offset panics if that offset lands inside
+// a multi-byte character — very reachable here, since these labels are
+// arbitrary UI text in any language.
+fn truncate_label(label: &str) -> String {
+    const MAX: usize = 80;
+    if label.chars().count() <= MAX {
+        return label.to_string();
+    }
+    format!("{}…", label.chars().take(MAX).collect::<String>())
+}
+
 // Returns a compact text snapshot of the foreground window's control tree:
 // title line, then one bullet per visible/named control with its type,
 // label, enabled state, and center point normalized to the same 0-999
@@ -119,6 +133,20 @@ pub fn read_foreground_ui_elements(screen_width: u32, screen_height: u32) -> Res
     let root = automation.element_from_handle(handle).map_err(|e| e.to_string())?;
     let title = root.get_name().unwrap_or_default();
 
+    // Deliberately still the plain per-element walk, after measuring rather
+    // than assuming (src-tauri/examples/uia_bench.rs, kept in-tree so this
+    // can be re-checked):
+    //   - this walk costs 65 ms on a VS Code window, 121 ms on this app,
+    //     and ~845 ms worst case on a control-dense File Explorer window
+    //     (82 elements visited, hitting the 60-element cap);
+    //   - the textbook UIA optimisation, FindAllBuildCache over
+    //     TreeScope::Subtree, measured *17 seconds* on the same machine once
+    //     the target's accessibility tree was actually populated, because
+    //     Subtree forces the provider to materialise the entire tree. It
+    //     would have been a catastrophic regression, not a speed-up.
+    // Since even removing this read entirely would save under a second out
+    // of the >10 s per action being complained about, the remaining cost is
+    // not here — it is the Gemini round-trip. Left simple on purpose.
     let walker = automation.get_control_view_walker().map_err(|e| e.to_string())?;
     let mut budget = WalkBudget { recorded: 0, visited: 0 };
     let mut lines = Vec::new();

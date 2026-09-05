@@ -2,6 +2,7 @@ import { useEffect, useRef, useState, type CSSProperties, type KeyboardEvent } f
 import MessageBubble, { renderMarkdown } from "../MessageBubble";
 import SendButton from "../SendButton";
 import MicButton from "../MicButton";
+import VoiceMode from "../VoiceMode";
 import {
   cancelControlMe,
   clearControlMeMemory,
@@ -54,6 +55,7 @@ export default function ControlMeView({
   const [instruction, setInstruction] = useState("");
   const [entries, setEntries] = useState<TranscriptEntry[]>([]);
   const [running, setRunning] = useState(false);
+  const [voiceMode, setVoiceMode] = useState(false);
   const [model, setModel] = useState(settings.gemini_model || "gemini-3.5-flash-lite");
   const [pendingConfirmation, setPendingConfirmation] = useState<{ action: string; explanation: string } | null>(
     null,
@@ -160,9 +162,17 @@ export default function ControlMeView({
 
   function handleSend() {
     const text = instruction.trim();
-    if (!text || !apiKey) return;
-    setEntries((prev) => [...prev, { role: "user", content: text }]);
+    if (!text) return;
     setInstruction("");
+    sendInstruction(text);
+  }
+
+  // Same path as handleSend but with the text passed in — voice mode has no
+  // input box to read from.
+  function sendInstruction(raw: string) {
+    const text = raw.trim();
+    if (!text || !apiKey || running) return;
+    setEntries((prev) => [...prev, { role: "user", content: text }]);
     setRunning(true);
     runControlMe(apiKey, model, text, activeSkillIds).catch((e) => {
       setEntries((prev) => [...prev, { role: "system", content: `Erreur : ${String(e)}` }]);
@@ -299,6 +309,12 @@ export default function ControlMeView({
     }
   }
 
+  // Spoken back in voice mode. Only assistant entries — the "step" ones
+  // (system role) are running commentary on what's being clicked, not
+  // something worth reading aloud mid-conversation.
+  const lastAssistantReply =
+    [...entries].reverse().find((e) => e.role === "assistant")?.content ?? null;
+
   return (
     <div className="controlme">
       <div className="controlme-header">
@@ -434,6 +450,18 @@ export default function ControlMeView({
         </div>
       )}
 
+      {voiceMode ? (
+        <VoiceMode
+          title="Control Me — conversation vocale"
+          subtitle="Dis à l'IA ce qu'elle doit faire sur ton PC"
+          assistantName="Control Me"
+          busy={running}
+          reply={lastAssistantReply}
+          onUserMessage={sendInstruction}
+          onClose={() => setVoiceMode(false)}
+        />
+      ) : (
+      <>
       <div className="controlme-scroll" ref={scrollRef}>
         {entries.length === 0 && (
           <div className="empty-state">
@@ -483,6 +511,20 @@ export default function ControlMeView({
           />
           <div className="input-controls">
             <MicButton onTranscript={setInstruction} disabled={running || !apiKey} />
+            <button
+              className="voice-mode-btn"
+              onClick={() => setVoiceMode(true)}
+              disabled={!apiKey}
+              title="Conversation vocale (mains libres)"
+            >
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
+                <line x1="4" y1="10" x2="4" y2="14" />
+                <line x1="8" y1="7" x2="8" y2="17" />
+                <line x1="12" y1="4" x2="12" y2="20" />
+                <line x1="16" y1="7" x2="16" y2="17" />
+                <line x1="20" y1="10" x2="20" y2="14" />
+              </svg>
+            </button>
             <SendButton
               busy={running}
               disabled={!instruction.trim() || !apiKey}
@@ -492,6 +534,8 @@ export default function ControlMeView({
           </div>
         </div>
       </div>
+      </>
+      )}
     </div>
   );
 }

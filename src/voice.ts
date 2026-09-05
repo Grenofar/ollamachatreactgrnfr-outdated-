@@ -61,13 +61,19 @@ export function startListening(
   onTranscript: (text: string, isFinal: boolean) => void,
   onEnd: () => void,
   lang = "fr-FR",
+  // false = single utterance: recognition stops on its own once the speaker
+  // pauses, which is exactly the turn-taking signal a hands-free
+  // conversation needs (VoiceMode relies on onEnd meaning "their turn is
+  // over"). true = keeps running through pauses, which is what plain
+  // dictation into a textarea wants instead (MicButton).
+  continuous = true,
 ): VoiceRecognizer | null {
   const Ctor = getSpeechRecognitionCtor();
   if (!Ctor) return null;
 
   const recognizer = new Ctor();
   recognizer.lang = lang;
-  recognizer.continuous = true;
+  recognizer.continuous = continuous;
   recognizer.interimResults = true;
 
   recognizer.onresult = (event) => {
@@ -96,17 +102,54 @@ export function startListening(
   };
 }
 
+// Windows ships two very different generations of voices: the legacy SAPI
+// ones (robotic) and the newer neural/"Natural" ones, which sound
+// dramatically better and are what makes a voice conversation feel like a
+// product rather than a screen reader. Both show up in getVoices(), with
+// no flag distinguishing them beyond the name, so this picks the best
+// available French voice by preferring those markers, falling back to any
+// fr voice, then to the browser default.
+function pickVoice(lang: string): SpeechSynthesisVoice | null {
+  const voices = window.speechSynthesis.getVoices();
+  if (voices.length === 0) return null;
+  const prefix = lang.split("-")[0].toLowerCase();
+  const sameLang = voices.filter((v) => v.lang.toLowerCase().startsWith(prefix));
+  if (sameLang.length === 0) return null;
+  const preferred = sameLang.find((v) => /natural|neural|online/i.test(v.name));
+  return preferred ?? sameLang[0];
+}
+
 // Reads text aloud. Cancels whatever utterance is already in progress
 // first — without that, rapid consecutive calls (e.g. re-reading while a
 // previous read-aloud is still going) would queue up and speak one after
 // another instead of interrupting, which reads as broken/laggy rather
-// than responsive.
-export function speak(text: string, lang = "fr-FR"): void {
-  if (!isSpeechSynthesisSupported() || !text.trim()) return;
+// than responsive. `onDone` fires when the utterance finishes or fails —
+// VoiceMode uses it to know when it's the user's turn again, which polling
+// speechSynthesis.speaking (the only other option) does far less precisely.
+export function speak(text: string, lang = "fr-FR", onDone?: () => void): void {
+  if (!isSpeechSynthesisSupported() || !text.trim()) {
+    onDone?.();
+    return;
+  }
   window.speechSynthesis.cancel();
   const utterance = new SpeechSynthesisUtterance(text);
   utterance.lang = lang;
+  const voice = pickVoice(lang);
+  if (voice) utterance.voice = voice;
+  if (onDone) {
+    utterance.onend = () => onDone();
+    utterance.onerror = () => onDone();
+  }
   window.speechSynthesis.speak(utterance);
+}
+
+// getVoices() is empty on first call in Chromium until the voice list has
+// loaded asynchronously — callers that care about voice quality (VoiceMode)
+// warm it up on mount so the first spoken reply already uses the good voice
+// instead of the default one.
+export function primeVoices(): void {
+  if (!isSpeechSynthesisSupported()) return;
+  window.speechSynthesis.getVoices();
 }
 
 export function stopSpeaking(): void {

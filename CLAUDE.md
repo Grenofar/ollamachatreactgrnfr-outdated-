@@ -237,7 +237,21 @@ pas devenir obsolète.
   ou "predefined", plusieurs actions par tour), même famille que le
   bascule `control_me_perception_mode` déjà existant (capture/Windows
   UI). Voir "Actions Control Me groupées par tour, en bascule (v0.8.0)"
-  dans Architecture pour le détail complet.
+  dans Architecture pour le détail complet. **Note importante : le build
+  de la v0.8.0 n'a jamais abouti** (processus figé plusieurs heures,
+  aucun installeur produit, nettoyé ensuite) — ce bascule n'a donc été
+  réellement livré à l'utilisateur qu'avec la v0.9.0.
+- **[FAIT] v0.9.0 : mode conversation vocale, passe de sécurité, et
+  mesure réelle du goulot de Control Me** — (1) un vrai mode mains libres
+  qui remplace le fil de discussion par une conversation entre deux
+  participants, avec tour de parole automatique, dans le chat comme dans
+  Control Me ; (2) durcissement du site (en-têtes/CSP), de l'app (CSP du
+  webview, qui était désactivée depuis toujours) et de la base (plafonds
+  de taille, compteurs dédupliqués, URL contraintes) ; (3) le "c'est la
+  latence Gemini" enfin **mesuré** au lieu d'être supposé, avec un banc
+  d'essai gardé dans le dépôt — et une "optimisation" manuel-de-l'art
+  écartée parce qu'elle mesurait 20× pire que l'existant. Voir les trois
+  sections dédiées dans Architecture.
 
 ## Architecture
 
@@ -2897,6 +2911,143 @@ la version actuelle par-dessus le code v0.7.5 propre.
   `"live"` reste bien identique au comportement déjà connu, le gain de
   vitesse perçu une fois basculé sur `"predefined"`, et qu'aucune action
   ne parte dans le vide suite à un regroupement mal jugé par le modèle.
+
+### Mode conversation vocale (v0.9.0)
+
+Demandé explicitement : "pour chat et control me, le système voice,
+n'affiche plus chat, juste une conversation entre deux personnes". La
+dictée au micro de la v0.7.5 remplissait simplement le champ de saisie —
+ici c'est un vrai mode mains libres qui **remplace** le fil de discussion
+pendant qu'il est ouvert, au lieu de s'ajouter à côté.
+
+- `src/components/VoiceMode.tsx` (nouveau, partagé chat + Control Me) :
+  deux participants affichés (toi / l'IA, celui qui a la parole étant mis
+  en avant), une sphère animée qui porte l'état (respiration lente en
+  écoute, rotation en réflexion, pulsation large quand l'IA parle), et
+  une seule légende — la phrase en cours, jamais l'historique.
+- **Boucle de tour de parole automatique** : écoute → l'utilisateur se
+  tait → envoi → génération → lecture à voix haute → réécoute. Rendu
+  possible par un ajout à `startListening` (`voice.ts`) : un paramètre
+  `continuous`, mis à `false` ici, pour que la reconnaissance s'arrête
+  d'elle-même à la pause — c'est cet arrêt qui **est** le signal "j'ai
+  fini de parler". La dictée simple (`MicButton`) garde `true`.
+- `speak()` accepte maintenant un `onDone`, utilisé pour rendre la parole
+  à l'utilisateur exactement à la fin de l'énoncé, au lieu de sonder
+  `speechSynthesis.speaking` en boucle.
+- **Qualité de voix** : `pickVoice()` choisit une voix française en
+  préférant celles marquées `natural`/`neural`/`online` — Windows expose
+  à la fois les vieilles voix SAPI (robotiques) et les neurales
+  récentes, sans autre distinction que le nom. C'est ce qui fait la
+  différence entre "lecteur d'écran" et "conversation".
+- **Cas de blocage traité** : si un tour est ignoré (une génération déjà
+  en cours, ou un échec), aucune réponse n'arrive jamais — la sphère
+  serait restée sur "Réflexion…" micro coupé, conversation morte. Un
+  garde reprend l'écoute dès que `busy` retombe sans nouvelle réponse.
+- Toujours aucune dépendance ajoutée : API Web Speech du navigateur,
+  déjà disponible dans WebView2 (voir la v0.7.5 pour la vérification).
+
+### Passe de sécurité v0.9.0 (site, base, app)
+
+Demandée dans le même message. Chaque point ci-dessous était un trou réel,
+pas une précaution théorique.
+
+- **Site — en-têtes HTTP absents** (`vercel.json`) : aucune CSP, aucun
+  `nosniff`, aucun `frame-ancestors`. Ajoutés, avec une CSP qui interdit
+  notamment le chargement de scripts depuis un domaine arbitraire. Limite
+  assumée et documentée : `script-src` garde `'unsafe-inline'`, parce que
+  chaque page porte de vrais scripts en ligne (dont celui qui applique le
+  thème avant le premier rendu) et qu'un site statique édité à la main ne
+  peut pas maintenir des hachages à jour sans se casser silencieusement.
+- **App — CSP du webview désactivée** (`"csp": null` dans
+  `tauri.conf.json`, depuis la création du projet). C'est le point le
+  plus payant des trois : dans une app Tauri, un XSS ne vole pas des
+  cookies, il atteint l'IPC et donc `run_powershell_command`. Le rendu
+  markdown passe déjà par DOMPurify, mais une CSP ferme le cas d'un
+  contournement de DOMPurify qui injecterait un `<script src=…>` distant.
+  Politique volontairement permissive sur ce qui est réellement utilisé
+  (`'unsafe-inline'`, `blob:` pour les workers Monaco) pour ne pas casser
+  l'app, stricte sur le reste (`object-src 'none'`, pas de `frame-src`,
+  scripts distants bloqués). **À vérifier au premier lancement** — c'est
+  le seul changement de cette passe qui pourrait, en cas d'erreur,
+  empêcher l'app de s'afficher ; le retour en arrière est une seule ligne
+  de configuration.
+- **Base — `supabase/security_hardening_migration.sql`** (nouveau, **à
+  exécuter par l'utilisateur**) :
+  - *Aucune limite de taille nulle part.* `controlme_knowledge_shares.content`
+    est insérable par le rôle `anon` (seule écriture anon du projet) sans
+    plafond : un INSERT de plusieurs centaines de Mo était possible, en
+    boucle. Contraintes ajoutées là et sur les champs des extensions.
+  - *Compteurs gonflables à l'infini.* `record_extension_page_view` et
+    `record_extension_install_click` sont `security definer` et
+    appelables par `anon` sans déduplication — n'importe qui pouvait
+    boucler l'appel pour gonfler les statistiques de sa propre extension.
+    Déduplication ajoutée par appelant et par jour, via le hash md5 de
+    l'IP lue dans `request.headers` (le GUC exposé par PostgREST) : l'IP
+    n'est jamais stockée en clair, seul le hash sert de clé. Repli
+    délibéré vers l'ancien comportement si l'en-tête est absent, plutôt
+    que de ne plus rien compter.
+  - *URL non contraintes* (`avatar_url`, `thumbnail_url`, `media_url`),
+    réinjectées dans des attributs `src` : restreintes à `https://`.
+  - *Bucket `avatars`* sans limite de taille ni type MIME (contrairement
+    à `extension-media`) : aligné dessus.
+
+### Où passe réellement le temps dans Control Me (v0.9.0, mesuré)
+
+L'utilisateur signalait ">10 s entre chaque commande". Les sessions
+précédentes avaient conclu "c'est la latence Gemini" **par raisonnement,
+sans jamais mesurer** — notamment en supposant que la lecture locale de
+l'interface était rapide (<100 ms). Cette fois, mesure réelle sur cette
+machine, avec un banc d'essai gardé dans le dépôt
+(`src-tauri/examples/uia_bench.rs`, `cargo run --release --example
+uia_bench`) pour pouvoir être rejoué.
+
+**Résultats (walk actuel, arbre d'accessibilité préchauffé) :**
+
+| Fenêtre cible | Durée | Éléments |
+|---|---|---|
+| Explorateur de fichiers | **839-871 ms** | 82 visités, 60 retenus (plafond) |
+| Fenêtre de cette app | 121 ms | 15 visités |
+| VS Code | 65-67 ms | 12 visités |
+| Bureau / fenêtres vides | 8-13 ms | 1 visité |
+
+**L'"optimisation" évidente était un piège, et la mesure l'a démontré
+avant qu'elle ne soit livrée.** La recommandation classique pour UI
+Automation est de remplacer les lectures de propriétés une par une
+(chaque appel traverse le processus) par un `FindAllBuildCache` groupé.
+Implémenté avec `TreeScope::Subtree`, ça a mesuré **17 192 ms** — 20 fois
+pire que l'existant — parce que `Subtree` force le fournisseur à
+matérialiser l'arbre d'accessibilité entier. Une deuxième tentative
+bornée (un appel caché par niveau, `TreeScope::Children`) a échoué sur
+l'API de la crate (`AutomationElement n'était pas demandé`) même après
+avoir posé `ElementMode::Full`. Les deux tentatives ont été **retirées**,
+pas gardées "au cas où" : le code est resté sur le walk d'origine, avec
+les mesures en commentaire pour que personne ne refasse le trajet.
+
+**Conclusion, chiffrée plutôt qu'affirmée** : le pipeline local coûte
+entre 8 ms et ~0,9 s selon la fenêtre visée. Même en supprimant
+totalement la lecture d'interface, ça ne retire pas 1 s sur les >10 s
+constatés — donc l'essentiel du délai est bien l'aller-retour Gemini,
+mais c'est maintenant établi par soustraction mesurée, pas supposé.
+**Impossible de mesurer Gemini depuis cet environnement** : aucun
+`settings.json` avec clé API n'existe sur cette machine (Control Me n'y a
+jamais été configuré), donc aucun chiffrage de la part réseau/inférence
+n'a pu être fait — c'est la seule pièce manquante du budget.
+
+Deux vraies améliorations en sont sorties malgré tout :
+- **`read_ui_off_runtime`** (`controlme.rs`) : la lecture d'interface
+  passe par `tokio::task::spawn_blocking`. Elle ne devient pas plus
+  rapide, mais elle cesse d'immobiliser un thread du runtime async
+  jusqu'à ~0,9 s — ce qui bloquait aussi le heartbeat et le flux d'écran
+  du contrôle à distance quand une session était suivie depuis le site.
+- **Vrai bug de panique corrigé** (`ui_automation.rs`) :
+  `&label[..80]` tronquait un libellé d'interface par octets. Tout
+  libellé contenant un accent, un emoji ou du CJK à cheval sur l'octet 80
+  faisait paniquer le thread — atteignable trivialement sur une interface
+  française. Remplacé par une troncature par caractères.
+
+Le levier restant contre le nombre d'allers-retours reste le bascule
+"Prédéfini" (voir la section précédente) — construit en v0.8.0, dont le
+build n'avait jamais abouti, donc jamais réellement essayé.
 
 ### Les 6 outils de l'agent
 1. `read_file` — lecture texte (limite 5 Mo), chemin absolu
