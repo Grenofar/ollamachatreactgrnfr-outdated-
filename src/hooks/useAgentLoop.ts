@@ -88,36 +88,113 @@ function unwrapSchemaShapedValue(value: unknown): unknown {
   return value;
 }
 
-function extractFallbackJsonToolCall(content: string): { name: string; arguments: Record<string, unknown> } | null {
-  const trimmed = content.trim();
-  const candidates = [trimmed];
-  const first = trimmed.indexOf("{");
-  const last = trimmed.lastIndexOf("}");
-  if (first !== -1 && last > first && (first !== 0 || last !== trimmed.length - 1)) {
-    candidates.push(trimmed.slice(first, last + 1));
+// Every JSON object in the text, including ones nested inside another and
+// several written back to back — a plain "first { to last }" slice produces
+// invalid JSON the moment a model emits two calls in a row, which it does.
+function jsonObjectCandidates(text: string): string[] {
+  const out: string[] = [];
+  const starts: number[] = [];
+  let inString = false;
+  let escaped = false;
+  for (let i = 0; i < text.length; i++) {
+    const ch = text[i];
+    if (escaped) {
+      escaped = false;
+      continue;
+    }
+    if (ch === "\\") {
+      escaped = true;
+      continue;
+    }
+    if (ch === '"') {
+      inString = !inString;
+      continue;
+    }
+    if (inString) continue;
+    if (ch === "{") starts.push(i);
+    else if (ch === "}" && starts.length) {
+      const start = starts.pop() as number;
+      out.push(text.slice(start, i + 1));
+      if (out.length > 40) return out;
+    }
   }
+  return out;
+}
 
-  for (const candidate of candidates) {
+// Models serialize a tool call in several shapes that all mean the same
+// thing; each of these was checked against real output rather than assumed
+// (see the fallback probe kept in the release notes for v0.9.2).
+function normalizeToolCallShape(parsed: unknown): { name: string; arguments: Record<string, unknown> } | null {
+  if (!parsed || typeof parsed !== "object") return null;
+  let obj = parsed as Record<string, unknown>;
+  // {"tool_call": {...}} / {"function_call": {...}} wrappers.
+  for (const key of ["tool_call", "function_call", "toolCall"]) {
+    const inner = obj[key];
+    if (inner && typeof inner === "object" && !Array.isArray(inner)) obj = inner as Record<string, unknown>;
+  }
+  const func = obj.function && typeof obj.function === "object" ? (obj.function as Record<string, unknown>) : null;
+  const name = (func?.name ?? obj.name ?? obj.tool ?? obj.tool_name) as unknown;
+  if (typeof name !== "string" || !KNOWN_TOOL_NAMES.has(name)) return null;
+
+  // "arguments" is the common key, but "parameters"/"args"/"input" all show
+  // up, and OpenAI-style serialization puts a JSON *string* there.
+  let rawArgs = (func?.arguments ?? obj.arguments ?? obj.parameters ?? obj.args ?? obj.input) as unknown;
+  if (typeof rawArgs === "string") {
+    try {
+      rawArgs = JSON.parse(rawArgs);
+    } catch {
+      return null;
+    }
+  }
+  if (!rawArgs || typeof rawArgs !== "object" || Array.isArray(rawArgs)) return null;
+
+  const args: Record<string, unknown> = {};
+  for (const [key, value] of Object.entries(rawArgs as Record<string, unknown>)) {
+    args[key] = unwrapSchemaShapedValue(value);
+  }
+  return { name, arguments: args };
+}
+
+// Returns every tool call found in a plain-text response, in order. Small
+// local models routinely never fill the structured tool_calls field at all
+// and write the call as raw JSON in the message body instead — verified
+// again against the real qwen2.5-coder:3b on this machine, which is why
+// this net exists rather than a fourth round of prompt wording.
+function extractFallbackJsonToolCalls(content: string): { name: string; arguments: Record<string, unknown> }[] {
+  const trimmed = content.trim();
+  const found: { name: string; arguments: Record<string, unknown> }[] = [];
+  const seen = new Set<string>();
+  for (const candidate of jsonObjectCandidates(trimmed)) {
     let parsed: unknown;
     try {
       parsed = JSON.parse(candidate);
     } catch {
       continue;
     }
-    if (!parsed || typeof parsed !== "object") continue;
-    const obj = parsed as Record<string, unknown>;
-    const func = obj.function && typeof obj.function === "object" ? (obj.function as Record<string, unknown>) : null;
-    const name = (func?.name ?? obj.name) as unknown;
-    const rawArgs = (func?.arguments ?? obj.arguments) as unknown;
-    if (typeof name !== "string" || !KNOWN_TOOL_NAMES.has(name)) continue;
-    if (!rawArgs || typeof rawArgs !== "object") continue;
-    const args: Record<string, unknown> = {};
-    for (const [key, value] of Object.entries(rawArgs as Record<string, unknown>)) {
-      args[key] = unwrapSchemaShapedValue(value);
-    }
-    return { name, arguments: args };
+    const call = normalizeToolCallShape(parsed);
+    if (!call) continue;
+    const key = call.name + JSON.stringify(call.arguments);
+    if (seen.has(key)) continue;
+    seen.add(key);
+    found.push(call);
   }
-  return null;
+  return found;
+}
+
+// Removes the JSON tool-call objects from a response so only genuine prose
+// is shown. Returns "" when the message was nothing but the call.
+function stripJsonToolCalls(content: string): string {
+  let out = content;
+  for (const candidate of jsonObjectCandidates(content.trim())) {
+    let parsed: unknown;
+    try {
+      parsed = JSON.parse(candidate);
+    } catch {
+      continue;
+    }
+    if (normalizeToolCallShape(parsed)) out = out.split(candidate).join("");
+  }
+  return out.replace(/```(?:json)?\s*```/gi, "").trim();
 }
 
 function useResolvablePrompt<TPayload, TResult>() {
@@ -304,21 +381,37 @@ export function useAgentLoop(opts: {
       setStreamingText("");
 
       let toolCalls = resp.tool_calls;
+      // True when the visible text WAS the tool call rather than something
+      // said to the user — see displayContent below.
+      let contentWasToolCall = false;
       if (toolCalls.length === 0) {
         const fallbackCommand = extractFallbackCommand(resp.content);
         if (fallbackCommand) {
           toolCalls = [{ id: "fallback_1", name: "run_powershell_command", arguments: { command: fallbackCommand } }];
         } else {
-          const fallbackJson = extractFallbackJsonToolCall(resp.content);
-          if (fallbackJson) {
-            toolCalls = [{ id: "fallback_1", name: fallbackJson.name, arguments: fallbackJson.arguments }];
+          const fallbackJson = extractFallbackJsonToolCalls(resp.content);
+          if (fallbackJson.length) {
+            toolCalls = fallbackJson.map((c, i) => ({
+              id: `fallback_${i + 1}`,
+              name: c.name,
+              arguments: c.arguments,
+            }));
+            // Once the JSON is stripped, whatever is left is the only part
+            // that was ever addressed to the user.
+            contentWasToolCall = stripJsonToolCalls(resp.content).length === 0;
           }
         }
       }
 
+      // Showing the raw {"name":...,"arguments":...} blob as the assistant's
+      // message is what made a working run look broken: the tool did run,
+      // but the transcript read as "it printed some JSON and did nothing".
+      // The wire message keeps the original content (the model's own turn
+      // has to stay intact for the next request); only the display changes.
       const assistantMsg: AgentMessage = {
         role: "assistant",
         content: resp.content,
+        displayContent: contentWasToolCall ? "" : stripJsonToolCalls(resp.content),
         tool_calls: toolCalls.length ? toolCalls : undefined,
       };
       msgs = [...msgs, assistantMsg];

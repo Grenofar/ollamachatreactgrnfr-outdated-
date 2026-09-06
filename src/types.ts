@@ -62,8 +62,14 @@ export interface AgentMessage {
   role: AgentRole;
   content: string;
   tool_calls?: AgentToolCall[];
-  /** Client-side only (for display), never required by the Ollama wire format. */
+  /** Which tool produced this result (role === "tool"). This IS sent on the
+   * wire: without it the model ignores the result and repeats the same call
+   * forever — measured against qwen2.5-coder:3b, see agent.rs. */
   toolName?: string;
+  /** What to show in the transcript when it differs from `content` — used to
+   * hide a raw JSON tool call the model wrote as its message body. The wire
+   * format always keeps the original `content`. */
+  displayContent?: string;
 }
 
 export interface AgentChatResponse {

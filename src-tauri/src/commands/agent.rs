@@ -33,6 +33,14 @@ pub struct AgentMessage {
     pub content: String,
     #[serde(default)]
     pub tool_calls: Option<Vec<AgentToolCall>>,
+    // Which tool produced this result, on role == "tool" messages. Measured,
+    // not assumed: sending a tool result WITHOUT this field makes
+    // qwen2.5-coder:3b ignore the result entirely and re-issue the exact
+    // same call, forever — the agent looked like it "couldn't run
+    // commands" when in fact it ran them and threw the output into a void.
+    // The alias accepts the frontend's existing camelCase field as-is.
+    #[serde(default, alias = "toolName")]
+    pub tool_name: Option<String>,
 }
 
 #[derive(Serialize, Clone)]
@@ -73,6 +81,11 @@ fn to_ollama_message(m: &AgentMessage) -> serde_json::Value {
         "role": m.role,
         "content": m.content,
     });
+    if m.role == "tool" {
+        if let Some(name) = &m.tool_name {
+            obj["tool_name"] = serde_json::json!(name);
+        }
+    }
     if let Some(tool_calls) = &m.tool_calls {
         obj["tool_calls"] = serde_json::json!(tool_calls
             .iter()

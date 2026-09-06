@@ -56,8 +56,8 @@ export default function AgentTranscript({
         .filter((m) => m.role !== "system")
         .map((m, i) => (
           <div key={i} style={{ "--i": i } as CSSProperties}>
-            {m.content.trim() && (m.role === "user" || m.role === "assistant") && (
-              <MessageBubble role={m.role} content={m.content} />
+            {(m.displayContent ?? m.content).trim() && (m.role === "user" || m.role === "assistant") && (
+              <MessageBubble role={m.role} content={m.displayContent ?? m.content} />
             )}
 
             {m.role === "assistant" &&
