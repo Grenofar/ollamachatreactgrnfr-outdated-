@@ -232,7 +232,7 @@ fn now_unix_secs() -> f64 {
 // action except read_ui_elements: that one needs a short label for the
 // transcript ("Lecture de l'interface (N éléments)") but the full element
 // dump as the text actually sent back to Gemini.
-fn dispatch_action(
+async fn dispatch_action(
     app: &AppHandle,
     name: &str,
     args: &Value,
@@ -291,16 +291,14 @@ fn dispatch_action(
         return (msg.clone(), msg, None);
     }
     if name == "read_ui_elements" {
-        return match read_foreground_ui_elements(width, height) {
-            Ok(text) => {
-                let count = text.lines().count().saturating_sub(1);
-                (format!("Lecture de l'interface ({count} éléments)"), text, None)
-            }
-            Err(e) => {
-                let msg = format!("Erreur : {e}");
-                (msg.clone(), msg, Some(e))
-            }
-        };
+        // Off the async workers, same reason as the observation path: this
+        // walk costs up to ~0.9s on a control-dense window, and parking a
+        // runtime thread that long also stalls the remote-control heartbeat
+        // and screen feed. Only the observation path had been moved in
+        // v0.9.0; this explicit tool call was still blocking.
+        let text = read_ui_off_runtime(width, height).await;
+        let count = text.lines().count().saturating_sub(1);
+        return (format!("Lecture de l'interface ({count} éléments)"), text, None);
     }
     match execute_action(name, args, width, height) {
         Ok(l) => (l.clone(), l, None),
@@ -1158,10 +1156,10 @@ pub async fn run_control_me_core(
                     if let Some(obj) = args.as_object_mut() {
                         obj.insert("safety_acknowledgement".to_string(), json!(true));
                     }
-                    dispatch_action(&app, &action_name, &args, width, height, recording_skill_id.as_deref())
+                    dispatch_action(&app, &action_name, &args, width, height, recording_skill_id.as_deref()).await
                 }
             } else {
-                dispatch_action(&app, &action_name, &args, width, height, recording_skill_id.as_deref())
+                dispatch_action(&app, &action_name, &args, width, height, recording_skill_id.as_deref()).await
             };
 
             let _ = app.emit(

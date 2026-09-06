@@ -262,6 +262,11 @@ export function useAgentLoop(opts: {
   host: string;
   model: string;
   systemPrompt: string;
+  /** Facts about the current session that the model needs but cannot
+   * discover on its own — above all which folder is open. Re-injected as a
+   * system message whenever it changes, because the system prompt itself is
+   * only sent once, at the start of a conversation. */
+  contextNote?: string;
   mode: "auto" | "approve";
   onFileChanged?: (path: string) => void;
 }) {
@@ -273,6 +278,7 @@ export function useAgentLoop(opts: {
   const [runningToolId, setRunningToolId] = useState<string | null>(null);
   const [runningOutput, setRunningOutput] = useState("");
   const iterationRef = useRef(0);
+  const sentContextRef = useRef<string | null>(null);
   const optsRef = useRef(opts);
   optsRef.current = opts;
 
@@ -477,10 +483,18 @@ export function useAgentLoop(opts: {
 
   const sendUserMessage = useCallback(
     (text: string) => {
-      const withSystem: AgentMessage[] =
+      let withSystem: AgentMessage[] =
         messages.length === 0 && optsRef.current.systemPrompt.trim()
           ? [{ role: "system", content: optsRef.current.systemPrompt.trim() }]
           : messages;
+      // Opening a different folder mid-conversation used to be invisible to
+      // the model, since the system prompt is only ever sent on the first
+      // message.
+      const note = optsRef.current.contextNote?.trim();
+      if (note && note !== sentContextRef.current) {
+        sentContextRef.current = note;
+        withSystem = [...withSystem, { role: "system", content: note }];
+      }
       const next: AgentMessage[] = [...withSystem, { role: "user", content: text }];
       setMessages(next);
       iterationRef.current = 0;
@@ -491,6 +505,7 @@ export function useAgentLoop(opts: {
 
   const reset = useCallback(() => {
     setMessages([]);
+    sentContextRef.current = null;
     setStatus("idle");
     setError(null);
     setNotice(null);

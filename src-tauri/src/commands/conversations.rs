@@ -61,7 +61,7 @@ fn to_meta(conv: &Conversation) -> ConversationMeta {
 pub fn list_conversations(app: AppHandle) -> Result<Vec<ConversationMeta>, String> {
     let dir = conversations_dir(&app)?;
     let mut items: Vec<ConversationMeta> = read_all_conversations(&dir)?.iter().map(to_meta).collect();
-    items.sort_by(|a, b| b.created_at.partial_cmp(&a.created_at).unwrap());
+    items.sort_by(|a, b| b.created_at.partial_cmp(&a.created_at).unwrap_or(std::cmp::Ordering::Equal));
     Ok(items)
 }
 
@@ -79,7 +79,7 @@ pub fn search_conversations(app: AppHandle, query: String) -> Result<Vec<Convers
         })
         .map(to_meta)
         .collect();
-    items.sort_by(|a, b| b.created_at.partial_cmp(&a.created_at).unwrap());
+    items.sort_by(|a, b| b.created_at.partial_cmp(&a.created_at).unwrap_or(std::cmp::Ordering::Equal));
     Ok(items)
 }
 

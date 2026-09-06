@@ -22,6 +22,12 @@ pub struct Settings {
     pub control_me_perception_mode: String,
     #[serde(default = "default_control_me_action_mode")]
     pub control_me_action_mode: String,
+    // Preferred microphone (MediaDeviceInfo.deviceId). Only the paths this
+    // app controls honour it — recording for Gemini transcription and the
+    // level meter. The browser's own speech recognition always uses the
+    // Windows default device and exposes no way to pick another.
+    #[serde(default)]
+    pub preferred_microphone: Option<String>,
     // Extension ids ("codex" | "controlme") the user toggled off from the
     // Extensions view. Purely a show/hide switch — nothing is actually
     // uninstalled (everything ships in the same binary), see
@@ -91,6 +97,7 @@ fn default_settings() -> Settings {
         remote_code: None,
         control_me_perception_mode: default_control_me_perception_mode(),
         control_me_action_mode: default_control_me_action_mode(),
+        preferred_microphone: None,
         disabled_extensions: Vec::new(),
         update_popup_enabled: true,
     }

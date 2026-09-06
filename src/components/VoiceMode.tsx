@@ -49,6 +49,11 @@ export default function VoiceMode({
   const failuresRef = useRef(0);
   const deafRef = useRef(false);
   const [pushState, setPushState] = useState<"idle" | "recording" | "sending">("idle");
+  // Kept separate from `error`: that one means "recognition is down for
+  // good" and drives the deaf state, so reusing it for a transient
+  // push-to-talk failure would latch the UI into deaf mode permanently,
+  // even though recognition itself was fine.
+  const [pushError, setPushError] = useState<string | null>(null);
   const pushRecRef = useRef<AudioRecorder | null>(null);
   const canPushToTalk = !!geminiApiKey?.trim() && isRecordingSupported();
 
@@ -128,6 +133,10 @@ export default function VoiceMode({
     return () => {
       closedRef.current = true;
       recognizerRef.current?.stop();
+      // Same leak as in AudioSettings: closing voice mode while a
+      // push-to-talk recording was running left the microphone open.
+      pushRecRef.current?.cancel();
+      pushRecRef.current = null;
       stopSpeaking();
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -170,7 +179,7 @@ export default function VoiceMode({
       setPushState("recording");
       setCaption("");
     } catch (e) {
-      setError("Impossible d'ouvrir le micro : " + e);
+      setPushError("Impossible d'ouvrir le micro : " + e);
     }
   }
 
@@ -193,7 +202,7 @@ export default function VoiceMode({
       onUserMessageRef.current(text);
     } catch (e) {
       setPushState("idle");
-      setError("La transcription a échoué : " + e);
+      setPushError("La transcription a échoué : " + e);
     }
   }
 
@@ -242,7 +251,9 @@ export default function VoiceMode({
               {pushState === "sending" ? "Transcription…" : "Appuyer pour parler"}
             </button>
           )}
-          <span className="modal-hint">Passe par Gemini, puisque la reconnaissance du moteur ne répond pas.</span>
+          <span className="modal-hint">
+            {pushError ?? "Passe par Gemini, puisque la reconnaissance du moteur ne répond pas."}
+          </span>
         </div>
       )}
 

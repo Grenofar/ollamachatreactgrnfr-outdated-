@@ -54,7 +54,7 @@ pub fn list_control_me_sessions(app: AppHandle) -> Result<Vec<ControlMeSessionMe
         .iter()
         .map(|s| ControlMeSessionMeta { id: s.id.clone(), title: s.title.clone(), created_at: s.created_at })
         .collect();
-    items.sort_by(|a, b| b.created_at.partial_cmp(&a.created_at).unwrap());
+    items.sort_by(|a, b| b.created_at.partial_cmp(&a.created_at).unwrap_or(std::cmp::Ordering::Equal));
     Ok(items)
 }
 
@@ -73,7 +73,7 @@ pub fn search_control_me_sessions(app: AppHandle, query: String) -> Result<Vec<C
         })
         .map(|s| ControlMeSessionMeta { id: s.id.clone(), title: s.title.clone(), created_at: s.created_at })
         .collect();
-    items.sort_by(|a, b| b.created_at.partial_cmp(&a.created_at).unwrap());
+    items.sort_by(|a, b| b.created_at.partial_cmp(&a.created_at).unwrap_or(std::cmp::Ordering::Equal));
     Ok(items)
 }
 

@@ -16,9 +16,14 @@ import { openWindowsSettings, transcribeAudio } from "../api";
 export default function AudioSettings({
   geminiApiKey,
   geminiModel,
+  preferredMicrophone,
+  onPreferredMicrophoneChange,
 }: {
   geminiApiKey: string;
   geminiModel: string;
+  /** Empty string means "whatever Windows uses by default". */
+  preferredMicrophone: string;
+  onPreferredMicrophoneChange: (deviceId: string) => void;
 }) {
   const [devices, setDevices] = useState<MediaDeviceInfo[] | null>(null);
   const [permission, setPermission] = useState<string>("inconnu");
@@ -49,9 +54,25 @@ export default function AudioSettings({
         status.onchange = () => setPermission(status.state);
       })
       .catch(() => setPermission("inconnu"));
-    return () => stopMeter();
+    return () => {
+      stopMeter();
+      // Leaving the page mid-recording used to leave the microphone open
+      // with no way to stop it — the Windows mic indicator would stay lit.
+      geminiRecRef.current?.cancel();
+      geminiRecRef.current = null;
+    };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
+
+  // Switching device while the meter runs used to keep measuring the old
+  // one, which is worse than doing nothing: the bar looks authoritative
+  // while reporting the wrong microphone.
+  useEffect(() => {
+    if (!testing) return;
+    stopMeter();
+    void startMeter();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [preferredMicrophone]);
 
   async function refreshDevices() {
     try {
@@ -77,7 +98,9 @@ export default function AudioSettings({
   async function startMeter() {
     setError(null);
     try {
-      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      const stream = await navigator.mediaDevices.getUserMedia({
+        audio: preferredMicrophone ? { deviceId: { exact: preferredMicrophone } } : true,
+      });
       streamRef.current = stream;
       // Device labels stay blank until permission is actually granted, so
       // this is the moment the list becomes readable.
@@ -145,7 +168,7 @@ export default function AudioSettings({
       return;
     }
     try {
-      geminiRecRef.current = await startRecording();
+      geminiRecRef.current = await startRecording(preferredMicrophone || undefined);
       setGeminiState("recording");
     } catch (e) {
       setGeminiError("Impossible d'ouvrir le micro : " + e);
@@ -209,14 +232,20 @@ export default function AudioSettings({
       ) : devices.length === 0 ? (
         <div className="audio-status">Aucun micro détecté.</div>
       ) : (
-        <div className="audio-device-list">
+        <select value={preferredMicrophone} onChange={(e) => onPreferredMicrophoneChange(e.target.value)}>
+          <option value="">Micro par défaut de Windows</option>
           {devices.map((d, i) => (
-            <div key={d.deviceId || i} className="audio-device">
+            <option key={d.deviceId || i} value={d.deviceId}>
               {d.label || "Micro " + (i + 1) + " (nom masqué tant que l'autorisation n'est pas accordée)"}
-            </div>
+            </option>
           ))}
-        </div>
+        </select>
       )}
+      <p className="modal-hint">
+        Ce choix s&apos;applique au test de niveau et à la transcription par Gemini. La reconnaissance vocale du
+        moteur, elle, utilise toujours le micro par défaut de Windows — elle n&apos;expose aucun moyen d&apos;en
+        choisir un autre, d&apos;où les boutons ci-dessus.
+      </p>
       <button onClick={() => void refreshDevices()}>Rafraîchir la liste</button>
 
       <label>Niveau du micro</label>

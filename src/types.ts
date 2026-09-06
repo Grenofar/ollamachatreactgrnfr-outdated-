@@ -35,6 +35,10 @@ export interface Settings {
   remote_code?: string | null;
   control_me_perception_mode: "capture" | "windows_ui";
   control_me_action_mode: "live" | "predefined";
+  /** Preferred microphone deviceId. Honoured by the paths this app
+   * controls (level meter, Gemini transcription recording); the browser's
+   * own speech recognition always uses the Windows default. */
+  preferred_microphone?: string | null;
   disabled_extensions: string[];
   update_popup_enabled: boolean;
 }

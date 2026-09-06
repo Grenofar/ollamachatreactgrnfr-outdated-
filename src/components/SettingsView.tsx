@@ -229,7 +229,16 @@ export default function SettingsView({
         )}
 
         {section === "audio" && (
-          <AudioSettings geminiApiKey={form.gemini_api_key ?? ""} geminiModel={form.gemini_model ?? ""} />
+          <AudioSettings
+            geminiApiKey={form.gemini_api_key ?? ""}
+            geminiModel={form.gemini_model ?? ""}
+            preferredMicrophone={form.preferred_microphone ?? ""}
+            onPreferredMicrophoneChange={(id) => {
+              const next = { ...form, preferred_microphone: id || null };
+              setForm(next);
+              onSave(next);
+            }}
+          />
         )}
 
         {section === "extensions" && (

@@ -56,6 +56,11 @@ export default function CodexView({
     host: settings.ollama_host,
     model: selectedModel,
     systemPrompt: `${settings.system_prompt}\n\n${CODEX_SYSTEM_PROMPT}`,
+    // Without this the model never knew which folder was open and had to
+    // guess an absolute path for every read_file/list_dir call.
+    contextNote: rootFolder
+      ? `Dossier actuellement ouvert dans l'éditeur : ${rootFolder}\nC'est le dossier de travail par défaut : quand l'utilisateur parle du projet, du dossier courant, ou d'un fichier sans préciser de chemin complet, résous-le à partir de ce dossier. Les outils attendent des chemins absolus.`
+      : undefined,
     mode,
     onFileChanged: handleFileChanged,
   });
