@@ -294,6 +294,22 @@
         <div class="fn-desc">Maintient ou relâche une touche indépendamment (pour une sélection au clavier, un tir maintenu dans un jeu, etc.) — toujours relâcher ce qui a été maintenu avant la fin.</div>
       </div>
       <div class="fn-block">
+        <div class="fn-sig">maintiens_pendant("z", 2)</div>
+        <div class="fn-desc">Maintient une touche enfoncée pendant une durée précise (en secondes), puis la relâche automatiquement — avancer dans un jeu, accélérer, tenir une direction. À préférer à maintiens()/relache() dès que la durée compte : entre ces deux appels séparés il s'écoule plusieurs secondes incontrôlables.</div>
+      </div>
+      <div class="fn-block">
+        <div class="fn-sig">appuie_plusieurs_fois("Bas", 5)</div>
+        <div class="fn-desc">Répète le même appui de touche plusieurs fois d'affilée (50 au maximum) — descendre de plusieurs crans dans une liste, effacer plusieurs caractères.</div>
+      </div>
+      <div class="fn-block">
+        <div class="fn-sig">maintiens_clic(x, y, secondes)</div>
+        <div class="fn-desc">Maintient un bouton de la souris enfoncé à une position donnée pendant une durée précise — appui long, tir continu, sélection prolongée.</div>
+      </div>
+      <div class="fn-block">
+        <div class="fn-sig">deplace_relatif(dx, dy)</div>
+        <div class="fn-desc">Déplace la souris d'un décalage en pixels par rapport à sa position actuelle, au lieu d'une position absolue. Nécessaire pour viser dans un jeu qui capture le curseur : les coordonnées absolues n'y ont aucun effet.</div>
+      </div>
+      <div class="fn-block">
         <div class="fn-sig">raccourci("Ctrl+S") / raccourci("Ctrl+Maj+S") / raccourci("Windows")</div>
         <div class="fn-desc">Combinaison de plusieurs touches pressées ensemble puis relâchées dans l'ordre inverse — autant de touches que nécessaire.</div>
       </div>
@@ -308,10 +324,6 @@
       <div class="fn-block">
         <div class="fn-sig">lit_interface()</div>
         <div class="fn-desc">Lit la structure d'accessibilité de la fenêtre au premier plan (labels, types, positions déjà normalisées) — à préférer à une capture d'écran pour localiser précisément un élément dans une fenêtre standard (pas un jeu ou un canvas dessiné à la main).</div>
-      </div>
-      <div class="fn-block">
-        <div class="fn-sig">lit_base_connaissances()</div>
-        <div class="fn-desc">Lit le contenu du dossier de connaissances locales de l'utilisateur, s'il en a configuré un.</div>
       </div>
       <div class="fn-block">
         <div class="fn-sig">retiens(fait, categorie)</div>
@@ -391,7 +403,7 @@
 }
 
 Si target = "controlme", décris les actions avec ce vocabulaire (coordonnées normalisées 0-999) :
-clique(x,y), double_clique(x,y), triple_clique(x,y), clique_droit(x,y), clique_milieu(x,y), deplace(x,y), glisse(x1,y1,x2,y2), tape("texte"), touche("nom"), maintiens("touche")/relache("touche"), raccourci("Touche1+Touche2..."), molette(x,y,delta), attend(secondes), lit_interface(), lit_base_connaissances(), retiens(fait, categorie).
+clique(x,y), double_clique(x,y), triple_clique(x,y), clique_droit(x,y), clique_milieu(x,y), deplace(x,y), glisse(x1,y1,x2,y2), tape("texte"), touche("nom"), maintiens("touche")/relache("touche"), maintiens_pendant("touche", secondes), appuie_plusieurs_fois("touche", n), maintiens_clic(x,y,secondes), deplace_relatif(dx,dy), raccourci("Touche1+Touche2..."), molette(x,y,delta), attend(secondes), lit_interface(), retiens(fait, categorie).
 Noms de touches valides : Entrée, Échap, Tab, Suppr, flèches, Début, Fin, PageUp/PageDown, Windows, VerrMaj, Ctrl, Alt, Maj, F1 à F12, ou une lettre/chiffre simple. Le texte tapé (tape()) accepte les accents et les emoji directement.
 
 Si target = "chat", décris seulement du contexte/des préférences de comportement (pas de nouvel outil possible) : style de réponse, conventions à respecter, priorités.
