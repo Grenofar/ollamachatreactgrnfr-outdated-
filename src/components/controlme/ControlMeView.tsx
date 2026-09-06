@@ -260,13 +260,19 @@ export default function ControlMeView({
       setSkillBusy("Cette session est vide — parle d'abord avec Control Me.");
       return;
     }
+    // One dialog, not two: the description is filled in automatically and
+    // both fields stay editable afterwards (double-click to rename here,
+    // full editor in the Skills space).
     const name = window.prompt("Nom du nouveau skill :", "")?.trim();
     if (!name) return;
-    const description = window.prompt("Description courte :", "")?.trim() ?? "";
     setSkillBusy("L'IA relit la conversation et note ce qu'elle a appris…");
     try {
       const content = await extractSkillFromTranscript(apiKey, model, "", transcriptText());
-      const created = await saveNewSkill(name, description || name, content);
+      const created = await saveNewSkill(
+        name,
+        `Appris automatiquement depuis une conversation Control Me du ${new Date().toLocaleDateString("fr-FR")}`,
+        content,
+      );
       setSkills((prev) => [
         {
           id: created.id,
