@@ -3172,6 +3172,57 @@ micro entend enfin (et si non, quel message exact s'affiche — c'est lui
 qui distingue permission et service), la création/enrichissement de skill
 depuis une conversation, et `hold_key` en conditions réelles.
 
+### Troisieme passe sur Codex, mesuree (v0.9.2)
+
+Retour utilisateur : "ameliore aussi les commandes codex car j'ai
+l'impression qu'elle ne fonctionne pas" — après v0.3.3 (prompt), v0.3.4
+(filet markdown) et v0.6.2 (filet JSON). Cette fois encore, sonde contre
+l'Ollama réellement installé (`qwen2.5-coder:3b`) plutôt qu'un quatrième
+patch à l'aveugle, avec le vrai `CODEX_SYSTEM_PROMPT` et les vrais schémas
+d'outils lus depuis `agentTools.ts`.
+
+**Confirmé (reproduit)** : le modèle ne remplit **jamais** le champ
+`tool_calls` structuré. Il écrit l'appel en JSON brut dans `content`, avec
+la valeur imbriquée sous une clé `value` — exactement ce que décrivait la
+v0.6.2. Le filet de secours est donc ce qui fait fonctionner Codex, pas le
+tool-calling normal.
+
+**Erreur de méthode commise puis corrigée dans la même session, à ne pas
+reproduire** : un premier test à **un seul échantillon** par variante a
+semblé montrer que l'absence de `tool_name` sur les messages de résultat
+faisait boucler le modèle indéfiniment, et ça a été annoncé comme "le vrai
+bug, décisif". La boucle complète rejouée ensuite a montré que les deux
+variantes aboutissent. Le modèle échantillonne : **un essai ne prouve
+rien**, il faut compter sur plusieurs exécutions. Comptage réel ensuite :
+**5/5 aboutissent sans `tool_name`**, en 2 à 3 tours. `tool_name` est envoyé quand même — c'est le
+champ documenté par Ollama pour un message `role: "tool"` — mais **ne pas
+le présenter comme la cause** du problème rapporté.
+
+**Trois vrais défauts corrigés** :
+1. **Le JSON brut s'affichait comme un message de l'assistant.** Quand le
+   filet se déclenche, `content: resp.content` mettait
+   `{"name":"list_dir","arguments":{...}}` dans le transcript — ça se lit
+   comme "elle a craché du JSON et n'a rien fait", même quand l'outil
+   tournait vraiment. C'est très probablement l'origine de l'impression
+   rapportée. Nouveau champ `displayContent` (`types.ts`) : l'affichage
+   masque l'appel, le format d'envoi garde `content` intact (le tour du
+   modèle doit rester complet pour la requête suivante).
+2. **Le filet ne reconnaissait qu'une seule forme d'appel.**
+   `extractFallbackJsonToolCall` est devenu `extractFallbackJsonToolCalls`
+   (au pluriel) et gère : `arguments` sérialisé en **chaîne** JSON
+   (convention OpenAI), **plusieurs appels d'affilée** (l'ancien découpage
+   "premier `{` → dernier `}`" produisait du JSON invalide dans ce cas),
+   `parameters`/`args`/`input` au lieu d'`arguments`, et les wrappers
+   `tool_call`/`function_call`. Le scan d'objets JSON équilibre les
+   accolades en ignorant celles à l'intérieur des chaînes. **14 cas sur
+   14**, dont trois qui ne doivent **pas** matcher (prose seule, JSON sans
+   rapport, nom d'outil inconnu).
+3. **Le dépliage des arguments mal formés ne s'appliquait qu'au filet.**
+   Un `tool_call` structuré portant la même forme
+   (`{"path": {"type":"string","value":"..."}}`) arrivait à l'outil avec un
+   objet là où une chaîne était attendue, et l'appel échouait. Le dépliage
+   s'applique maintenant aux deux chemins.
+
 ### Les 6 outils de l'agent
 1. `read_file` — lecture texte (limite 5 Mo), chemin absolu
 2. `list_dir` — listing un niveau, chemin absolu

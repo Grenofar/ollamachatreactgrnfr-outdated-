@@ -380,7 +380,17 @@ export function useAgentLoop(opts: {
       const resp = await agentChat(optsRef.current.host, optsRef.current.model, msgs, AGENT_TOOLS);
       setStreamingText("");
 
-      let toolCalls = resp.tool_calls;
+      // The schema-shaped-argument unwrap used to run only in the fallback
+      // path, so a structured tool_call carrying the same malformed shape
+      // ({"path": {"type": "string", "value": "..."}} — a model confusing
+      // the tool's schema with the value to pass) reached the tool with an
+      // object where a string was expected, and the call simply failed.
+      let toolCalls = resp.tool_calls.map((tc) => ({
+        ...tc,
+        arguments: Object.fromEntries(
+          Object.entries(tc.arguments ?? {}).map(([k, v]) => [k, unwrapSchemaShapedValue(v)]),
+        ) as Record<string, unknown>,
+      }));
       // True when the visible text WAS the tool call rather than something
       // said to the user — see displayContent below.
       let contentWasToolCall = false;
