@@ -3482,6 +3482,41 @@ caractères à la main ; on installe désormais depuis la liste, par nom.
   Marketplace (v1.0.1), qui montre le nom, l'auteur et les avis avant
   d'installer plutôt qu'un UUID opaque.
 
+### Propriétaire sur les skills publics (v1.0.2)
+
+Trou refermé immédiatement après l'avoir ouvert. La table des skills
+publics date d'avant les comptes : aucune colonne propriétaire, écriture
+ouverte à `anon`. La migration « nom unique » y avait **ajouté l'update**
+(nécessaire pour que republier son propre skill mette à jour la copie au
+lieu d'être rejeté par l'index), ce qui élargissait le trou : qui
+connaissait un nom pouvait écraser ce qui était publié dessous.
+
+`supabase/skill_owner_migration.sql` (**à exécuter après** celle du nom
+unique) ajoute `owner_id` et restreint insert/update/delete au
+propriétaire. La lecture reste publique — c'est ce qui permet d'installer
+un skill sans compte.
+
+- **L'ancienne policy d'insertion anon est explicitement supprimée** : les
+  policies s'additionnent, la laisser en place l'aurait maintenue comme
+  porte ouverte à côté de la nouvelle.
+- **Les lignes publiées avant deviennent verrouillées** (`owner_id` null ne
+  correspond à aucun `auth.uid()`), y compris pour leur auteur d'origine,
+  qu'aucune donnée ne permet d'identifier. Choix assumé : les laisser
+  modifiables par n'importe qui serait exactement le trou qu'on ferme.
+- `publish_skill` prend désormais le jeton et l'id de l'utilisateur : la
+  clé anon ne suffit plus, puisque la policy compare `owner_id` à
+  `auth.uid()`.
+- **La dépublication devient réelle** : `unpublish_skill` supprime
+  vraiment la ligne publiée, là où elle ne changeait qu'un drapeau local
+  depuis la v0.6.0 (la copie publique restait en ligne pour toujours) —
+  impossible avant, faute de savoir à qui appartenait la ligne. En cas de
+  refus, le drapeau local est quand même retiré **et l'échec est dit**,
+  plutôt que de laisser croire à une suppression qui n'a pas eu lieu.
+- L'avertissement de publication est corrigé en conséquence : il annonçait
+  qu'un skill publié ne pouvait pas être retiré, ce qui n'est plus vrai.
+  Il précise maintenant la vraie limite : on retire la copie publique, pas
+  celles déjà installées par d'autres.
+
 ### Les 6 outils de l'agent
 1. `read_file` — lecture texte (limite 5 Mo), chemin absolu
 2. `list_dir` — listing un niveau, chemin absolu

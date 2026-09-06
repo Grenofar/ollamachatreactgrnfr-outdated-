@@ -270,9 +270,21 @@ pub(crate) fn read_active_skills(app: &AppHandle, ids: &[String]) -> String {
 }
 
 #[tauri::command]
-pub async fn publish_skill(app: AppHandle, id: String) -> Result<String, String> {
+pub async fn publish_skill(
+    app: AppHandle,
+    id: String,
+    // The signed-in user's Supabase token and id. Publishing writes an
+    // owner_id and the RLS policy checks it against auth.uid(), so the anon
+    // key is no longer enough - that was the hole where anyone knowing a
+    // name could overwrite what was published under it.
+    access_token: String,
+    user_id: String,
+) -> Result<String, String> {
     let mut skill = load_skill(app.clone(), id)?;
     validate(&skill.name, &skill.description)?;
+    if access_token.trim().is_empty() || user_id.trim().is_empty() {
+        return Err("Connecte-toi pour publier (Réglages > Compte).".to_string());
+    }
     let client = reqwest::Client::new();
     // Published skills are identified by name now, not by a code to pass
     // around. on_conflict + merge-duplicates means republishing your own
@@ -283,13 +295,14 @@ pub async fn publish_skill(app: AppHandle, id: String) -> Result<String, String>
         .post(format!("{SUPABASE_URL}/rest/v1/controlme_knowledge_shares"))
         .query(&[("on_conflict", "name")])
         .header("apikey", SUPABASE_ANON_KEY)
-        .header("Authorization", format!("Bearer {SUPABASE_ANON_KEY}"))
+        .header("Authorization", format!("Bearer {}", access_token.trim()))
         .header("Content-Type", "application/json")
         .header("Prefer", "resolution=merge-duplicates,return=minimal")
         .json(&json!({
             "name": skill.name.trim(),
             "description": skill.description,
             "content": skill.content,
+            "owner_id": user_id.trim(),
         }))
         .send()
         .await
@@ -297,6 +310,12 @@ pub async fn publish_skill(app: AppHandle, id: String) -> Result<String, String>
     if !resp.status().is_success() {
         let status = resp.status();
         let text = resp.text().await.unwrap_or_default();
+        if status.as_u16() == 401 || status.as_u16() == 403 {
+            return Err(
+                "Ce nom appartient à quelqu'un d'autre, ou a été publié avant les comptes et \n                 n'est plus modifiable. Renomme le tien pour le publier."
+                    .to_string(),
+            );
+        }
         if text.contains("duplicate key") || text.contains("unique") {
             return Err(format!(
                 "Un skill public porte déjà le nom « {} ». Renomme le tien avant de le publier.",
@@ -316,8 +335,40 @@ pub async fn publish_skill(app: AppHandle, id: String) -> Result<String, String>
 // deliberate design — see the module doc comment). This just stops the
 // local app from showing/offering the skill as currently published.
 #[tauri::command]
-pub fn unpublish_skill(app: AppHandle, id: String) -> Result<(), String> {
+// Really removes the published copy now, not just the local flag. Until
+// the owner column existed there was no way to tell whose row it was, so
+// no delete policy could be written and 'make private' only ever changed
+// local state while the public copy stayed online forever — a limitation
+// carried since v0.6.0 and lifted here.
+pub async fn unpublish_skill(
+    app: AppHandle,
+    id: String,
+    access_token: String,
+) -> Result<(), String> {
     let mut skill = load_skill(app.clone(), id)?;
+    if skill.is_public && !access_token.trim().is_empty() {
+        let client = reqwest::Client::new();
+        let resp = client
+            .delete(format!("{SUPABASE_URL}/rest/v1/controlme_knowledge_shares"))
+            .query(&[("name", &format!("eq.{}", skill.name.trim()))])
+            .header("apikey", SUPABASE_ANON_KEY)
+            .header("Authorization", format!("Bearer {}", access_token.trim()))
+            .send()
+            .await
+            .map_err(|e| format!("Impossible de contacter Supabase : {e}"))?;
+        // A refusal here means the row belongs to someone else (or predates
+        // owners). The local flag is still cleared — hiding that would be
+        // worse than saying it plainly.
+        if !resp.status().is_success() {
+            skill.is_public = false;
+            skill.share_code = None;
+            write_skill(&app, &skill)?;
+            return Err(
+                "Retiré localement, mais la copie publique n'a pas pu être supprimée : \n                 elle ne t'appartient pas, ou elle a été publiée avant les comptes."
+                    .to_string(),
+            );
+        }
+    }
     skill.is_public = false;
     skill.share_code = None;
     write_skill(&app, &skill)

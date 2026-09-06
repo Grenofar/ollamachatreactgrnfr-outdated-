@@ -162,7 +162,7 @@ export default function SkillsView({ settings }: { settings: Settings }) {
     }
     if (
       !window.confirm(
-        "Ce skill sera visible publiquement par n'importe qui, sans limite de durée, et ne peut pas être retiré depuis cette version de l'app — ne publie rien de sensible. Continuer ?",
+        "Ce skill sera visible publiquement par n'importe qui, sous ton compte. Tu pourras le retirer plus tard avec « Rendre privé », mais pas rappeler les copies déjà installées par d'autres — ne publie rien de sensible. Continuer ?",
       )
     ) {
       return;
@@ -170,7 +170,7 @@ export default function SkillsView({ settings }: { settings: Settings }) {
     setPublishing(true);
     setSkillsError(null);
     try {
-      await publishSkill(id);
+      await publishSkill(id, session.access_token, session.user_id);
       refreshSkills();
     } catch (e) {
       setSkillsError(String(e));
@@ -180,9 +180,11 @@ export default function SkillsView({ settings }: { settings: Settings }) {
   }
 
   async function handleUnpublishSkill(id: string) {
+    const session = loadSession();
     setPublishing(true);
+    setSkillsError(null);
     try {
-      await unpublishSkill(id);
+      await unpublishSkill(id, session && !isExpired(session) ? session.access_token : "");
       refreshSkills();
     } catch (e) {
       setSkillsError(String(e));

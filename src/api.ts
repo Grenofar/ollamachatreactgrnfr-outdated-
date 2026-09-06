@@ -215,8 +215,10 @@ export const saveNewSkill = (name: string, description: string, content: string)
   invoke<Skill>("save_new_skill", { name, description, content });
 export const updateSkill = (skill: Skill) => invoke<void>("update_skill", { skill });
 export const deleteSkill = (id: string) => invoke<void>("delete_skill", { id });
-export const publishSkill = (id: string) => invoke<string>("publish_skill", { id });
-export const unpublishSkill = (id: string) => invoke<void>("unpublish_skill", { id });
+export const publishSkill = (id: string, accessToken: string, userId: string) =>
+  invoke<string>("publish_skill", { id, accessToken, userId });
+export const unpublishSkill = (id: string, accessToken: string) =>
+  invoke<void>("unpublish_skill", { id, accessToken });
 export const downloadSkill = (shareCode: string) => invoke<Skill>("download_skill", { shareCode });
 export const listPublicSkills = () => invoke<PublicSkillMeta[]>("list_public_skills");
 export const extractSkillFromTranscript = (
