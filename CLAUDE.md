@@ -4466,6 +4466,29 @@ l'utilisateur confirme qu'elle est bien dans `.env` local.
   permission — il faudra alors un enregistrement local transcrit par
   Gemini, non construit.
 
+- **2026-09-06** — v0.9.2 publiée et vérifiée via la clé **anon** (fichier :
+  200 OK, 7 074 419 octets ; `latest_release_manifest` : 0.9.2, URL
+  correcte, signature de 432 octets présente dans l'objet
+  `platforms["windows-x86_64"]`). Contenu : enregistrement dans un skill
+  pendant la conversation, panneau Réglages > Audio, transcription de
+  secours par Gemini + liens vers les réglages Windows, et trois
+  correctifs Codex mesurés. Control Me standalone toujours non construit
+  (produit séparé abandonné sur demande).
+  **Deux leçons de procédure de cette session, à réutiliser :**
+  (1) *un échantillon ne prouve rien avec un LLM* — un test unique avait
+  laissé croire que l'absence de `tool_name` faisait boucler le modèle,
+  annoncé comme "le vrai bug décisif" ; le comptage sur 5 exécutions donne
+  5/5 des deux côtés. Toujours compter, jamais conclure sur un run.
+  (2) *vérifier l'horodatage de l'installeur avant de publier* — un
+  installeur d'un build précédent traînait dans `bundle/nsis` avec le bon
+  numéro de version ; sans comparer son heure à celle de `dist/`, c'est
+  lui qui serait parti en ligne. Même famille de piqure de rappel que la
+  signature manquante en v0.7.0.
+  **Piquet mémoire récurrent** : des `vite build` fantômes de builds
+  stoppés retiennent plusieurs Go et font échouer esbuild sur Monaco ;
+  `llama-server` en retient 2 de plus après un test Ollama (le décharger
+  proprement via `keep_alive: 0` plutôt que tuer le process).
+
 ## Prochaines étapes (dans l'ordre du fichier de passation d'origine)
 
 Voir aussi `NEXT_STEPS_FOR_CLAUDE.md` (note de passation d'une session
