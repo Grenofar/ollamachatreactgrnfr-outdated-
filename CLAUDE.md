@@ -252,6 +252,23 @@ pas devenir obsolète.
   d'essai gardé dans le dépôt — et une "optimisation" manuel-de-l'art
   écartée parce qu'elle mesurait 20× pire que l'existant. Voir les trois
   sections dédiées dans Architecture.
+- **[FAIT] v0.9.1 : micro qui n'entendait rien, skills gérés depuis
+  Control Me, actions à durée** — (1) cause racine réelle du bug micro
+  trouvée côté Rust, pas côté JS : WebView2 conditionne l'accès au micro
+  à sa propre invite de permission, et une fois celle-ci refusée/ignorée
+  **la page ne peut plus jamais la redemander** ; (2) le bouton
+  haut-parleur par message est retiré (la lecture à voix haute passe
+  désormais uniquement par le mode conversation vocale) ; (3) le mode
+  vocal ne devient plus muet quand le micro échoue — l'IA annonce à voix
+  haute pourquoi elle n'entend plus, et une saisie clavier de secours
+  garde la conversation vivante avec les réponses toujours dites à voix
+  haute ; (4) les skills se créent/renomment/enrichissent/suppriment
+  directement depuis le panneau Skills de Control Me, dont la création
+  « depuis cette conversation » où l'IA relit la session et note ce
+  qu'elle a appris ; (5) cinq nouvelles actions à durée (`hold_key`,
+  `hold_mouse`, `press_key_repeat`, `move_relative`, `scroll_at`),
+  disponibles dans les **deux** modes de perception. Voir "Micro, skills
+  dans Control Me et actions à durée (v0.9.1)" dans Architecture.
 
 ## Architecture
 
@@ -3048,6 +3065,112 @@ Deux vraies améliorations en sont sorties malgré tout :
 Le levier restant contre le nombre d'allers-retours reste le bascule
 "Prédéfini" (voir la section précédente) — construit en v0.8.0, dont le
 build n'avait jamais abouti, donc jamais réellement essayé.
+
+### Micro, skills dans Control Me et actions à durée (v0.9.1)
+
+Lot de retours après le premier vrai essai du mode vocal livré en v0.9.0.
+
+**Le bug micro : la cause était en Rust, pas en JavaScript.** Signalé
+comme "même si je mets activer le micro il m'entend pas". Trois défauts
+distincts, dont un seul est la vraie cause racine :
+
+1. **Cause racine — WebView2 n'avait jamais accordé le micro.** WebView2
+   conditionne `getUserMedia` (donc toute reconnaissance vocale) à sa
+   propre invite de permission, et — point décisif vérifié plutôt que
+   supposé — une fois cette invite refusée ou simplement ignorée, **la
+   page ne peut plus jamais la redemander** : le micro reste bloqué en
+   silence, définitivement, ce qui produit exactement le symptôme décrit.
+   Corrigé dans `lib.rs`, dans le bloc `with_webview` déjà en place pour
+   le correctif Ctrl+S : un `PermissionRequestedEventHandler` accorde
+   `COREWEBVIEW2_PERMISSION_KIND_MICROPHONE`, donc la demande n'atteint
+   plus jamais cette invite. **Scopé au micro uniquement** — tout autre
+   type de permission garde le traitement par défaut de WebView2, plutôt
+   qu'une approbation en bloc.
+2. **L'erreur était jetée à la poubelle** (`voice.ts`) :
+   `recognizer.onerror = () => onEnd()` perdait le code d'erreur, donc un
+   micro bloqué était rigoureusement indistinguable de "tu n'as rien
+   dit". La signature devient `onEnd(error?: string)`, et les codes sont
+   traduits en messages qui disent quoi faire.
+3. **Boucle de relance infinie** : `onerror` **et** `onend` se déclenchent
+   tous les deux pour une session ratée, donc `onEnd` était appelé deux
+   fois par échec — soit deux relances par échec dans la boucle mains
+   libres, c'est-à-dire une boucle serrée dès que la reconnaissance
+   échouait instantanément (ce que fait précisément un micro bloqué).
+   Garde `ended` dans `voice.ts`, plus un plafond de 3 échecs dans
+   `VoiceMode.tsx`.
+
+**Limite réelle, à ne pas masquer** : la recherche faite pour ce
+correctif montre des rapports constants (Electron, CEF) d'une
+reconnaissance vocale qui échoue en `network` dans un Chromium embarqué,
+parce qu'elle dépend d'un service Google dont la clé n'est présente que
+dans les navigateurs de marque. Le mainteneur Tauri affirme à l'inverse
+que sous Windows "both parts should just work". **Impossible de trancher
+depuis cet environnement** (aucun accès GUI) — d'où le message dédié pour
+le code `network`, qui distingue ce cas du micro bloqué au lieu de les
+confondre. Si l'utilisateur voit ce message précis, la cause est le
+service de reconnaissance, pas la permission, et il faudra alors une vraie
+alternative (enregistrement local + transcription par Gemini, non
+construite).
+
+**L'IA parle toujours, même sourde.** Demandé explicitement ("dans le
+vocal l'ia doit toujours me parler, mais compliqué quand elle m'entend
+pas"). Après 3 échecs consécutifs, `VoiceMode` passe en état "sourd" :
+l'IA **dit à voix haute** pourquoi elle n'entend plus (au lieu d'un orbe
+muet avec un texte d'erreur), et une saisie clavier de secours apparaît —
+seule l'entrée repasse au clavier, les réponses continuent d'être dites à
+voix haute. Sans ça, un micro cassé transformait le mode vocal en écran
+mort.
+
+**Bouton haut-parleur par message retiré** (`MessageBubble.tsx` + son CSS)
+— demandé explicitement. La lecture à voix haute existe toujours, mais
+uniquement là où elle a du sens : dans le mode conversation vocale.
+
+**Skills gérés depuis Control Me** (`ControlMeView.tsx`). Le panneau
+Skills ne faisait que cocher des skills existants ; toute la gestion
+vivait dans l'espace Skills séparé. Il gagne :
+- **"Créer un skill depuis cette conversation"** — la demande initiale
+  ("ca fais une discussion, ou l'ia pourra noter des chose de ce quelle a
+  appris"). Réutilise `extract_skill_from_transcript`, déjà en place
+  depuis la v0.6.0, avec un contenu existant vide : Gemini relit toute la
+  session et écrit ce qu'il en a appris. Le skill créé est **coché
+  automatiquement** pour la suite de la session.
+- **"Enrichir"** par skill — même appel, mais avec le contenu actuel du
+  skill passé en `existingContent`, donc une mise à jour plutôt qu'un
+  remplacement (c'est ce paramètre, déjà prévu, qui fait la différence).
+- **Renommer** (double-clic, même pattern que la Sidebar) et
+  **supprimer** (avec confirmation).
+- Cocher plusieurs skills fonctionnait déjà et reste inchangé : ils sont
+  tous préfixés à la même conversation, comme demandé.
+
+**Cinq nouvelles actions, disponibles dans les deux modes de perception**
+(`timed_action_tools()`, ajouté à `build_capture_tools()` **et**
+`build_windows_ui_tools()` — même orthogonalité que `remember_fact`) :
+- `hold_key(key, seconds)` — la demande explicite ("rester appuyer sur z
+  ou q"). `key_down`/`key_up` existaient déjà, mais **répartis sur deux
+  allers-retours Gemini** : la touche restait enfoncée exactement le
+  temps que le modèle mette à répondre, soit plusieurs secondes non
+  contrôlables — inutilisable dès que la durée compte, ce qui est
+  précisément le cas dans un jeu. Le maintien se fait maintenant en un
+  seul appel, avec la durée réellement demandée.
+- `press_key_repeat(key, times)` — jusqu'à 50 appuis en un appel au lieu
+  d'autant d'allers-retours.
+- `hold_mouse(x, y, seconds, button)` — appui long / tir continu.
+- `move_relative(dx, dy)` — déplacement relatif, **nécessaire** dans un
+  jeu qui capture le curseur : les coordonnées absolues n'y ont aucun
+  effet.
+- `scroll_at(x, y, direction)` — défiler dans une zone précise quand la
+  page en contient plusieurs.
+
+Aucune de ces cinq n'entre dans `NO_VISUAL_EFFECT_TOOLS` : elles
+modifient l'écran, donc l'attente et la ré-observation habituelles
+s'appliquent. `dispatch_action` n'a eu besoin d'aucune modification (tout
+nom non spécial tombe déjà dans `execute_action`).
+
+`cargo check` et `npx tsc --noEmit` à 0 erreur. **Aucune vérification GUI
+possible dans cet environnement** — à confirmer par l'utilisateur : que le
+micro entend enfin (et si non, quel message exact s'affiche — c'est lui
+qui distingue permission et service), la création/enrichissement de skill
+depuis une conversation, et `hold_key` en conditions réelles.
 
 ### Les 6 outils de l'agent
 1. `read_file` — lecture texte (limite 5 Mo), chemin absolu

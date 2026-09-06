@@ -465,6 +465,64 @@ fn execute_action(name: &str, args: &Value, width: u32, height: u32) -> Result<S
             enigo.key(key_from_name(key), Direction::Release).map_err(|e| e.to_string())?;
             Ok(format!("Touche relâchée : {key}"))
         }
+        // key_down + key_up in one call. Two separate calls each cost a full
+        // Gemini round trip, so "hold Z for two seconds" used to be several
+        // seconds of held key plus several seconds of model latency in the
+        // middle — impossible to time in a game, which is exactly where
+        // holding a key matters.
+        "hold_key" => {
+            let key = args["key"].as_str().unwrap_or("");
+            let secs = args["seconds"].as_f64().unwrap_or(1.0).clamp(0.0, 10.0);
+            let k = key_from_name(key);
+            enigo.key(k, Direction::Press).map_err(|e| e.to_string())?;
+            std::thread::sleep(Duration::from_secs_f64(secs));
+            enigo.key(k, Direction::Release).map_err(|e| e.to_string())?;
+            Ok(format!("Touche {key} maintenue {secs:.1}s"))
+        }
+        "press_key_repeat" => {
+            let key = args["key"].as_str().unwrap_or("");
+            let times = args["times"].as_u64().unwrap_or(1).clamp(1, 50);
+            let k = key_from_name(key);
+            for _ in 0..times {
+                enigo.key(k, Direction::Click).map_err(|e| e.to_string())?;
+                std::thread::sleep(Duration::from_millis(30));
+            }
+            Ok(format!("Touche {key} appuyée {times} fois"))
+        }
+        "hold_mouse" => {
+            let secs = args["seconds"].as_f64().unwrap_or(1.0).clamp(0.0, 10.0);
+            let button = match args["button"].as_str().unwrap_or("left") {
+                "right" => Button::Right,
+                "middle" => Button::Middle,
+                _ => Button::Left,
+            };
+            enigo.move_mouse(x, y, Coordinate::Abs).map_err(|e| e.to_string())?;
+            enigo.button(button, Direction::Press).map_err(|e| e.to_string())?;
+            std::thread::sleep(Duration::from_secs_f64(secs));
+            enigo.button(button, Direction::Release).map_err(|e| e.to_string())?;
+            Ok(format!("Bouton souris maintenu {secs:.1}s en ({x}, {y})"))
+        }
+        // Absolute positioning is meaningless in a game that captures the
+        // cursor and reads raw movement deltas instead.
+        "move_relative" => {
+            let dx = args["dx"].as_i64().unwrap_or(0) as i32;
+            let dy = args["dy"].as_i64().unwrap_or(0) as i32;
+            enigo.move_mouse(dx, dy, Coordinate::Rel).map_err(|e| e.to_string())?;
+            Ok(format!("Souris déplacée de ({dx}, {dy})"))
+        }
+        "scroll_at" => {
+            let magnitude = args["magnitude_in_pixels"].as_i64().unwrap_or(200) as i32;
+            let direction = args["direction"].as_str().unwrap_or("down");
+            let (length, axis) = match direction {
+                "up" => (-magnitude, Axis::Vertical),
+                "left" => (-magnitude, Axis::Horizontal),
+                "right" => (magnitude, Axis::Horizontal),
+                _ => (magnitude, Axis::Vertical),
+            };
+            enigo.move_mouse(x, y, Coordinate::Abs).map_err(|e| e.to_string())?;
+            enigo.scroll(length, axis).map_err(|e| e.to_string())?;
+            Ok(format!("Défilement {direction} en ({x}, {y})"))
+        }
         "hotkey" => {
             let keys: Vec<Key> = args["keys"]
                 .as_array()
@@ -524,16 +582,96 @@ fn read_ui_elements_tool(preferred: bool) -> Value {
     })
 }
 
+// Held/repeated actions with a duration, offered in BOTH perception modes.
+// computer_use has key_down/key_up but no "hold for N seconds" — and split
+// across two model round trips a hold lasts however long Gemini takes to
+// answer, which is useless for anything time-sensitive (games above all).
+// These close that gap without replacing computer_use.
+fn timed_action_tools() -> Vec<Value> {
+    vec![
+        json!({
+            "type": "function",
+            "name": "hold_key",
+            "description": "Maintient une touche enfoncée pendant une durée précise, puis la relâche automatiquement — par exemple avancer dans un jeu en gardant \"z\" enfoncé 2 secondes. À préférer à key_down/key_up dès que la durée compte : entre deux appels séparés il s'écoule plusieurs secondes de latence, impossible à doser. Mêmes noms de touche que press_key (lettre simple incluse).",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "key": { "type": "string", "description": "Touche à maintenir (ex. \"z\", \"q\", \"shift\", \"space\")" },
+                    "seconds": { "type": "number", "description": "Durée du maintien en secondes (max 10)" }
+                },
+                "required": ["key", "seconds"]
+            }
+        }),
+        json!({
+            "type": "function",
+            "name": "press_key_repeat",
+            "description": "Appuie plusieurs fois de suite sur la même touche (max 50), par exemple descendre de 5 crans dans une liste ou effacer plusieurs caractères. Évite d'enchaîner autant d'appels séparés.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "key": { "type": "string" },
+                    "times": { "type": "number", "description": "Nombre d'appuis (max 50)" }
+                },
+                "required": ["key", "times"]
+            }
+        }),
+        json!({
+            "type": "function",
+            "name": "hold_mouse",
+            "description": "Maintient un bouton de la souris enfoncé à une position donnée pendant une durée précise, puis le relâche — appui long, tir continu dans un jeu, sélection prolongée.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "x": { "type": "number", "description": "Position X normalisée 0-999" },
+                    "y": { "type": "number", "description": "Position Y normalisée 0-999" },
+                    "seconds": { "type": "number", "description": "Durée du maintien en secondes (max 10)" },
+                    "button": { "type": "string", "enum": ["left", "right", "middle"] }
+                },
+                "required": ["x", "y", "seconds"]
+            }
+        }),
+        json!({
+            "type": "function",
+            "name": "move_relative",
+            "description": "Déplace la souris d'un décalage en pixels par rapport à sa position actuelle, au lieu d'une position absolue. Nécessaire pour viser dans un jeu qui capture le curseur (les coordonnées absolues n'y ont aucun effet).",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "dx": { "type": "number", "description": "Décalage horizontal en pixels (négatif = vers la gauche)" },
+                    "dy": { "type": "number", "description": "Décalage vertical en pixels (négatif = vers le haut)" }
+                },
+                "required": ["dx", "dy"]
+            }
+        }),
+        json!({
+            "type": "function",
+            "name": "scroll_at",
+            "description": "Place la souris à une position normalisée 0-999 puis fait défiler à cet endroit précis — nécessaire quand la page contient plusieurs zones défilables (panneau latéral, liste interne) et que le défilement doit s'appliquer à l'une d'elles en particulier.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "x": { "type": "number" }, "y": { "type": "number" },
+                    "direction": { "type": "string", "enum": ["up", "down", "left", "right"] },
+                    "magnitude_in_pixels": { "type": "number" }
+                },
+                "required": ["x", "y", "direction"]
+            }
+        }),
+    ]
+}
+
 fn build_capture_tools() -> Value {
-    json!([
-        {
+    let mut tools = vec![
+        json!({
             "type": "computer_use",
             "environment": "desktop",
             "enable_prompt_injection_detection": true,
-        },
+        }),
         remember_fact_tool(),
         read_ui_elements_tool(false),
-    ])
+    ];
+    tools.extend(timed_action_tools());
+    Value::Array(tools)
 }
 
 // "windows_ui" mode drops computer_use entirely (it's fundamentally a
@@ -570,21 +708,21 @@ fn build_windows_ui_tools() -> Value {
         })
     };
 
-    json!([
+    let mut tools = vec![
         click_tool("click", "Clic gauche"),
         click_tool("double_click", "Double-clic gauche"),
         click_tool("triple_click", "Triple-clic gauche"),
         click_tool("middle_click", "Clic molette"),
         click_tool("right_click", "Clic droit"),
         click_tool("mouse_down", "Enfonce le bouton gauche de la souris (sans le relâcher)"),
-        {
+        json!({
             "type": "function",
             "name": "mouse_up",
             "description": "Relâche le bouton gauche de la souris précédemment enfoncé avec mouse_down.",
             "parameters": { "type": "object", "properties": {} }
-        },
+        }),
         click_tool("move", "Déplace la souris (sans cliquer)"),
-        {
+        json!({
             "type": "function",
             "name": "type",
             "description": "Tape du texte à l'endroit où se trouve le curseur/focus actuel — accents et emoji inclus, envoyés comme de vrais caractères Unicode (pas besoin de les décrire, les inclure directement dans le texte).",
@@ -596,8 +734,8 @@ fn build_windows_ui_tools() -> Value {
                 },
                 "required": ["text"]
             }
-        },
-        {
+        }),
+        json!({
             "type": "function",
             "name": "drag_and_drop",
             "description": "Glisse-dépose depuis une position normalisée 0-999 vers une autre.",
@@ -609,8 +747,8 @@ fn build_windows_ui_tools() -> Value {
                 },
                 "required": ["start_x", "start_y", "end_x", "end_y"]
             }
-        },
-        {
+        }),
+        json!({
             "type": "function",
             "name": "wait",
             "description": "Attend un court instant (ex. le temps qu'une interface charge) avant de continuer.",
@@ -619,8 +757,8 @@ fn build_windows_ui_tools() -> Value {
                 "properties": { "seconds": { "type": "number", "description": "Durée en secondes (max 10)" } },
                 "required": ["seconds"]
             }
-        },
-        {
+        }),
+        json!({
             "type": "function",
             "name": "press_key",
             "description": "Appuie puis relâche une touche du clavier. Noms reconnus : \"enter\", \"tab\", \"escape\", \"backspace\", \"delete\", \"space\", \"up\"/\"down\"/\"left\"/\"right\", \"home\", \"end\", \"pageup\", \"pagedown\", \"insert\", \"capslock\", \"control\"/\"ctrl\", \"alt\", \"shift\", \"meta\"/\"windows\"/\"win\" (touche logo Windows), \"f1\" à \"f12\", ou une lettre/chiffre simple.",
@@ -629,8 +767,8 @@ fn build_windows_ui_tools() -> Value {
                 "properties": { "key": { "type": "string" } },
                 "required": ["key"]
             }
-        },
-        {
+        }),
+        json!({
             "type": "function",
             "name": "key_down",
             "description": "Maintient une touche enfoncée (à relâcher plus tard avec key_up) — utile pour maintenir Shift/Ctrl/Alt/Windows pendant une autre action, ou pour un raccourci qui doit rester actif plusieurs secondes. Mêmes noms de touche que press_key.",
@@ -639,8 +777,8 @@ fn build_windows_ui_tools() -> Value {
                 "properties": { "key": { "type": "string" } },
                 "required": ["key"]
             }
-        },
-        {
+        }),
+        json!({
             "type": "function",
             "name": "key_up",
             "description": "Relâche une touche précédemment maintenue avec key_down. Mêmes noms de touche que press_key.",
@@ -649,8 +787,8 @@ fn build_windows_ui_tools() -> Value {
                 "properties": { "key": { "type": "string" } },
                 "required": ["key"]
             }
-        },
-        {
+        }),
+        json!({
             "type": "function",
             "name": "hotkey",
             "description": "Appuie sur une combinaison de touches simultanément (ex. [\"control\", \"s\"] pour Ctrl+S, [\"control\", \"shift\", \"s\"] pour Ctrl+Maj+S, [\"meta\"] seule pour ouvrir le menu Démarrer) puis les relâche dans l'ordre inverse. Mêmes noms de touche que press_key.",
@@ -659,8 +797,8 @@ fn build_windows_ui_tools() -> Value {
                 "properties": { "keys": { "type": "array", "items": { "type": "string" } } },
                 "required": ["keys"]
             }
-        },
-        {
+        }),
+        json!({
             "type": "function",
             "name": "scroll",
             "description": "Fait défiler la fenêtre au premier plan.",
@@ -672,10 +810,12 @@ fn build_windows_ui_tools() -> Value {
                 },
                 "required": ["direction"]
             }
-        },
+        }),
         remember_fact_tool(),
         read_ui_elements_tool(true),
-    ])
+    ];
+    tools.extend(timed_action_tools());
+    Value::Array(tools)
 }
 
 #[tauri::command]

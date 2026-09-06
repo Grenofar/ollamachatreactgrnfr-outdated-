@@ -9,8 +9,13 @@ import {
   deleteControlMeSession,
   listControlMeMemory,
   listControlMeSessions,
+  deleteSkill,
+  extractSkillFromTranscript,
   listSkills,
   loadControlMeSession,
+  loadSkill,
+  saveNewSkill,
+  updateSkill,
   onControlMeCancelled,
   onControlMeConfirmationRequired,
   onControlMeDone,
@@ -73,6 +78,11 @@ export default function ControlMeView({
   const [showSkills, setShowSkills] = useState(false);
   const [skills, setSkills] = useState<SkillMeta[] | null>(null);
   const [activeSkillIds, setActiveSkillIds] = useState<string[]>([]);
+  const [renamingSkillId, setRenamingSkillId] = useState<string | null>(null);
+  const [renameSkillText, setRenameSkillText] = useState("");
+  // One shared status line for the skill panel — a Gemini extraction takes
+  // several seconds, and without it the buttons look inert.
+  const [skillBusy, setSkillBusy] = useState<string | null>(null);
   const scrollRef = useRef<HTMLDivElement>(null);
 
   const apiKey = settings.gemini_api_key?.trim() ?? "";
@@ -231,6 +241,98 @@ export default function ControlMeView({
 
   function toggleActiveSkill(id: string) {
     setActiveSkillIds((prev) => (prev.includes(id) ? prev.filter((s) => s !== id) : [...prev, id]));
+  }
+
+  // The conversation itself IS the source material: Gemini re-reads the
+  // whole transcript and writes down what it learned, either as a brand new
+  // skill or folded into one that already exists (existingContent is what
+  // makes it an update rather than a replacement).
+  function transcriptText(): string {
+    return entries.map((e) => `${e.role}: ${e.content}`).join("\n");
+  }
+
+  async function handleCreateSkillFromSession() {
+    if (!apiKey) {
+      setSkillBusy("Ajoute d'abord ta clé API Gemini dans Réglages.");
+      return;
+    }
+    if (entries.length === 0) {
+      setSkillBusy("Cette session est vide — parle d'abord avec Control Me.");
+      return;
+    }
+    const name = window.prompt("Nom du nouveau skill :", "")?.trim();
+    if (!name) return;
+    const description = window.prompt("Description courte :", "")?.trim() ?? "";
+    setSkillBusy("L'IA relit la conversation et note ce qu'elle a appris…");
+    try {
+      const content = await extractSkillFromTranscript(apiKey, model, "", transcriptText());
+      const created = await saveNewSkill(name, description || name, content);
+      setSkills((prev) => [
+        {
+          id: created.id,
+          name: created.name,
+          description: created.description,
+          is_public: created.is_public,
+          created_at: created.created_at,
+        },
+        ...(prev ?? []),
+      ]);
+      setActiveSkillIds((prev) => [...prev, created.id]);
+      setSkillBusy(`Skill « ${created.name} » créé.`);
+    } catch (e) {
+      setSkillBusy(`Échec de la création : ${e}`);
+    }
+  }
+
+  async function handleEnrichSkill(id: string) {
+    if (!apiKey) {
+      setSkillBusy("Ajoute d'abord ta clé API Gemini dans Réglages.");
+      return;
+    }
+    if (entries.length === 0) {
+      setSkillBusy("Cette session est vide — rien à ajouter au skill.");
+      return;
+    }
+    setSkillBusy("L'IA ajoute ce qu'elle vient d'apprendre au skill…");
+    try {
+      const skill = await loadSkill(id);
+      const content = await extractSkillFromTranscript(apiKey, model, skill.content, transcriptText());
+      await updateSkill({ ...skill, content });
+      setSkillBusy(`Skill « ${skill.name} » mis à jour.`);
+    } catch (e) {
+      setSkillBusy(`Échec de la mise à jour : ${e}`);
+    }
+  }
+
+  async function handleDeleteSkill(id: string, name: string) {
+    if (!window.confirm(`Supprimer définitivement le skill « ${name} » ?`)) return;
+    try {
+      await deleteSkill(id);
+      setSkills((prev) => (prev ?? []).filter((s) => s.id !== id));
+      setActiveSkillIds((prev) => prev.filter((s) => s !== id));
+      setSkillBusy(null);
+    } catch (e) {
+      setSkillBusy(`Échec de la suppression : ${e}`);
+    }
+  }
+
+  function startRenameSkill(s: SkillMeta) {
+    setRenamingSkillId(s.id);
+    setRenameSkillText(s.name);
+  }
+
+  async function confirmRenameSkill() {
+    const id = renamingSkillId;
+    const name = renameSkillText.trim();
+    setRenamingSkillId(null);
+    if (!id || !name) return;
+    try {
+      const skill = await loadSkill(id);
+      await updateSkill({ ...skill, name });
+      setSkills((prev) => (prev ?? []).map((s) => (s.id === id ? { ...s, name } : s)));
+    } catch (e) {
+      setSkillBusy(`Échec du renommage : ${e}`);
+    }
   }
 
   function toggleHistory() {
@@ -421,31 +523,64 @@ export default function ControlMeView({
 
       {showSkills && (
         <div className="controlme-memory-panel">
+          <div className="controlme-skill-toolbar">
+            <span className="modal-hint">
+              Coche autant de skills que tu veux : ils sont tous fournis à l'IA dans la même conversation.
+            </span>
+            <button onClick={handleCreateSkillFromSession}>Créer un skill depuis cette conversation</button>
+          </div>
+          {skillBusy && <div className="controlme-skill-status">{skillBusy}</div>}
           {skills === null ? (
             <div className="controlme-memory-empty">Chargement…</div>
           ) : skills.length === 0 ? (
             <div className="controlme-memory-empty">
-              Aucun skill créé pour l'instant — gère-les depuis l'espace Extensions.
+              Aucun skill pour l'instant. Discute avec Control Me, puis clique « Créer un skill depuis cette
+              conversation » pour qu'elle note ce qu'elle a appris.
             </div>
           ) : (
-            <>
-              <div className="modal-hint">Skill(s) à fournir à l'IA pour cette session :</div>
-              <div className="controlme-memory-list">
-                {skills.map((s) => (
-                  <label key={s.id} className="controlme-skill-pick">
+            <div className="controlme-memory-list">
+              {skills.map((s) => (
+                <div key={s.id} className="controlme-skill-row">
+                  <input
+                    type="checkbox"
+                    checked={activeSkillIds.includes(s.id)}
+                    onChange={() => toggleActiveSkill(s.id)}
+                  />
+                  {renamingSkillId === s.id ? (
                     <input
-                      type="checkbox"
-                      checked={activeSkillIds.includes(s.id)}
-                      onChange={() => toggleActiveSkill(s.id)}
+                      autoFocus
+                      className="controlme-session-rename"
+                      value={renameSkillText}
+                      onChange={(e) => setRenameSkillText(e.target.value)}
+                      onKeyDown={(e) => {
+                        if (e.key === "Enter") confirmRenameSkill();
+                        else if (e.key === "Escape") setRenamingSkillId(null);
+                      }}
+                      onBlur={() => setRenamingSkillId(null)}
                     />
-                    <span>
+                  ) : (
+                    <span
+                      className="controlme-skill-name"
+                      onDoubleClick={() => startRenameSkill(s)}
+                      title="Double-clic pour renommer"
+                    >
                       <strong>{s.name}</strong>
                       <span className="modal-hint">{s.description}</span>
                     </span>
-                  </label>
-                ))}
-              </div>
-            </>
+                  )}
+                  <button
+                    className="controlme-skill-action"
+                    onClick={() => handleEnrichSkill(s.id)}
+                    title="Ajouter à ce skill ce que l'IA a appris dans cette conversation"
+                  >
+                    Enrichir
+                  </button>
+                  <button className="controlme-session-delete" onClick={() => handleDeleteSkill(s.id, s.name)}>
+                    ✕
+                  </button>
+                </div>
+              ))}
+            </div>
           )}
         </div>
       )}

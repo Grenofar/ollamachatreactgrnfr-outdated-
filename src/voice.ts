@@ -59,7 +59,12 @@ export interface VoiceRecognizer {
 // those to update its own "listening" UI state.
 export function startListening(
   onTranscript: (text: string, isFinal: boolean) => void,
-  onEnd: () => void,
+  // `error` carries the SpeechRecognition error code when the session ended
+  // because it failed rather than because the speaker stopped. The first
+  // version threw this away, which is why a microphone blocked by WebView2
+  // looked exactly like "you didn't say anything" — no message, no clue,
+  // just silence.
+  onEnd: (error?: string) => void,
   lang = "fr-FR",
   // false = single utterance: recognition stops on its own once the speaker
   // pauses, which is exactly the turn-taking signal a hands-free
@@ -84,8 +89,19 @@ export function startListening(
     const lastResult = event.results[event.results.length - 1];
     onTranscript(text, lastResult?.isFinal ?? false);
   };
-  recognizer.onerror = () => onEnd();
-  recognizer.onend = () => onEnd();
+  // onerror and onend BOTH fire for a failed session, so onEnd used to be
+  // called twice for a single failure — which, in the hands-free loop, meant
+  // two restarts per failure and a tight infinite loop whenever recognition
+  // failed instantly (a blocked microphone does exactly that). Guarded so
+  // the caller is told exactly once, with the reason when there was one.
+  let ended = false;
+  const finish = (error?: string) => {
+    if (ended) return;
+    ended = true;
+    onEnd(error);
+  };
+  recognizer.onerror = (event) => finish((event as Event & { error?: string }).error ?? "unknown");
+  recognizer.onend = () => finish();
 
   try {
     recognizer.start();

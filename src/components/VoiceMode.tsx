@@ -30,10 +30,17 @@ export default function VoiceMode({
   const [state, setState] = useState<VoiceState>("listening");
   const [caption, setCaption] = useState("");
   const [error, setError] = useState<string | null>(null);
+  // Fallback so a broken microphone degrades the conversation instead of
+  // ending it: the assistant keeps speaking its replies, only the input
+  // side falls back to typing.
+  const [typed, setTyped] = useState("");
+  const deaf = error !== null;
   const recognizerRef = useRef<VoiceRecognizer | null>(null);
   const transcriptRef = useRef("");
   const spokenRef = useRef<string | null>(null);
   const closedRef = useRef(false);
+  const failuresRef = useRef(0);
+  const deafRef = useRef(false);
 
   // Kept in a ref so the recognizer's onEnd closure (created once per
   // listening turn) always calls the current parent handler rather than the
@@ -43,8 +50,17 @@ export default function VoiceMode({
     onUserMessageRef.current = onUserMessage;
   });
 
+  function markDeaf(message: string) {
+    deafRef.current = true;
+    setError(message);
+    setState("listening");
+    // The whole point of voice mode is that the assistant talks to you, so
+    // it says why it went quiet instead of leaving a silent orb on screen.
+    speak(message, "fr-FR");
+  }
+
   function beginListening() {
-    if (closedRef.current) return;
+    if (closedRef.current || deafRef.current) return;
     transcriptRef.current = "";
     setCaption("");
     setState("listening");
@@ -53,18 +69,29 @@ export default function VoiceMode({
         transcriptRef.current = text;
         setCaption(text);
       },
-      () => {
+      (error) => {
         recognizerRef.current = null;
         const said = transcriptRef.current.trim();
         if (closedRef.current) return;
         if (said) {
+          failuresRef.current = 0;
           setState("thinking");
           onUserMessageRef.current(said);
-        } else {
-          // Nothing said before the pause — just listen again rather than
-          // handing an empty turn to the model.
-          beginListening();
+          return;
         }
+        // "no-speech" just means the pause was silent — that is normal and
+        // should not count as a failure. Anything else is a real problem
+        // (blocked microphone, no audio device, recognition service
+        // unreachable) and must be surfaced instead of silently retried
+        // forever, which is what the first version did.
+        if (error && error !== "no-speech" && error !== "aborted") {
+          failuresRef.current += 1;
+          if (failuresRef.current >= 3) {
+            markDeaf(describeVoiceError(error));
+            return;
+          }
+        }
+        beginListening();
       },
       "fr-FR",
       // Single-utterance: recognition ending IS the "your turn is over"
@@ -72,7 +99,7 @@ export default function VoiceMode({
       false,
     );
     if (!recognizer) {
-      setError("La reconnaissance vocale n'a pas pu démarrer.");
+      markDeaf("La reconnaissance vocale n'a pas pu démarrer. Écris-moi et je continue à te répondre à voix haute.");
       return;
     }
     recognizerRef.current = recognizer;
@@ -81,7 +108,7 @@ export default function VoiceMode({
   useEffect(() => {
     primeVoices();
     if (!isSpeechRecognitionSupported()) {
-      setError("La reconnaissance vocale n'est pas disponible sur cette machine.");
+      markDeaf("La reconnaissance vocale n'est pas disponible sur cette machine. Écris-moi et je continue à te répondre à voix haute.");
       return;
     }
     beginListening();
@@ -101,7 +128,12 @@ export default function VoiceMode({
       setState("speaking");
       setCaption(reply);
       speak(stripForSpeech(reply), "fr-FR", () => {
-        if (!closedRef.current) beginListening();
+        if (closedRef.current) return;
+        // Deaf: the mic is out, so there is no listening turn to hand back —
+        // just settle the orb so the typed-input fallback reads as ready
+        // rather than leaving it stuck on "parle…".
+        if (deafRef.current) setState("listening");
+        else beginListening();
       });
       return;
     }
@@ -109,7 +141,10 @@ export default function VoiceMode({
     // already in flight, or it failed). Without this the orb would sit on
     // "Réflexion…" forever with the microphone off, and the conversation
     // would be silently dead.
-    if (state === "thinking") beginListening();
+    if (state === "thinking") {
+      if (deafRef.current) setState("listening");
+      else beginListening();
+    }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [reply, busy]);
 
@@ -149,6 +184,31 @@ export default function VoiceMode({
       <div className="voice-mode-state">{error ?? stateLabel}</div>
       <div className="voice-mode-caption">{caption}</div>
 
+      {deaf && (
+        <form
+          className="voice-mode-fallback"
+          onSubmit={(e) => {
+            e.preventDefault();
+            const said = typed.trim();
+            if (!said || busy) return;
+            setTyped("");
+            setCaption(said);
+            setState("thinking");
+            onUserMessageRef.current(said);
+          }}
+        >
+          <input
+            autoFocus
+            value={typed}
+            onChange={(e) => setTyped(e.target.value)}
+            placeholder="Écris ici — la réponse sera dite à voix haute"
+          />
+          <button type="submit" disabled={busy || !typed.trim()}>
+            Envoyer
+          </button>
+        </form>
+      )}
+
       {state === "speaking" && (
         <button
           className="voice-mode-skip"
@@ -162,6 +222,23 @@ export default function VoiceMode({
       )}
     </div>
   );
+}
+
+// Turns a SpeechRecognition error code into something that tells the user
+// what to actually do — the codes themselves ("not-allowed") never reach
+// anyone useful otherwise.
+function describeVoiceError(code: string): string {
+  switch (code) {
+    case "not-allowed":
+    case "service-not-allowed":
+      return "Le micro est bloqué pour l'app. Ferme-la complètement et rouvre-la : cette version demande l'autorisation automatiquement.";
+    case "audio-capture":
+      return "Aucun micro détecté. Vérifie qu'un micro est branché et sélectionné dans les réglages son de Windows.";
+    case "network":
+      return "La reconnaissance vocale n'a pas pu joindre son service (elle passe par le réseau). Vérifie ta connexion.";
+    default:
+      return `La reconnaissance vocale s'est arrêtée (${code}).`;
+  }
 }
 
 // Markdown read aloud literally ("astérisque astérisque") is unbearable in

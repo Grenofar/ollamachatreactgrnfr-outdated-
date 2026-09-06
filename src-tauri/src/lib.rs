@@ -202,7 +202,11 @@ pub fn run() {
                 // shortcuts work at all.
                 #[cfg(windows)]
                 {
-                    use webview2_com::Microsoft::Web::WebView2::Win32::ICoreWebView2Settings3;
+                    use webview2_com::Microsoft::Web::WebView2::Win32::{
+                        ICoreWebView2Settings3, COREWEBVIEW2_PERMISSION_KIND_MICROPHONE,
+                        COREWEBVIEW2_PERMISSION_STATE_ALLOW,
+                    };
+                    use webview2_com::PermissionRequestedEventHandler;
                     use windows::core::Interface;
                     let _ = window.with_webview(|webview| unsafe {
                         if let Ok(core) = webview.controller().CoreWebView2() {
@@ -211,6 +215,34 @@ pub fn run() {
                                     let _ = settings3.SetAreBrowserAcceleratorKeysEnabled(false);
                                 }
                             }
+
+                            // Voice input (the mic button and voice mode) was
+                            // reported as simply never hearing anything. Root
+                            // cause is here, not in the JS: WebView2 gates
+                            // microphone access behind its own permission
+                            // prompt, and once that prompt has been dismissed
+                            // or denied there is no way for the page to ask
+                            // again — the mic stays silently blocked forever,
+                            // which is exactly the "even when I enable the mic
+                            // it doesn't hear me" symptom. Granting it here
+                            // means the request never reaches that prompt at
+                            // all. Scoped deliberately to the microphone: any
+                            // other permission kind is left to WebView2's
+                            // default handling rather than blanket-approved.
+                            let mut token = 0i64;
+                            let _ = core.add_PermissionRequested(
+                                &PermissionRequestedEventHandler::create(Box::new(|_, args| {
+                                    if let Some(args) = args {
+                                        let mut kind = Default::default();
+                                        args.PermissionKind(&mut kind)?;
+                                        if kind == COREWEBVIEW2_PERMISSION_KIND_MICROPHONE {
+                                            args.SetState(COREWEBVIEW2_PERMISSION_STATE_ALLOW)?;
+                                        }
+                                    }
+                                    Ok(())
+                                })),
+                                &mut token,
+                            );
                         }
                     });
                 }
