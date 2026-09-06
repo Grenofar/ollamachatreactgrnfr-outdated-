@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import AudioSettings from "./AudioSettings";
+import SessionSkills from "./SessionSkills";
 import { getVersion } from "@tauri-apps/api/app";
 import type { Update } from "@tauri-apps/plugin-updater";
 import { clearRemoteCode, deleteModel, generateRemoteCode } from "../api";
@@ -376,6 +377,11 @@ export default function SettingsView({
                       )}
                       {" "}Enregistre pour appliquer.
                     </div>
+
+                    <SessionSkills
+                      geminiApiKey={form.gemini_api_key ?? ""}
+                      geminiModel={form.gemini_model ?? ""}
+                    />
                   </div>
                 )}
               </div>

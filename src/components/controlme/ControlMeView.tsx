@@ -86,7 +86,7 @@ export default function ControlMeView({
   // Skill currently being recorded into. Armed from the Skills panel — valid
   // before a single word has been said, which is the point: the model writes
   // into it as it goes rather than only at the end.
-  const [recording, setRecording] = useState<{ id: string; name: string; wasNew: boolean; snapshot: string } | null>(
+  const [recording, setRecording] = useState<{ id: string; name: string; wasNew: boolean; snapshot: string; teaching: boolean } | null>(
     null,
   );
   const scrollRef = useRef<HTMLDivElement>(null);
@@ -112,9 +112,17 @@ export default function ControlMeView({
     if (entries.length === 0) return;
     const firstUser = entries.find((e) => e.role === "user");
     const title = customTitle ?? (firstUser ? firstUser.content.slice(0, 40) : NEW_SESSION_TITLE);
-    saveControlMeSession({ id: sessionId, title, created_at: sessionCreatedAt, entries }).catch(() => {});
+    saveControlMeSession({
+      id: sessionId,
+      title,
+      created_at: sessionCreatedAt,
+      entries,
+      // Recorded so the settings panel can later show which skills a
+      // conversation used, and offer to improve exactly those.
+      skill_ids: Array.from(new Set([...activeSkillIds, ...(recording ? [recording.id] : [])])),
+    }).catch(() => {});
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [entries, customTitle]);
+  }, [entries, customTitle, activeSkillIds, recording]);
 
   // Debounced history search — mirrors Sidebar.tsx's conversation search:
   // an empty query loads the plain list immediately, a typed query waits
@@ -190,7 +198,7 @@ export default function ControlMeView({
     if (!text || !apiKey || running) return;
     setEntries((prev) => [...prev, { role: "user", content: text }]);
     setRunning(true);
-    runControlMe(apiKey, model, text, activeSkillIds, recording?.id ?? null).catch((e) => {
+    runControlMe(apiKey, model, text, activeSkillIds, recording?.id ?? null, recording?.teaching ?? false).catch((e) => {
       setEntries((prev) => [...prev, { role: "system", content: `Erreur : ${String(e)}` }]);
       setRunning(false);
     });
@@ -260,7 +268,7 @@ export default function ControlMeView({
   // Arming is deliberately allowed before the conversation starts: the model
   // then writes into the skill as it learns, rather than the user having to
   // remember to extract everything at the end.
-  async function handleStartRecording() {
+  async function handleStartRecording(teaching: boolean) {
     const name = window.prompt("Nom du skill à enregistrer pendant cette conversation :", "")?.trim();
     if (!name) return;
     try {
@@ -279,7 +287,7 @@ export default function ControlMeView({
         },
         ...(prev ?? []),
       ]);
-      setRecording({ id: created.id, name: created.name, wasNew: true, snapshot: "" });
+      setRecording({ id: created.id, name: created.name, wasNew: true, snapshot: "", teaching });
       setSkillBusy(null);
     } catch (e) {
       setSkillBusy(`Échec : ${e}`);
@@ -291,7 +299,7 @@ export default function ControlMeView({
       const skill = await loadSkill(meta.id);
       // Snapshot so "Annuler" can put an existing skill back exactly as it
       // was, instead of leaving half-written notes behind.
-      setRecording({ id: skill.id, name: skill.name, wasNew: false, snapshot: skill.content });
+      setRecording({ id: skill.id, name: skill.name, wasNew: false, snapshot: skill.content, teaching: false });
       setSkillBusy(null);
     } catch (e) {
       setSkillBusy(`Échec : ${e}`);
@@ -534,7 +542,16 @@ export default function ControlMeView({
         <div className="controlme-recording">
           <span className="controlme-recording-dot" />
           <span className="controlme-recording-text">
-            Enregistrement dans <strong>{recording.name}</strong> — l'IA y note ce qu'elle juge important.
+            {recording.teaching ? (
+              <>
+                Apprentissage de <strong>{recording.name}</strong> — explique-lui la marche à suivre, elle
+                pose des questions et note chaque étape. Elle n'agit pas sur le PC sauf si tu le demandes.
+              </>
+            ) : (
+              <>
+                Enregistrement dans <strong>{recording.name}</strong> — l'IA y note ce qu'elle juge important.
+              </>
+            )}
           </span>
           <button onClick={handleStopRecording}>Arrêter</button>
           <button className="controlme-recording-cancel" onClick={handleCancelRecording}>
@@ -622,7 +639,10 @@ export default function ControlMeView({
             <span className="modal-hint">
               Coche autant de skills que tu veux : ils sont tous fournis à l'IA dans la même conversation.
             </span>
-            <button onClick={handleStartRecording} disabled={recording !== null}>
+            <button onClick={() => void handleStartRecording(true)} disabled={recording !== null}>
+              Apprendre un nouveau skill
+            </button>
+            <button onClick={() => void handleStartRecording(false)} disabled={recording !== null}>
               Enregistrer dans un nouveau skill
             </button>
             <button onClick={handleCreateSkillFromSession}>Créer un skill depuis cette conversation</button>

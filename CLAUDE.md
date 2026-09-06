@@ -284,6 +284,7 @@ pas devenir obsolète.
   hâtive rectifiée dans la même session, documentation comprise. Voir
   "Enregistrement dans un skill (v0.9.2)" et "Troisieme passe sur Codex,
   mesuree (v0.9.2)" dans Architecture.
+- **[FAIT] v1.0.0 : mode apprentissage, skills par conversation, Codex connaît son dossier, choix du micro** — (1) **« Apprendre un nouveau skill »** : une séance où la personne *explique* une procédure (aller sur un site, s'en servir, enchaîner des étapes) et où l'IA écoute, pose des questions et consigne chaque étape au lieu d'exécuter — distinct de l'enregistrement de la v0.9.2, qui notait ce qu'elle faisait pendant qu'elle agissait ; (2) Réglages > Extensions > Control Me liste les **skills utilisés par conversation**, avec un bouton pour enrichir un skill à partir de la conversation qui l'a exercé ; (3) Codex reçoit enfin le dossier ouvert ; (4) choix du micro dans Réglages > Audio ; (5) cinq correctifs d'audit. Voir "Mode apprentissage (v1.0.0)" dans Architecture.
 
 ## Architecture
 
@@ -3331,6 +3332,70 @@ le présenter comme la cause** du problème rapporté.
    (`{"path": {"type":"string","value":"..."}}`) arrivait à l'outil avec un
    objet là où une chaîne était attendue, et l'appel échouait. Le dépliage
    s'applique maintenant aux deux chemins.
+
+### Mode apprentissage et skills par conversation (v1.0.0)
+
+Demande explicite : « en parlant avec l'IA, après avoir cliqué sur créer
+un skill, il lui apprend à faire des choses, genre je lui apprends à aller
+sur un site, comment surfer ». La v0.9.2 avait construit l'**enregistrement**
+(l'IA agit et note ce qu'elle juge important) ; ce qui est demandé ici est
+une **leçon** : la personne explique, l'IA apprend.
+
+- Nouveau paramètre `teaching: bool` sur `run_control_me`/`run_control_me_core`.
+  Quand il est vrai, un brief est préfixé à l'instruction : n'agis pas sur
+  l'ordinateur de toi-même, reformule pour confirmer, pose une question quand
+  un détail manque, et appelle `add_to_skill` au fil de l'eau avec des notes
+  autonomes (quoi, où, dans quel ordre, comment savoir que c'est réussi).
+  **Sans ce brief le modèle traite chaque phrase comme une tâche et se met
+  à cliquer**, ce qui est l'exact contraire de se faire enseigner.
+- Les outils d'action restent déclarés plutôt que retirés : le brief demande
+  la retenue, mais on peut lui dire « essaie maintenant » pour vérifier ce
+  qu'elle a compris, ce qui serait impossible si les outils avaient disparu.
+- Les sessions distantes ne peuvent pas enseigner (`remote.rs` passe
+  `false`) : armer un apprentissage est un geste local délibéré.
+
+**Skills utilisés par conversation** (`SessionSkills.tsx`, dans Réglages >
+Extensions > Control Me) : `ControlMeSession` gagne `skill_ids`
+(`#[serde(default)]`, donc les sessions enregistrées avant ce champ se
+chargent toujours), porté aussi par `ControlMeSessionMeta` pour que le
+panneau n'ait pas à charger chaque session entière. Chaque conversation
+affiche les skills qu'elle a utilisés, avec « Améliorer » qui relit cette
+conversation et enrichit ce skill précis — `extract_skill_from_transcript`
+avec le contenu actuel en `existingContent`, donc une mise à jour et non
+une réécriture. L'idée : un skill s'améliore à partir des sessions qui
+l'ont réellement exercé, sans avoir à se rappeler laquelle a servi à quoi.
+
+### Codex connaît son dossier (v1.0.0)
+
+Le prompt système de Codex ne mentionnait **nulle part** le dossier ouvert :
+le modèle devait deviner un chemin absolu à chaque `read_file`/`list_dir`,
+donc il ne pouvait pas répondre à « liste le dossier courant ». Nouveau
+`contextNote` sur `useAgentLoop`, réinjecté comme message système **quand
+il change** — nécessaire parce que le prompt système n'est envoyé qu'au
+premier message, donc ouvrir un autre dossier en cours de conversation
+restait invisible pour le modèle.
+
+### Correctifs d'audit (v1.0.0)
+
+Passe demandée explicitement. Cinq défauts réels, pas du style :
+
+1. **`read_ui_elements` appelé explicitement par Gemini restait synchrone**
+   et bloquait un thread du runtime jusqu'à ~0,9 s. Le correctif v0.9.0
+   n'avait couvert que le chemin d'observation ; `dispatch_action` devient
+   async et passe par `read_ui_off_runtime`.
+2. **Deux fuites de micro** : quitter Réglages > Audio ou fermer le mode
+   vocal pendant un enregistrement laissait le périphérique ouvert, sans
+   moyen de l'arrêter (indicateur Windows allumé en permanence).
+3. **Bug introduit une heure plus tôt dans la même session** : un échec
+   passager du bouton « appuyer pour parler » appelait `setError`, dont
+   dérive l'état « sourd » — l'interface restait donc verrouillée en mode
+   dégradé alors que la reconnaissance fonctionnait. État séparé.
+4. **Changer de micro pendant le test** ne redémarrait pas la mesure : la
+   barre continuait d'afficher l'ancien appareil, ce qui est pire que rien.
+5. **`partial_cmp().unwrap()` dans quatre comparateurs de tri** : pas
+   atteignable aujourd'hui (JSON ne porte pas NaN), mais une panique dans
+   une commande Tauri coûte cher ici — la v0.5.8 avait tué l'app entière
+   pour cette raison.
 
 ### Les 6 outils de l'agent
 1. `read_file` — lecture texte (limite 5 Mo), chemin absolu

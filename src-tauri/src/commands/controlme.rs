@@ -881,6 +881,7 @@ pub async fn run_control_me(
     instruction: String,
     active_skill_ids: Vec<String>,
     recording_skill_id: Option<String>,
+    teaching: bool,
 ) -> Result<(), String> {
     run_control_me_core(
         app,
@@ -891,6 +892,7 @@ pub async fn run_control_me(
         instruction,
         active_skill_ids,
         recording_skill_id,
+        teaching,
         false,
     )
     .await
@@ -917,6 +919,10 @@ pub async fn run_control_me_core(
     // Control Me UI — gates the add_to_skill tool and is the only target it
     // can ever write to.
     recording_skill_id: Option<String>,
+    // True when the user armed the skill from "Apprendre" rather than
+    // "Enregistrer": the session is then a lesson, not a task — see the
+    // brief added to the instruction below.
+    teaching: bool,
     // Remote-triggered instructions (remote.rs) force windows_ui regardless
     // of the local toggle: the site already gets its own live screenshot
     // feed independently (broadcast_frame_if_viewer, unrelated to what
@@ -1011,6 +1017,23 @@ pub async fn run_control_me_core(
                 format!("Compétence(s) fournie(s) pour cette session :\n{skills_text}\n\n{instruction_with_context}");
         }
     }
+    // Teaching session: the user is explaining a procedure, not asking for
+    // it to be carried out. Without this the model treats every sentence as
+    // a task and starts clicking, which is the opposite of being taught.
+    if teaching {
+        instruction_with_context = format!(
+            "CONTEXTE : ceci est une séance d'apprentissage. La personne t'apprend à faire quelque \n             chose (utiliser un site, un logiciel, enchaîner des étapes...). Ton rôle n'est PAS \n             d'exécuter la tâche maintenant, mais de l'apprendre pour savoir la refaire seule plus \n             tard.
+
+\n             Comment te comporter :
+\n             - N'agis pas sur l'ordinateur de toi-même. N'utilise la souris ou le clavier que si on \n             te demande explicitement d'essayer ou de vérifier quelque chose.
+\n             - Écoute, reformule brièvement pour confirmer que tu as compris, et pose une question \n             quand un détail manque (quel bouton exactement, que faire si une fenêtre apparaît, \n             comment savoir que ça a marché).
+\n             - Appelle add_to_skill au fur et à mesure, une note par étape ou par règle apprise. \n             Écris chaque note comme une consigne autonome, utilisable sans cette conversation : \n             ce qu'il faut faire, où, dans quel ordre, et comment reconnaître que c'est réussi. \n             N'attends pas la fin pour noter.
+\n             - Ne note pas ce que tu supposes : seulement ce qui t'a été dit ou montré.
+
+\n             Ce que la personne t'apprend : {instruction_with_context}"
+        );
+    }
+
     // Batching hint, "predefined" action mode + windows_ui perception mode
     // only: computer_use is Google's own protocol, not something a prompt
     // hint can reliably steer towards returning several actions per turn,

@@ -19,6 +19,10 @@ pub struct ControlMeSession {
     pub title: String,
     pub created_at: f64,
     pub entries: Vec<ControlMeSessionEntry>,
+    // Which skills were active for this session. serde default so the
+    // sessions saved before this field existed still load.
+    #[serde(default)]
+    pub skill_ids: Vec<String>,
 }
 
 #[derive(Serialize, Clone)]
@@ -26,6 +30,9 @@ pub struct ControlMeSessionMeta {
     pub id: String,
     pub title: String,
     pub created_at: f64,
+    // Carried in the listing so the settings panel can show which skills a
+    // past conversation used without loading every session in full.
+    pub skill_ids: Vec<String>,
 }
 
 fn read_all_sessions(dir: &Path) -> Result<Vec<ControlMeSession>, String> {
@@ -52,7 +59,7 @@ pub fn list_control_me_sessions(app: AppHandle) -> Result<Vec<ControlMeSessionMe
     let dir = control_me_sessions_dir(&app)?;
     let mut items: Vec<ControlMeSessionMeta> = read_all_sessions(&dir)?
         .iter()
-        .map(|s| ControlMeSessionMeta { id: s.id.clone(), title: s.title.clone(), created_at: s.created_at })
+        .map(|s| ControlMeSessionMeta { id: s.id.clone(), title: s.title.clone(), created_at: s.created_at, skill_ids: s.skill_ids.clone() })
         .collect();
     items.sort_by(|a, b| b.created_at.partial_cmp(&a.created_at).unwrap_or(std::cmp::Ordering::Equal));
     Ok(items)
@@ -71,7 +78,7 @@ pub fn search_control_me_sessions(app: AppHandle, query: String) -> Result<Vec<C
         .filter(|s| {
             s.title.to_lowercase().contains(&q) || s.entries.iter().any(|e| e.content.to_lowercase().contains(&q))
         })
-        .map(|s| ControlMeSessionMeta { id: s.id.clone(), title: s.title.clone(), created_at: s.created_at })
+        .map(|s| ControlMeSessionMeta { id: s.id.clone(), title: s.title.clone(), created_at: s.created_at, skill_ids: s.skill_ids.clone() })
         .collect();
     items.sort_by(|a, b| b.created_at.partial_cmp(&a.created_at).unwrap_or(std::cmp::Ordering::Equal));
     Ok(items)

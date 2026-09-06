@@ -1836,6 +1836,23 @@ body::before {
   min-width: 0;
 }
 
+/* Skills utilises par conversation, dans les reglages Control Me. */
+.session-skill-list { display: flex; flex-direction: column; gap: 8px; margin-bottom: 12px; }
+.session-skill-row { padding: 8px 11px; background: #232323; border-radius: 8px; }
+.session-skill-title { font-size: 13px; color: #dddddd; margin-bottom: 6px; }
+.session-skill-tags { display: flex; flex-wrap: wrap; gap: 6px; }
+.session-skill-tag {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 3px 6px 3px 10px;
+  background: #2c2c2c;
+  border-radius: 999px;
+  font-size: 12px;
+  color: #b9b9b9;
+}
+.session-skill-improve { font-size: 11px; padding: 2px 8px; border-radius: 999px; }
+
 /* Panneau Audio des Reglages : liste d'appareils + niveau en direct. */
 .audio-status {
   padding: 7px 11px;

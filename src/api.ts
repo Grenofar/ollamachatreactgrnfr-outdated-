@@ -155,7 +155,10 @@ export const runControlMe = (
   // Set while the user is recording this conversation into a skill: it gates
   // the add_to_skill tool and is the only skill the model can write to.
   recordingSkillId: string | null,
-) => invoke<void>("run_control_me", { apiKey, model, instruction, activeSkillIds, recordingSkillId });
+  /** Lesson rather than task: the model listens and writes the procedure
+   * down instead of carrying it out. */
+  teaching = false,
+) => invoke<void>("run_control_me", { apiKey, model, instruction, activeSkillIds, recordingSkillId, teaching });
 
 export const cancelControlMe = () => invoke<void>("cancel_control_me");
 

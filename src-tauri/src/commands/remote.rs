@@ -647,6 +647,7 @@ fn spawn_remote_instruction(
             // deliberate local gesture, and nobody is at the machine to stop
             // or cancel it.
             None,
+            false,
             true,
         )
         .await;

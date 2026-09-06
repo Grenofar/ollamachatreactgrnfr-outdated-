@@ -124,12 +124,16 @@ export interface ControlMeSession {
   title: string;
   created_at: number;
   entries: ControlMeSessionEntry[];
+  /** Skills that were active for this session. */
+  skill_ids?: string[];
 }
 
 export interface ControlMeSessionMeta {
   id: string;
   title: string;
   created_at: number;
+  /** Skills that were active for this session. */
+  skill_ids?: string[];
 }
 
 export interface Skill {
