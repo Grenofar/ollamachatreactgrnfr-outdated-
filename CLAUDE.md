@@ -4702,6 +4702,16 @@ l'utilisateur confirme qu'elle est bien dans `.env` local.
   compare les alternatives d'un même bras via des immédiats répartis sur
   plusieurs registres. Ne jamais conclure à l'absence sur cette base.
 
+- **2026-09-06** — **v1.0.2** publiée et vérifiée via la clé **anon**
+  (fichier : 200 OK, 7 117 888 octets ; `latest_release_manifest` : 1.0.2,
+  signature de 432 octets présente). Les deux migrations ont été exécutées
+  par l'utilisateur et **vérifiées empiriquement**, pas seulement
+  annoncées : `owner_id` est bien exposée, et surtout une insertion tentée
+  avec la clé anon est **refusée** (`42501`, violation RLS) — c'est cette
+  seconde vérification qui prouve que le trou est fermé, la première ne
+  montrant que la présence de la colonne. Table vide au moment de la
+  migration, donc aucun skill ancien n'a été verrouillé au passage.
+
 ## Prochaines étapes (dans l'ordre du fichier de passation d'origine)
 
 Voir aussi `NEXT_STEPS_FOR_CLAUDE.md` (note de passation d'une session
