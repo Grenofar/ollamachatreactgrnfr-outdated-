@@ -269,6 +269,21 @@ pas devenir obsolète.
   `hold_mouse`, `press_key_repeat`, `move_relative`, `scroll_at`),
   disponibles dans les **deux** modes de perception. Voir "Micro, skills
   dans Control Me et actions à durée (v0.9.1)" dans Architecture.
+- **[FAIT] v0.9.2 : enregistrement dans un skill pendant la conversation,
+  panneau Audio, et troisième passe mesurée sur Codex** — (1) on arme un
+  skill depuis Control Me, **y compris avant d'avoir parlé**, et l'IA y
+  écrit ce qu'elle juge important au fil de la conversation (outil
+  `add_to_skill`), avec Arrêter (conserve) et Annuler (supprime ou
+  restaure) ; (2) nouveau panneau Réglages > Audio : autorisation micro,
+  appareils d'entrée, **niveau sonore en direct**, test de reconnaissance
+  et test de voix — c'est le diagnostic qui manquait pour distinguer les
+  trois causes possibles de "le micro ne m'entend pas" ; (3) Codex sondé
+  contre le vrai Ollama pour la troisième fois, trois défauts réels
+  corrigés (JSON brut affiché comme un message, formes d'appel manquées,
+  dépliage absent sur les appels structurés) — et une conclusion trop
+  hâtive rectifiée dans la même session, documentation comprise. Voir
+  "Enregistrement dans un skill (v0.9.2)" et "Troisieme passe sur Codex,
+  mesuree (v0.9.2)" dans Architecture.
 
 ## Architecture
 
@@ -3171,6 +3186,53 @@ possible dans cet environnement** — à confirmer par l'utilisateur : que le
 micro entend enfin (et si non, quel message exact s'affiche — c'est lui
 qui distingue permission et service), la création/enrichissement de skill
 depuis une conversation, et `hold_key` en conditions réelles.
+
+### Enregistrement dans un skill pendant la conversation (v0.9.2)
+
+Demande explicite, qui corrige une lecture trop étroite de la v0.9.1 :
+"dans une conversation on peut créer un skill, et l'annuler ou arrêter de
+sauvegarder, même avant de parler, l'IA Control Me va y rajouter dedans ce
+qu'il juge important". La v0.9.1 avait construit une **extraction à la
+fin** (`extract_skill_from_transcript` rejoué sur une session terminée) ;
+ce qui était demandé est un **enregistrement pendant**.
+
+- **Armer** : bouton "Enregistrer dans un nouveau skill" (ou "Enregistrer
+  ici" sur un skill existant) dans le panneau Skills de Control Me.
+  Utilisable **avant le premier message** — c'est le point : le modèle
+  écrit au fur et à mesure au lieu qu'il faille penser à tout extraire
+  après coup.
+- **Outil `add_to_skill`** (`controlme.rs`), déclaré **uniquement** quand
+  un skill est armé, dans les deux modes de perception. Il ne prend qu'une
+  `note` — aucune cible — donc le modèle ne peut écrire que dans le skill
+  choisi par l'utilisateur. Ajouté à `NO_VISUAL_EFFECT_TOOLS` (n'agit pas
+  sur l'écran, donc ni attente ni nouvelle observation).
+  `skills::append_to_skill` écrit une ligne par note, plafonnée à 40 Ko
+  pour qu'une session longue ou qui boucle ne fasse pas gonfler le fichier
+  sans fin ; l'id passe par `skill_path`, qui est ce qui rejette une
+  tentative de traversal.
+- **Arrêter / Annuler** : Arrêter conserve tout. Annuler supprime le skill
+  s'il venait d'être créé, sinon restaure le contenu capturé au moment de
+  l'armement (`snapshot`) — sans ça, annuler sur un skill existant aurait
+  laissé des notes à moitié écrites.
+- **Sessions distantes exclues** (`remote.rs` passe `None`) : armer est un
+  geste local délibéré, et personne n'est devant la machine pour arrêter.
+
+### Panneau Audio des Réglages (v0.9.2)
+
+Demandé en même temps que "j'ai pas l'impression qu'il m'entend". Autant un
+diagnostic qu'une page de réglages : "le micro ne m'entend pas" a **trois
+causes qui se ressemblent exactement** de l'extérieur et appellent des
+correctifs différents — pas de périphérique / permission jamais accordée /
+service de transcription injoignable depuis un webview embarqué.
+
+Le **niveau sonore en direct** (getUserMedia + AnalyserNode) tranche : si
+la barre bouge, le son atteint réellement l'app, donc tout échec ensuite
+vient du service de reconnaissance et non du micro. S'y ajoutent l'état de
+la permission (Permissions API), la liste des entrées
+(`enumerateDevices` — les libellés restent masqués tant que la permission
+n'est pas accordée, d'oû le rafraîchissement après le premier
+getUserMedia), un test de reconnaissance qui affiche le **code d'erreur
+exact**, et un test de voix de sortie.
 
 ### Troisieme passe sur Codex, mesuree (v0.9.2)
 
