@@ -4554,6 +4554,17 @@ l'utilisateur confirme qu'elle est bien dans `.env` local.
   `llama-server` en retient 2 de plus après un test Ollama (le décharger
   proprement via `keep_alive: 0` plutôt que tuer le process).
 
+- **2026-09-06** — **v1.0.0** publiée et vérifiée via la clé **anon**
+  (fichier : 200 OK, 7 101 530 octets ; `latest_release_manifest` : 1.0.0,
+  URL correcte, signature de 432 octets dans `platforms["windows-x86_64"]`).
+  Contenu : mode apprentissage, skills utilisés par conversation avec
+  bouton d'amélioration, dossier ouvert transmis à Codex, choix du micro,
+  et cinq correctifs d'audit — voir les sections dédiées dans Architecture.
+  Installeur vérifié **frais** avant publication (18:03, postérieur au
+  bundle de 17:54) et contenu confirmé par recherche des chaînes de
+  description dans le binaire — c'est ce contrôle qui avait évité de
+  publier un binaire périmé en v0.9.2.
+
 ## Prochaines étapes (dans l'ordre du fichier de passation d'origine)
 
 Voir aussi `NEXT_STEPS_FOR_CLAUDE.md` (note de passation d'une session
