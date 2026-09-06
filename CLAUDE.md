@@ -287,6 +287,7 @@ pas devenir obsolète.
 - **[FAIT] v1.0.0 : mode apprentissage, skills par conversation, Codex connaît son dossier, choix du micro** — (1) **« Apprendre un nouveau skill »** : une séance où la personne *explique* une procédure (aller sur un site, s'en servir, enchaîner des étapes) et où l'IA écoute, pose des questions et consigne chaque étape au lieu d'exécuter — distinct de l'enregistrement de la v0.9.2, qui notait ce qu'elle faisait pendant qu'elle agissait ; (2) Réglages > Extensions > Control Me liste les **skills utilisés par conversation**, avec un bouton pour enrichir un skill à partir de la conversation qui l'a exercé ; (3) Codex reçoit enfin le dossier ouvert ; (4) choix du micro dans Réglages > Audio ; (5) cinq correctifs d'audit. Voir "Mode apprentissage (v1.0.0)" dans Architecture.
 - **[FAIT] v1.0.1 : compte dans l'app, marketplace intégrée avec avis, skill « Navigation Basique », touches françaises** — voir "Compte, marketplace et avis (v1.0.1)" dans Architecture.
 - **[FAIT] v1.0.2 : skills publics identifiés par leur nom, plus par un code** — voir "Skills publics par nom (v1.0.2)" dans Architecture.
+- **[FAIT] v1.0.3 : l'IA entend enfin, et parle avec une voix Gemini** — voir "Oreilles et voix par Gemini (v1.0.3)" dans Architecture.
 
 ## Architecture
 
@@ -3516,6 +3517,48 @@ un skill sans compte.
   qu'un skill publié ne pouvait pas être retiré, ce qui n'est plus vrai.
   Il précise maintenant la vraie limite : on retire la copie publique, pas
   celles déjà installées par d'autres.
+
+### Oreilles et voix par Gemini (v1.0.3)
+
+« l'IA ne m'entend pas », signalé pour la troisième fois. Les correctifs
+précédents s'attaquaient tous à `SpeechRecognition` : permission WebView2
+(v0.9.1), remontée du code d'erreur, panneau de diagnostic (v0.9.2).
+**On arrête d'essayer de réparer ce service.** La recherche faite en
+v0.9.1 documentait déjà le risque : dans un Chromium embarqué, la
+reconnaissance dépend d'un service Google dont la clé n'accompagne que
+les navigateurs de marque — ce n'est pas quelque chose que l'app peut
+corriger.
+
+**Écoute mains libres sans `SpeechRecognition`** (`startVoiceTurn` dans
+`audioRecorder.ts`) : on enregistre soi-même, on surveille le niveau
+sonore, et le tour se clôt quand la personne a parlé puis s'est taue
+(1,2 s de silence). L'audio part à Gemini pour transcription. Le tour de
+parole automatique est donc reconstitué entièrement côté app.
+Trois fins distinctes, parce qu'elles appellent des suites différentes :
+silence après parole (on envoie), rien dit du tout au bout de 12 s (on
+relance sans rien envoyer), et plafond de 30 s (on envoie ce qui a été
+dit plutôt que de le jeter).
+
+`markDeaf` ne rend plus muet : **si une clé Gemini existe, il bascule sur
+cette écoute** au lieu de dégrader vers le clavier. Le mode dégradé ne
+subsiste que sans clé.
+
+**Voix Gemini** (`speech.ts`, `synthesize_speech`) : les voix SAPI de
+Windows sonnent robotiques, ce qui suffit à faire passer une conversation
+pour un lecteur d'écran. Format vérifié dans la documentation et non
+deviné — et c'est là qu'était le piège : l'API renvoie du **PCM brut**
+(mono, 24 kHz, 16 bits) alors qu'elle annonce `audio/wav`. Le donner tel
+quel à un `<audio>` ne produit rien ; il faut lui écrire un en-tête WAV
+devant (44 octets à la main, aucune dépendance). Un contrôle `RIFF` fait
+que le code marche aussi si l'API se met un jour à renvoyer un vrai
+fichier.
+En cas d'échec de la voix Gemini, on retombe sur celle du système : une
+réponse dite d'une voix moins belle vaut mieux qu'une réponse muette.
+
+**Nouvelle exception réseau** : le texte des réponses lues à voix haute
+part chez Google dès qu'une voix Gemini est choisie — s'ajoute à l'audio
+enregistré pour la transcription (v0.9.2). Le réglage est explicite et
+vide par défaut : sans choix, tout reste sur les voix Windows, locales.
 
 ### Les 6 outils de l'agent
 1. `read_file` — lecture texte (limite 5 Mo), chemin absolu

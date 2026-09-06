@@ -232,6 +232,11 @@ export const extractSkillFromTranscript = (
 export const transcribeAudio = (apiKey: string, model: string, audioBase64: string, mimeType: string) =>
   invoke<string>("transcribe_audio", { apiKey, model, audioBase64, mimeType });
 
+// Voix de synthese Gemini. Renvoie du base64 : c est speech.ts qui
+// l emballe pour la lecture, l API fournissant du PCM brut.
+export const synthesizeSpeech = (apiKey: string, model: string, text: string, voice: string) =>
+  invoke<string>("synthesize_speech", { apiKey, model, text, voice });
+
 export const openWindowsSettings = (page: "sound" | "microphone-privacy") =>
   invoke<void>("open_windows_settings", { page });
 

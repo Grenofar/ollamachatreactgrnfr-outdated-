@@ -671,3 +671,56 @@ pub async fn open_windows_settings(page: String) -> Result<(), String> {
         .map_err(|e| e.to_string())?;
     Ok(())
 }
+
+// Voix de synthese via Gemini, en remplacement des voix SAPI de Windows :
+// celles-ci sonnent robotiques, ce qui suffit a faire passer une
+// conversation vocale pour un lecteur d'ecran. Renvoie l'audio en base64
+// tel que l'API le fournit — c'est le frontend qui l'emballe pour la
+// lecture (voir speech.ts), parce que l'API renvoie du PCM brut et non un
+// fichier lisible directement.
+#[tauri::command]
+pub async fn synthesize_speech(
+    api_key: String,
+    model: String,
+    text: String,
+    voice: String,
+) -> Result<String, String> {
+    if api_key.trim().is_empty() {
+        return Err("Aucune clé API Gemini configurée.".to_string());
+    }
+    let text = text.trim();
+    if text.is_empty() {
+        return Err("Rien à dire.".to_string());
+    }
+    // Le modele de TTS est distinct des modeles de dialogue : passer un
+    // gemini-*-flash normal ici ne renvoie tout simplement pas d'audio.
+    let model = if model.trim().is_empty() { "gemini-3.1-flash-tts-preview" } else { model.trim() };
+    let voice = if voice.trim().is_empty() { "Kore" } else { voice.trim() };
+
+    let client = reqwest::Client::new();
+    let resp = client
+        .post(super::controlme::GEMINI_ENDPOINT)
+        .header("x-goog-api-key", api_key.trim())
+        .json(&json!({
+            "model": model,
+            "input": text,
+            "response_format": { "type": "audio" },
+            "generation_config": { "speech_config": [{ "voice": voice }] },
+        }))
+        .send()
+        .await
+        .map_err(|e| format!("Impossible de contacter l'API Gemini : {e}"))?;
+    if !resp.status().is_success() {
+        let status = resp.status();
+        let body = resp.text().await.unwrap_or_default();
+        return Err(format!("Gemini a répondu {status} : {body}"));
+    }
+    let data: Value = resp.json().await.map_err(|e| format!("Réponse Gemini invalide : {e}"))?;
+    // Deux emplacements selon la forme de reponse renvoyee : on lit les
+    // deux plutot que de parier sur un seul.
+    let audio = data["interaction"]["output_audio"]["data"]
+        .as_str()
+        .or_else(|| data["output_audio"]["data"].as_str())
+        .ok_or_else(|| "Gemini n'a renvoyé aucun audio.".to_string())?;
+    Ok(audio.to_string())
+}

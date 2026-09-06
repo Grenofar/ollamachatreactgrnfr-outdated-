@@ -722,6 +722,8 @@ export default function ControlMeView({
           onClose={() => setVoiceMode(false)}
           geminiApiKey={apiKey}
           geminiModel={model}
+          geminiVoice={settings.gemini_voice ?? ""}
+          micDeviceId={settings.preferred_microphone ?? ""}
         />
       ) : (
       <>

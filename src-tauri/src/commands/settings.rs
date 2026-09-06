@@ -28,6 +28,10 @@ pub struct Settings {
     // Windows default device and exposes no way to pick another.
     #[serde(default)]
     pub preferred_microphone: Option<String>,
+    // Voix Gemini pour la sortie vocale. Vide = voix du systeme Windows,
+    // nettement plus robotique.
+    #[serde(default)]
+    pub gemini_voice: Option<String>,
     // Extension ids ("codex" | "controlme") the user toggled off from the
     // Extensions view. Purely a show/hide switch — nothing is actually
     // uninstalled (everything ships in the same binary), see
@@ -98,6 +102,7 @@ fn default_settings() -> Settings {
         control_me_perception_mode: default_control_me_perception_mode(),
         control_me_action_mode: default_control_me_action_mode(),
         preferred_microphone: None,
+        gemini_voice: None,
         disabled_extensions: Vec::new(),
         update_popup_enabled: true,
     }

@@ -694,6 +694,8 @@ export default function App() {
             onClose={() => setVoiceMode(false)}
             geminiApiKey={settings?.gemini_api_key ?? ""}
             geminiModel={settings?.gemini_model ?? ""}
+            geminiVoice={settings?.gemini_voice ?? ""}
+            micDeviceId={settings?.preferred_microphone ?? ""}
           />
         ) : (
         <>

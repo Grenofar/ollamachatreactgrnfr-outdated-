@@ -1,7 +1,8 @@
 import { useEffect, useRef, useState } from "react";
 import { isSpeechRecognitionSupported, primeVoices, speak, startListening, stopSpeaking, type VoiceRecognizer } from "../voice";
-import { isRecordingSupported, startRecording, type AudioRecorder } from "../audioRecorder";
+import { isRecordingSupported, startRecording, startVoiceTurn, type AudioRecorder, type VoiceTurn } from "../audioRecorder";
 import { transcribeAudio } from "../api";
+import { speakWithGemini, stopGeminiSpeech } from "../speech";
 
 type VoiceState = "listening" | "thinking" | "speaking";
 
@@ -20,6 +21,8 @@ export default function VoiceMode({
   onClose,
   geminiApiKey,
   geminiModel,
+  geminiVoice,
+  micDeviceId,
 }: {
   title: string;
   subtitle?: string;
@@ -33,6 +36,9 @@ export default function VoiceMode({
   /** Enables the push-to-talk fallback when browser recognition is out. */
   geminiApiKey?: string;
   geminiModel?: string;
+  /** Voix Gemini à utiliser ; vide = voix du système. */
+  geminiVoice?: string;
+  micDeviceId?: string;
 }) {
   const [state, setState] = useState<VoiceState>("listening");
   const [caption, setCaption] = useState("");
@@ -55,6 +61,8 @@ export default function VoiceMode({
   // even though recognition itself was fine.
   const [pushError, setPushError] = useState<string | null>(null);
   const pushRecRef = useRef<AudioRecorder | null>(null);
+  const turnRef = useRef<VoiceTurn | null>(null);
+  const usingGeminiEars = useRef(false);
   const canPushToTalk = !!geminiApiKey?.trim() && isRecordingSupported();
 
   // Kept in a ref so the recognizer's onEnd closure (created once per
@@ -65,7 +73,59 @@ export default function VoiceMode({
     onUserMessageRef.current = onUserMessage;
   });
 
+  // Quand la reconnaissance du navigateur ne répond pas, on écoute nous-
+  // mêmes : enregistrement + détection de fin de parole, puis transcription
+  // par Gemini. La conversation reste mains libres, sans dépendre d'un
+  // service que l'app ne contrôle pas.
+  async function beginGeminiTurn() {
+    if (closedRef.current) return;
+    usingGeminiEars.current = true;
+    setState("listening");
+    setCaption("");
+    try {
+      turnRef.current = await startVoiceTurn({
+        deviceId: micDeviceId || undefined,
+        onSpeechStart: () => setCaption("…"),
+        onTurnEnd: (rec) => {
+          turnRef.current = null;
+          if (closedRef.current) return;
+          if (!rec) {
+            // Rien dit : on relance sans rien envoyer.
+            void beginGeminiTurn();
+            return;
+          }
+          setState("thinking");
+          transcribeAudio(geminiApiKey ?? "", geminiModel ?? "", rec.base64, rec.mimeType)
+            .then((text) => {
+              const said = text.trim();
+              if (closedRef.current) return;
+              if (!said) {
+                void beginGeminiTurn();
+                return;
+              }
+              setCaption(said);
+              onUserMessageRef.current(said);
+            })
+            .catch((e) => {
+              if (closedRef.current) return;
+              setPushError("Transcription impossible : " + e);
+              void beginGeminiTurn();
+            });
+        },
+      });
+    } catch (e) {
+      markDeaf("Le micro n'a pas pu être ouvert : " + e);
+    }
+  }
+
   function markDeaf(message: string) {
+    // Si une clé Gemini est disponible, on ne devient pas sourd : on change
+    // simplement de façon d'écouter. C'est le vrai correctif du "l'IA ne
+    // m'entend pas" — la permission WebView2 seule n'y suffisait pas.
+    if (canPushToTalk && !deafRef.current) {
+      void beginGeminiTurn();
+      return;
+    }
     deafRef.current = true;
     setError(message);
     setState("listening");
@@ -137,6 +197,9 @@ export default function VoiceMode({
       // push-to-talk recording was running left the microphone open.
       pushRecRef.current?.cancel();
       pushRecRef.current = null;
+      turnRef.current?.cancel();
+      turnRef.current = null;
+      stopGeminiSpeech();
       stopSpeaking();
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -149,14 +212,25 @@ export default function VoiceMode({
       spokenRef.current = reply;
       setState("speaking");
       setCaption(reply);
-      speak(stripForSpeech(reply), "fr-FR", () => {
+      const spoken = stripForSpeech(reply);
+      const handBack = () => {
         if (closedRef.current) return;
-        // Deaf: the mic is out, so there is no listening turn to hand back —
-        // just settle the orb so the typed-input fallback reads as ready
-        // rather than leaving it stuck on "parle…".
+        // Trois façons de rendre la parole selon la manière dont on écoute :
+        // reconnaissance du navigateur, écoute Gemini, ou clavier seul.
         if (deafRef.current) setState("listening");
+        else if (usingGeminiEars.current) void beginGeminiTurn();
         else beginListening();
-      });
+      };
+      // Voix Gemini si elle est configurée ; sinon celle du système. En cas
+      // d'échec on retombe sur le système plutôt que de rester muet : une
+      // réponse dite d'une voix moins belle vaut mieux qu'une réponse muette.
+      if (geminiVoice && geminiApiKey?.trim()) {
+        speakWithGemini(spoken, geminiApiKey, geminiVoice, handBack).catch(() => {
+          speak(spoken, "fr-FR", handBack);
+        });
+      } else {
+        speak(spoken, "fr-FR", handBack);
+      }
       return;
     }
     // Waiting on a reply that never came — the turn was dropped (a run was

@@ -238,6 +238,12 @@ export default function SettingsView({
             geminiApiKey={form.gemini_api_key ?? ""}
             geminiModel={form.gemini_model ?? ""}
             preferredMicrophone={form.preferred_microphone ?? ""}
+            geminiVoice={form.gemini_voice ?? ""}
+            onGeminiVoiceChange={(v) => {
+              const next = { ...form, gemini_voice: v || null };
+              setForm(next);
+              onSave(next);
+            }}
             onPreferredMicrophoneChange={(id) => {
               const next = { ...form, preferred_microphone: id || null };
               setForm(next);

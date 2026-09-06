@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from "react";
 import { isSpeechRecognitionSupported, isSpeechSynthesisSupported, speak, startListening } from "../voice";
 import { isRecordingSupported, startRecording, type AudioRecorder } from "../audioRecorder";
 import { openWindowsSettings, transcribeAudio } from "../api";
+import { GEMINI_VOICES, speakWithGemini } from "../speech";
 
 // Audio panel — as much a diagnostic as a settings page. "The mic doesn't
 // hear me" has three completely different causes that look identical from
@@ -18,12 +19,17 @@ export default function AudioSettings({
   geminiModel,
   preferredMicrophone,
   onPreferredMicrophoneChange,
+  geminiVoice,
+  onGeminiVoiceChange,
 }: {
   geminiApiKey: string;
   geminiModel: string;
   /** Empty string means "whatever Windows uses by default". */
   preferredMicrophone: string;
   onPreferredMicrophoneChange: (deviceId: string) => void;
+  /** Vide = voix du système Windows. */
+  geminiVoice: string;
+  onGeminiVoiceChange: (voice: string) => void;
 }) {
   const [devices, setDevices] = useState<MediaDeviceInfo[] | null>(null);
   const [permission, setPermission] = useState<string>("inconnu");
@@ -259,6 +265,37 @@ export default function AudioSettings({
           <button onClick={() => void startMeter()}>Tester le micro</button>
         )}
         <span className="modal-hint">{testing ? "Parle : la barre doit bouger." : "Lance le test puis parle."}</span>
+      </div>
+
+      <label>Voix de l'IA</label>
+      <select value={geminiVoice} onChange={(e) => onGeminiVoiceChange(e.target.value)}>
+        <option value="">Voix du système Windows</option>
+        {GEMINI_VOICES.map((v) => (
+          <option key={v.id} value={v.id}>
+            {v.label}
+          </option>
+        ))}
+      </select>
+      <p className="modal-hint">
+        Les voix Gemini sont nettement plus naturelles que celles de Windows, mais elles passent par ton
+        compte Gemini : chaque réponse lue à voix haute est un appel à l'API, et le texte part chez Google.
+      </p>
+      <div className="audio-row">
+        <button
+          disabled={!geminiVoice || !geminiApiKey.trim()}
+          onClick={() =>
+            void speakWithGemini(
+              "Bonjour. Si tu entends cette phrase, la voix Gemini fonctionne.",
+              geminiApiKey,
+              geminiVoice,
+            ).catch((e) => setError(String(e)))
+          }
+        >
+          Essayer cette voix
+        </button>
+        <span className="modal-hint">
+          {geminiApiKey.trim() ? "Nécessite ta clé Gemini." : "Ajoute ta clé Gemini pour utiliser ces voix."}
+        </span>
       </div>
 
       <label>Reconnaissance vocale</label>

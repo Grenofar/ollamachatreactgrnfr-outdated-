@@ -39,6 +39,8 @@ export interface Settings {
    * controls (level meter, Gemini transcription recording); the browser's
    * own speech recognition always uses the Windows default. */
   preferred_microphone?: string | null;
+  /** Voix Gemini pour la sortie vocale ; vide = voix du systeme. */
+  gemini_voice?: string | null;
   disabled_extensions: string[];
   update_popup_enabled: boolean;
 }

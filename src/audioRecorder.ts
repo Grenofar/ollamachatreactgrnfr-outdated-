@@ -94,3 +94,117 @@ function bytesToBase64(bytes: Uint8Array): string {
   }
   return btoa(binary);
 }
+
+// Écoute mains libres qui ne dépend pas du tout de SpeechRecognition :
+// on enregistre, on surveille le niveau sonore, et on s'arrête quand la
+// personne a parlé puis s'est tue. C'est ce qui permet à une conversation
+// vocale de fonctionner même quand la reconnaissance du navigateur est
+// injoignable — le cas signalé de façon répétée, et que la permission
+// WebView2 seule ne corrige pas.
+export interface VoiceTurn {
+  /** Arrête l'écoute immédiatement et rend ce qui a été capté. */
+  finish(): Promise<Recording | null>;
+  cancel(): void;
+}
+
+export interface VoiceTurnOptions {
+  deviceId?: string;
+  /** Appelé quand un silence a suivi de la parole : le tour est fini. */
+  onTurnEnd: (recording: Recording | null) => void;
+  /** Appelé au premier son au-dessus du seuil, pour l'affichage. */
+  onSpeechStart?: () => void;
+  /** Niveau instantané 0-100, pour animer. */
+  onLevel?: (level: number) => void;
+}
+
+const SILENCE_LEVEL = 6; // en dessous, on considère que personne ne parle
+const SILENCE_MS = 1200; // silence à tenir après la parole pour clore le tour
+const MAX_TURN_MS = 30000; // garde-fou : un micro ouvert ne l'est pas sans fin
+const NO_SPEECH_TIMEOUT_MS = 12000; // rien n'a été dit du tout
+
+export async function startVoiceTurn(options: VoiceTurnOptions): Promise<VoiceTurn> {
+  const recorder = await startRecording(options.deviceId);
+  const stream = await navigator.mediaDevices.getUserMedia({
+    audio: options.deviceId ? { deviceId: { exact: options.deviceId } } : true,
+  });
+  const ctx = new AudioContext();
+  const analyser = ctx.createAnalyser();
+  analyser.fftSize = 1024;
+  ctx.createMediaStreamSource(stream).connect(analyser);
+  const buffer = new Uint8Array(analyser.fftSize);
+
+  let raf: number | null = null;
+  let spoke = false;
+  let silenceSince: number | null = null;
+  let done = false;
+  const startedAt = Date.now();
+
+  const cleanup = () => {
+    if (raf !== null) cancelAnimationFrame(raf);
+    raf = null;
+    stream.getTracks().forEach((t) => t.stop());
+    void ctx.close();
+  };
+
+  const conclude = async () => {
+    if (done) return;
+    done = true;
+    cleanup();
+    options.onTurnEnd(await recorder.stop());
+  };
+
+  const tick = () => {
+    if (done) return;
+    analyser.getByteTimeDomainData(buffer);
+    let peak = 0;
+    for (const v of buffer) peak = Math.max(peak, Math.abs(v - 128));
+    const level = Math.min(100, Math.round((peak / 128) * 220));
+    options.onLevel?.(level);
+
+    const elapsed = Date.now() - startedAt;
+    if (level > SILENCE_LEVEL) {
+      if (!spoke) {
+        spoke = true;
+        options.onSpeechStart?.();
+      }
+      silenceSince = null;
+    } else if (spoke) {
+      silenceSince ??= Date.now();
+      if (Date.now() - silenceSince >= SILENCE_MS) {
+        void conclude();
+        return;
+      }
+    }
+    // Deux fins distinctes : "tu n'as rien dit" (on rend null, l'appelant
+    // relance) et "tu parles depuis trop longtemps" (on garde ce qui a été
+    // dit plutôt que de le jeter).
+    if (!spoke && elapsed > NO_SPEECH_TIMEOUT_MS) {
+      done = true;
+      cleanup();
+      recorder.cancel();
+      options.onTurnEnd(null);
+      return;
+    }
+    if (elapsed > MAX_TURN_MS) {
+      void conclude();
+      return;
+    }
+    raf = requestAnimationFrame(tick);
+  };
+  tick();
+
+  return {
+    async finish() {
+      if (done) return null;
+      done = true;
+      cleanup();
+      return recorder.stop();
+    },
+    cancel() {
+      if (done) return;
+      done = true;
+      cleanup();
+      recorder.cancel();
+    },
+  };
+}
