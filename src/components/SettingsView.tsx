@@ -228,7 +228,9 @@ export default function SettingsView({
           </div>
         )}
 
-        {section === "audio" && <AudioSettings />}
+        {section === "audio" && (
+          <AudioSettings geminiApiKey={form.gemini_api_key ?? ""} geminiModel={form.gemini_model ?? ""} />
+        )}
 
         {section === "extensions" && (
           <div className="settings-section">

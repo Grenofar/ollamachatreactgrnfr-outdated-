@@ -677,6 +677,8 @@ export default function App() {
             reply={lastAssistantReply}
             onUserMessage={sendText}
             onClose={() => setVoiceMode(false)}
+            geminiApiKey={settings?.gemini_api_key ?? ""}
+            geminiModel={settings?.gemini_model ?? ""}
           />
         ) : (
         <>

@@ -1,5 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import { isSpeechRecognitionSupported, primeVoices, speak, startListening, stopSpeaking, type VoiceRecognizer } from "../voice";
+import { isRecordingSupported, startRecording, type AudioRecorder } from "../audioRecorder";
+import { transcribeAudio } from "../api";
 
 type VoiceState = "listening" | "thinking" | "speaking";
 
@@ -16,6 +18,8 @@ export default function VoiceMode({
   reply,
   onUserMessage,
   onClose,
+  geminiApiKey,
+  geminiModel,
 }: {
   title: string;
   subtitle?: string;
@@ -26,6 +30,9 @@ export default function VoiceMode({
   reply: string | null;
   onUserMessage: (text: string) => void;
   onClose: () => void;
+  /** Enables the push-to-talk fallback when browser recognition is out. */
+  geminiApiKey?: string;
+  geminiModel?: string;
 }) {
   const [state, setState] = useState<VoiceState>("listening");
   const [caption, setCaption] = useState("");
@@ -41,6 +48,9 @@ export default function VoiceMode({
   const closedRef = useRef(false);
   const failuresRef = useRef(0);
   const deafRef = useRef(false);
+  const [pushState, setPushState] = useState<"idle" | "recording" | "sending">("idle");
+  const pushRecRef = useRef<AudioRecorder | null>(null);
+  const canPushToTalk = !!geminiApiKey?.trim() && isRecordingSupported();
 
   // Kept in a ref so the recognizer's onEnd closure (created once per
   // listening turn) always calls the current parent handler rather than the
@@ -151,6 +161,42 @@ export default function VoiceMode({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [reply, busy]);
 
+  // Push-to-talk through Gemini: when the browser's own recognition is out,
+  // this is a second, independent way to be heard, so voice mode stays a
+  // conversation instead of degrading to typing only.
+  async function startPush() {
+    try {
+      pushRecRef.current = await startRecording();
+      setPushState("recording");
+      setCaption("");
+    } catch (e) {
+      setError("Impossible d'ouvrir le micro : " + e);
+    }
+  }
+
+  async function stopPush() {
+    const rec = pushRecRef.current;
+    pushRecRef.current = null;
+    if (!rec) return;
+    setPushState("sending");
+    try {
+      const audio = await rec.stop();
+      if (!audio) {
+        setPushState("idle");
+        return;
+      }
+      const text = (await transcribeAudio(geminiApiKey ?? "", geminiModel ?? "", audio.base64, audio.mimeType)).trim();
+      setPushState("idle");
+      if (!text) return;
+      setCaption(text);
+      setState("thinking");
+      onUserMessageRef.current(text);
+    } catch (e) {
+      setPushState("idle");
+      setError("La transcription a échoué : " + e);
+    }
+  }
+
   const stateLabel =
     state === "listening" ? "À toi de parler…" : state === "thinking" ? "Réflexion…" : `${assistantName} parle…`;
 
@@ -186,6 +232,19 @@ export default function VoiceMode({
 
       <div className="voice-mode-state">{error ?? stateLabel}</div>
       <div className="voice-mode-caption">{caption}</div>
+
+      {deaf && canPushToTalk && (
+        <div className="audio-row voice-mode-push">
+          {pushState === "recording" ? (
+            <button onClick={() => void stopPush()}>Terminé — envoyer</button>
+          ) : (
+            <button onClick={() => void startPush()} disabled={pushState === "sending" || busy}>
+              {pushState === "sending" ? "Transcription…" : "Appuyer pour parler"}
+            </button>
+          )}
+          <span className="modal-hint">Passe par Gemini, puisque la reconnaissance du moteur ne répond pas.</span>
+        </div>
+      )}
 
       {deaf && (
         <form

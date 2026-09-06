@@ -511,3 +511,92 @@ pub async fn import_marketplace_extension(app: AppHandle, extension_id: String) 
 
     save_new_skill(app, name, description, content)
 }
+
+// Fallback transcription for when the browser's own speech recognition is
+// unavailable — in an embedded webview it can fail with a "network" error
+// because it depends on a Google service whose key ships only with branded
+// browsers, and once that happens the page has no way to recover on its
+// own. The audio format is not guessed: the Interactions API documents
+// audio input as {"type":"audio","data":<base64>,"mime_type":...} and lists
+// audio/webm among the accepted types, which is what MediaRecorder produces
+// in this webview.
+#[tauri::command]
+pub async fn transcribe_audio(
+    api_key: String,
+    model: String,
+    audio_base64: String,
+    mime_type: String,
+) -> Result<String, String> {
+    if api_key.trim().is_empty() {
+        return Err("Aucune clé API Gemini configurée. Ajoute-la dans Réglages.".to_string());
+    }
+    if audio_base64.trim().is_empty() {
+        return Err("Aucun audio à transcrire.".to_string());
+    }
+    // The API caps an inline request at 20 MB including the prompt; base64
+    // inflates by ~4/3, so refuse early with a clear message rather than
+    // letting the request fail opaquely.
+    if audio_base64.len() > 14_000_000 {
+        return Err("Enregistrement trop long pour être transcrit d'un seul bloc.".to_string());
+    }
+    let model = if model.trim().is_empty() { super::controlme::GEMINI_MODEL.to_string() } else { model };
+    let mime = if mime_type.trim().is_empty() { "audio/webm".to_string() } else { mime_type };
+
+    let client = reqwest::Client::new();
+    let resp = client
+        .post(super::controlme::GEMINI_ENDPOINT)
+        .header("x-goog-api-key", &api_key)
+        .json(&json!({
+            "model": model,
+            "input": [
+                { "type": "text", "text": "Transcris exactement ce qui est dit dans cet audio, en français. Réponds uniquement avec la transcription, sans commentaire, sans guillemets et sans ponctuation ajoutée autour. Si l'audio ne contient aucune parole, réponds par une chaîne vide." },
+                { "type": "audio", "data": audio_base64, "mime_type": mime }
+            ],
+            "generation_config": { "thinking_level": "low" },
+        }))
+        .send()
+        .await
+        .map_err(|e| format!("Impossible de contacter l'API Gemini : {e}"))?;
+    if !resp.status().is_success() {
+        let status = resp.status();
+        let text = resp.text().await.unwrap_or_default();
+        return Err(format!("Gemini a répondu {status} : {text}"));
+    }
+    let data: Value = resp.json().await.map_err(|e| format!("Réponse Gemini invalide : {e}"))?;
+    let steps = data["steps"].as_array().cloned().unwrap_or_default();
+    let mut out = String::new();
+    for step in &steps {
+        if step["type"] == "model_output" {
+            if let Some(content) = step["content"].as_array() {
+                for part in content {
+                    if let Some(text) = part["text"].as_str() {
+                        out.push_str(text);
+                    }
+                }
+            }
+        }
+    }
+    Ok(out.trim().to_string())
+}
+
+// Opens a Windows Settings page by URI. The mic being muted or pointed at
+// the wrong device is a Windows-side problem the app cannot fix from
+// inside, so the Audio panel links straight to the two pages that matter
+// rather than describing where to click. `explorer.exe` is what resolves an
+// ms-settings: URI; spawning cmd would flash a console window.
+#[tauri::command]
+pub async fn open_windows_settings(page: String) -> Result<(), String> {
+    // Allowlist rather than passing the string through: this argument ends
+    // up as a shell-resolvable URI, and nothing outside these two pages has
+    // any reason to be opened from here.
+    let uri = match page.as_str() {
+        "sound" => "ms-settings:sound",
+        "microphone-privacy" => "ms-settings:privacy-microphone",
+        _ => return Err("Page de réglages inconnue.".to_string()),
+    };
+    tokio::process::Command::new("explorer.exe")
+        .arg(uri)
+        .spawn()
+        .map_err(|e| e.to_string())?;
+    Ok(())
+}

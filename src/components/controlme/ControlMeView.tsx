@@ -700,6 +700,8 @@ export default function ControlMeView({
           reply={lastAssistantReply}
           onUserMessage={sendInstruction}
           onClose={() => setVoiceMode(false)}
+          geminiApiKey={apiKey}
+          geminiModel={model}
         />
       ) : (
       <>

@@ -1173,6 +1173,18 @@ body::before {
 }
 .voice-mode-skip:hover { color: #dddddd; border-color: #4c7ae0; }
 
+/* Appui pour parler via Gemini, quand la reconnaissance du moteur est HS. */
+.voice-mode-push {
+  margin-top: 16px;
+  justify-content: center;
+}
+.voice-mode-push button {
+  background: #3d6dd8;
+  color: #ffffff;
+  padding: 10px 20px;
+}
+.voice-mode-push button:disabled { background: #2c2c2c; color: #777777; }
+
 /* Saisie de secours quand le micro ne repond pas : l'IA continue de
    parler, seule l'entree repasse au clavier. */
 .voice-mode-fallback {

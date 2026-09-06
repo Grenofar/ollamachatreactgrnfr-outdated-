@@ -1,5 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import { isSpeechRecognitionSupported, isSpeechSynthesisSupported, speak, startListening } from "../voice";
+import { isRecordingSupported, startRecording, type AudioRecorder } from "../audioRecorder";
+import { openWindowsSettings, transcribeAudio } from "../api";
 
 // Audio panel — as much a diagnostic as a settings page. "The mic doesn't
 // hear me" has three completely different causes that look identical from
@@ -11,7 +13,13 @@ import { isSpeechRecognitionSupported, isSpeechSynthesisSupported, speak, startL
 // The live level meter separates 1+2 from 3 definitively: if the bar moves,
 // audio is genuinely reaching the app, so any failure after that point is
 // the recognition service and not the microphone.
-export default function AudioSettings() {
+export default function AudioSettings({
+  geminiApiKey,
+  geminiModel,
+}: {
+  geminiApiKey: string;
+  geminiModel: string;
+}) {
   const [devices, setDevices] = useState<MediaDeviceInfo[] | null>(null);
   const [permission, setPermission] = useState<string>("inconnu");
   const [level, setLevel] = useState(0);
@@ -24,6 +32,10 @@ export default function AudioSettings() {
   const streamRef = useRef<MediaStream | null>(null);
   const ctxRef = useRef<AudioContext | null>(null);
   const rafRef = useRef<number | null>(null);
+  const [geminiState, setGeminiState] = useState<"idle" | "recording" | "sending">("idle");
+  const [geminiHeard, setGeminiHeard] = useState<string | null>(null);
+  const [geminiError, setGeminiError] = useState<string | null>(null);
+  const geminiRecRef = useRef<AudioRecorder | null>(null);
 
   useEffect(() => {
     void refreshDevices();
@@ -122,6 +134,45 @@ export default function AudioSettings() {
     }
   }
 
+  // Second, independent path to speech-to-text: record locally, transcribe
+  // with Gemini. Worth having because the browser's own recognition can be
+  // unavailable in an embedded webview for reasons the app cannot fix.
+  async function startGeminiTest() {
+    setGeminiHeard(null);
+    setGeminiError(null);
+    if (!geminiApiKey.trim()) {
+      setGeminiError("Ajoute ta clé API Gemini dans Réglages > Extensions > Control Me.");
+      return;
+    }
+    try {
+      geminiRecRef.current = await startRecording();
+      setGeminiState("recording");
+    } catch (e) {
+      setGeminiError("Impossible d'ouvrir le micro : " + e);
+    }
+  }
+
+  async function stopGeminiTest() {
+    const rec = geminiRecRef.current;
+    geminiRecRef.current = null;
+    if (!rec) return;
+    setGeminiState("sending");
+    try {
+      const audio = await rec.stop();
+      if (!audio) {
+        setGeminiError("Aucun son enregistré.");
+        setGeminiState("idle");
+        return;
+      }
+      const text = await transcribeAudio(geminiApiKey, geminiModel, audio.base64, audio.mimeType);
+      setGeminiHeard(text || "(aucune parole détectée)");
+    } catch (e) {
+      setGeminiError(String(e));
+    } finally {
+      setGeminiState("idle");
+    }
+  }
+
   return (
     <div className="settings-section">
       <h2>Audio</h2>
@@ -140,6 +191,17 @@ export default function AudioSettings() {
               ? "Pas encore demandée"
               : "Inconnue (non exposée par le moteur)"}
       </div>
+
+      <div className="audio-row">
+        <button onClick={() => void openWindowsSettings("microphone-privacy")}>
+          Ouvrir la confidentialité micro (Windows)
+        </button>
+        <button onClick={() => void openWindowsSettings("sound")}>Ouvrir les paramètres son (Windows)</button>
+      </div>
+      <p className="modal-hint">
+        Le micro par défaut se choisit dans Windows, pas ici : la reconnaissance vocale du moteur utilise
+        toujours celui du système et n&apos;expose aucun moyen d&apos;en sélectionner un autre.
+      </p>
 
       <label>Appareils d&apos;entrée détectés</label>
       {devices === null ? (
@@ -196,6 +258,31 @@ export default function AudioSettings() {
                 ? "Aucun micro accessible."
                 : "Échec de la reconnaissance (" + recogError + ")."}
         </div>
+      )}
+
+      {isRecordingSupported() && (
+        <>
+          <label>Transcription de secours (Gemini)</label>
+          <p className="modal-hint">
+            Chemin indépendant : l&apos;audio est enregistré ici puis transcrit par Gemini. Utile si la
+            reconnaissance du moteur échoue avec une erreur réseau, ce que l&apos;application ne peut pas corriger
+            de son côté. Nécessite ta clé API Gemini.
+          </p>
+          <div className="audio-row">
+            {geminiState === "recording" ? (
+              <button onClick={() => void stopGeminiTest()}>Arrêter et transcrire</button>
+            ) : (
+              <button onClick={() => void startGeminiTest()} disabled={geminiState === "sending"}>
+                {geminiState === "sending" ? "Transcription…" : "Enregistrer puis transcrire"}
+              </button>
+            )}
+            <span className="modal-hint">
+              {geminiState === "recording" ? "Parle, puis clique sur Arrêter." : "Teste le chemin de secours."}
+            </span>
+          </div>
+          {geminiHeard && <div className="audio-status">Transcrit : « {geminiHeard} »</div>}
+          {geminiError && <div className="banner banner-error">{geminiError}</div>}
+        </>
       )}
 
       {error && <div className="banner banner-error">{error}</div>}

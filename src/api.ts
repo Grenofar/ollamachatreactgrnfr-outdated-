@@ -222,5 +222,13 @@ export const extractSkillFromTranscript = (
   existingContent: string,
   transcript: string,
 ) => invoke<string>("extract_skill_from_transcript", { apiKey, model, existingContent, transcript });
+// Fallback path when the browser's own speech recognition is unavailable
+// (see audioRecorder.ts). Needs the user's Gemini key, same as Control Me.
+export const transcribeAudio = (apiKey: string, model: string, audioBase64: string, mimeType: string) =>
+  invoke<string>("transcribe_audio", { apiKey, model, audioBase64, mimeType });
+
+export const openWindowsSettings = (page: "sound" | "microphone-privacy") =>
+  invoke<void>("open_windows_settings", { page });
+
 export const importMarketplaceExtension = (extensionId: string) =>
   invoke<Skill>("import_marketplace_extension", { extensionId });
