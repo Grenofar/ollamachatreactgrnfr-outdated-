@@ -3,7 +3,6 @@ import {
   deleteSkill,
   downloadSkill,
   extractSkillFromTranscript,
-  importMarketplaceExtension,
   listControlMeSessions,
   listPublicSkills,
   listSkills,
@@ -49,10 +48,7 @@ export default function SkillsView({ settings }: { settings: Settings }) {
 
   const [showPublicBrowse, setShowPublicBrowse] = useState(false);
   const [publicSkills, setPublicSkills] = useState<PublicSkillMeta[] | null>(null);
-  const [importCode, setImportCode] = useState("");
   const [importing, setImporting] = useState(false);
-  const [marketplaceId, setMarketplaceId] = useState("");
-  const [importingMarketplace, setImportingMarketplace] = useState(false);
 
   function refreshSkills() {
     listSkills()
@@ -233,55 +229,16 @@ export default function SkillsView({ settings }: { settings: Settings }) {
     }
   }
 
-  async function handleDownloadPublic(code: string) {
-    try {
-      await downloadSkill(code);
-      refreshSkills();
-    } catch (e) {
-      setSkillsError(String(e));
-    }
-  }
-
-  async function handleImportByCode() {
-    const code = importCode.trim();
-    if (!code) return;
+  async function handleDownloadPublic(name: string) {
     setImporting(true);
     setSkillsError(null);
     try {
-      await downloadSkill(code);
-      setImportCode("");
+      await downloadSkill(name);
       refreshSkills();
     } catch (e) {
       setSkillsError(String(e));
     } finally {
       setImporting(false);
-    }
-  }
-
-  // Marketplace extensions (accounts_marketplace_migration.sql) are a
-  // separate system from skill sharing above (share_code, no accounts) —
-  // this is the bridge: fetch the extension's latest reviewed version and
-  // materialize it locally as a normal skill, same end result either way.
-  async function handleImportMarketplace() {
-    const id = marketplaceId.trim();
-    if (!id) return;
-    if (
-      !window.confirm(
-        "Fais-tu confiance à ce créateur ? Une extension non officielle n'a été vérifiée que par une IA, pas par une personne — l'installer se fait à tes risques et périls, l'app n'est pas responsable de son contenu. Continuer ?",
-      )
-    ) {
-      return;
-    }
-    setImportingMarketplace(true);
-    setSkillsError(null);
-    try {
-      await importMarketplaceExtension(id);
-      setMarketplaceId("");
-      refreshSkills();
-    } catch (e) {
-      setSkillsError(String(e));
-    } finally {
-      setImportingMarketplace(false);
     }
   }
 
@@ -354,41 +311,28 @@ export default function SkillsView({ settings }: { settings: Settings }) {
               <div className="modal-hint">Aucun skill public pour l'instant.</div>
             ) : (
               <div className="skill-list">
-                {publicSkills.map((s) => (
-                  <div key={s.share_code} className="skill-row">
-                    <div className="skill-row-main">
-                      <strong>{s.name}</strong>
-                      <span className="modal-hint">{s.description}</span>
+                {publicSkills.map((s) => {
+                  const already = (skills ?? []).some(
+                    (own) => own.name.trim().toLowerCase() === s.name.trim().toLowerCase(),
+                  );
+                  return (
+                    <div key={s.name} className="skill-row">
+                      <div className="skill-row-main">
+                        <strong>{s.name}</strong>
+                        <span className="modal-hint">{s.description}</span>
+                      </div>
+                      <button onClick={() => handleDownloadPublic(s.name)} disabled={already || importing}>
+                        {already ? "Déjà installé" : "Installer"}
+                      </button>
                     </div>
-                    <button onClick={() => handleDownloadPublic(s.share_code)}>Importer</button>
-                  </div>
-                ))}
+                  );
+                })}
               </div>
             )}
 
-            <label>Importer via un code</label>
-            <div className="modal-actions">
-              <input value={importCode} onChange={(e) => setImportCode(e.target.value)} placeholder="Code partagé" />
-              <button onClick={handleImportByCode} disabled={importing || !importCode.trim()}>
-                {importing ? "Import…" : "Importer"}
-              </button>
-            </div>
-
-            <label>Installer une extension de la marketplace (site → Espace développeur)</label>
             <div className="modal-hint">
-              Copie l'identifiant de l'extension depuis le site — seules les extensions ciblant Control Me
-              s'installent automatiquement pour l'instant. Non officielle = vérifiée seulement par une IA,
-              pas par une personne.
-            </div>
-            <div className="modal-actions">
-              <input
-                value={marketplaceId}
-                onChange={(e) => setMarketplaceId(e.target.value)}
-                placeholder="Identifiant de l'extension"
-              />
-              <button onClick={handleImportMarketplace} disabled={importingMarketplace || !marketplaceId.trim()}>
-                {importingMarketplace ? "Installation…" : "Installer"}
-              </button>
+              Plus besoin de code : un skill s'installe par son nom depuis cette liste, et deux skills publics
+              ne peuvent pas porter le même nom.
             </div>
           </div>
         )}
@@ -450,9 +394,10 @@ export default function SkillsView({ settings }: { settings: Settings }) {
                 {saving ? "Enregistrement…" : "Enregistrer"}
               </button>
             </div>
-            {skills?.find((s) => s.id === editingId)?.share_code && (
+            {skills?.find((s) => s.id === editingId)?.is_public && (
               <div className="modal-hint">
-                Code partagé : <strong>{skills.find((s) => s.id === editingId)?.share_code}</strong>
+                Publié sous le nom <strong>{skills.find((s) => s.id === editingId)?.name}</strong> — c&apos;est
+                ce nom qui sert à l&apos;installer, il n&apos;y a plus de code.
               </div>
             )}
           </div>

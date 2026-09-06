@@ -286,6 +286,7 @@ pas devenir obsolète.
   mesuree (v0.9.2)" dans Architecture.
 - **[FAIT] v1.0.0 : mode apprentissage, skills par conversation, Codex connaît son dossier, choix du micro** — (1) **« Apprendre un nouveau skill »** : une séance où la personne *explique* une procédure (aller sur un site, s'en servir, enchaîner des étapes) et où l'IA écoute, pose des questions et consigne chaque étape au lieu d'exécuter — distinct de l'enregistrement de la v0.9.2, qui notait ce qu'elle faisait pendant qu'elle agissait ; (2) Réglages > Extensions > Control Me liste les **skills utilisés par conversation**, avec un bouton pour enrichir un skill à partir de la conversation qui l'a exercé ; (3) Codex reçoit enfin le dossier ouvert ; (4) choix du micro dans Réglages > Audio ; (5) cinq correctifs d'audit. Voir "Mode apprentissage (v1.0.0)" dans Architecture.
 - **[FAIT] v1.0.1 : compte dans l'app, marketplace intégrée avec avis, skill « Navigation Basique », touches françaises** — voir "Compte, marketplace et avis (v1.0.1)" dans Architecture.
+- **[FAIT] v1.0.2 : skills publics identifiés par leur nom, plus par un code** — voir "Skills publics par nom (v1.0.2)" dans Architecture.
 
 ## Architecture
 
@@ -3445,6 +3446,41 @@ n'apprenne pas une procédure par navigateur. Chaque étape dit aussi
 **comment savoir que ça a marché**, sans quoi une note n'est pas
 réutilisable. Livré avec l'app plutôt que téléchargé : c'est la base dont
 chaque session a besoin, la re-enseigner à chaque fois gaspille des tours.
+
+### Skills publics par nom (v1.0.2)
+
+Demande explicite : « pas de code, juste on peut pas mettre deux fois le
+même nom ». Le code de partage obligeait à transmettre une suite de
+caractères à la main ; on installe désormais depuis la liste, par nom.
+
+- **`supabase/skill_name_unique_migration.sql`** (**à exécuter par
+  l'utilisateur**) : index unique sur `lower(btrim(name))` — insensible à
+  la casse et aux espaces de bord, sans quoi « Navigation Basique » et
+  « navigation basique » coexisteraient et recréeraient exactement
+  l'ambiguïté qu'on supprime. **L'unicité est posée en base, pas seulement
+  dans l'app** : une vérification côté client n'empêche rien (deux
+  publications simultanées passeraient toutes les deux).
+- `share_code` devient **facultatif** plutôt que supprimé : les skills
+  installés avant cette version référencent encore leur code.
+  Côté Rust, `PublicSkillMeta.share_code` passe en `Option<String>` — le
+  laisser en `String` obligatoire aurait fait échouer la désérialisation
+  de **toute** la liste publique dès la première publication sans code.
+- `publish_skill` fait un upsert sur le nom (`on_conflict=name` +
+  `merge-duplicates`) : republier son propre skill met à jour la copie
+  publiée au lieu d'être rejeté par l'index unique — sans ça, corriger un
+  skill publié obligerait à le republier sous un autre nom. Si le nom est
+  déjà pris, le message le dit explicitement.
+- `download_skill` prend un **nom** (recherche `ilike`, pour matcher comme
+  on lit) et refuse si un skill local porte déjà ce nom : deux entrées
+  homonymes dans le sélecteur de Control Me seraient indistinguables.
+- **Limite réelle, héritée** : cette table est antérieure aux comptes et
+  n'a aucune notion de propriétaire, donc l'écriture reste ouverte à
+  `anon` — qui connaît un nom peut écraser le contenu publié sous ce nom.
+  La rattacher aux comptes serait une migration à part entière.
+- L'installation d'extension par identifiant collé à la main disparaît de
+  Skills : elle est remplacée par le bouton **Ajouter** de l'onglet
+  Marketplace (v1.0.1), qui montre le nom, l'auteur et les avis avant
+  d'installer plutôt qu'un UUID opaque.
 
 ### Les 6 outils de l'agent
 1. `read_file` — lecture texte (limite 5 Mo), chemin absolu

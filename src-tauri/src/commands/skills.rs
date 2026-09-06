@@ -26,7 +26,6 @@ use tauri::AppHandle;
 use windows::core::HSTRING;
 use windows::Win32::Storage::FileSystem::{SetFileAttributesW, FILE_ATTRIBUTE_HIDDEN};
 
-const SHARE_CODE_LEN: usize = 10;
 const ID_LEN: usize = 20;
 // Keeps a session's context from being dominated by skill content, same
 // reasoning as the old knowledge base's cap / read_ui_elements' element cap.
@@ -72,7 +71,12 @@ impl From<&Skill> for SkillMeta {
 pub struct PublicSkillMeta {
     pub name: String,
     pub description: String,
-    pub share_code: String,
+    // Optional since skills are identified by name: rows published before
+    // that change still carry a code, new ones come back null. Leaving this
+    // as a required String would make the whole public listing fail to
+    // deserialize as soon as one new skill is published.
+    #[serde(default)]
+    pub share_code: Option<String>,
 }
 
 fn now_unix_secs() -> f64 {
@@ -88,11 +92,6 @@ fn random_id(len: usize) -> String {
     (0..len).map(|_| ALPHABET[rng.gen_range(0..ALPHABET.len())] as char).collect()
 }
 
-fn generate_share_code() -> String {
-    const ALPHABET: &[u8] = b"ABCDEFGHJKMNPQRSTUVWXYZ23456789"; // no 0/O/1/I/L
-    let mut rng = rand::thread_rng();
-    (0..SHARE_CODE_LEN).map(|_| ALPHABET[rng.gen_range(0..ALPHABET.len())] as char).collect()
-}
 
 pub(crate) fn skills_dir(app: &AppHandle) -> Result<std::path::PathBuf, String> {
     let dir = data_dir(app)?.join("controlme_skills");
@@ -274,17 +273,21 @@ pub(crate) fn read_active_skills(app: &AppHandle, ids: &[String]) -> String {
 pub async fn publish_skill(app: AppHandle, id: String) -> Result<String, String> {
     let mut skill = load_skill(app.clone(), id)?;
     validate(&skill.name, &skill.description)?;
-    let code = generate_share_code();
     let client = reqwest::Client::new();
+    // Published skills are identified by name now, not by a code to pass
+    // around. on_conflict + merge-duplicates means republishing your own
+    // skill updates the published copy instead of being rejected by the
+    // unique index — without it the only way to fix a published skill
+    // would be to publish it again under a different name.
     let resp = client
         .post(format!("{SUPABASE_URL}/rest/v1/controlme_knowledge_shares"))
+        .query(&[("on_conflict", "name")])
         .header("apikey", SUPABASE_ANON_KEY)
         .header("Authorization", format!("Bearer {SUPABASE_ANON_KEY}"))
         .header("Content-Type", "application/json")
-        .header("Prefer", "return=minimal")
+        .header("Prefer", "resolution=merge-duplicates,return=minimal")
         .json(&json!({
-            "share_code": code,
-            "name": skill.name,
+            "name": skill.name.trim(),
             "description": skill.description,
             "content": skill.content,
         }))
@@ -294,12 +297,18 @@ pub async fn publish_skill(app: AppHandle, id: String) -> Result<String, String>
     if !resp.status().is_success() {
         let status = resp.status();
         let text = resp.text().await.unwrap_or_default();
+        if text.contains("duplicate key") || text.contains("unique") {
+            return Err(format!(
+                "Un skill public porte déjà le nom « {} ». Renomme le tien avant de le publier.",
+                skill.name.trim()
+            ));
+        }
         return Err(format!("Échec de la publication ({status}) : {text}"));
     }
     skill.is_public = true;
-    skill.share_code = Some(code.clone());
+    skill.share_code = None;
     write_skill(&app, &skill)?;
-    Ok(code)
+    Ok(skill.name.trim().to_string())
 }
 
 // Local-only: does NOT retract the row already published on Supabase (no
@@ -315,21 +324,30 @@ pub fn unpublish_skill(app: AppHandle, id: String) -> Result<(), String> {
 }
 
 #[tauri::command]
-pub async fn download_skill(app: AppHandle, share_code: String) -> Result<Skill, String> {
+pub async fn download_skill(app: AppHandle, name: String) -> Result<Skill, String> {
+    let wanted = name.trim().to_string();
+    if wanted.is_empty() {
+        return Err("Aucun nom de skill fourni.".to_string());
+    }
+    // Installing twice under the same name would leave two entries the user
+    // cannot tell apart in the Control Me picker, which is exactly the
+    // ambiguity dropping the share code was meant to remove.
+    if let Ok(existing) = list_skills(app.clone()) {
+        if existing.iter().any(|s| s.name.trim().eq_ignore_ascii_case(&wanted)) {
+            return Err(format!("« {wanted} » est déjà installé."));
+        }
+    }
     let client = reqwest::Client::new();
-    // share_code is free-text typed by whoever's importing — building the
-    // URL with format! would let a code containing "&" or "," smuggle in
-    // extra PostgREST query parameters (e.g. its own "&select=..." or a
-    // "," to widen the eq. filter into an "in." list) instead of being
-    // treated as a literal value to match. reqwest's .query() percent-
-    // encodes each value through the same `url` crate the rest of this
-    // project already depends on transitively, so it's just a literal
-    // string to Postgres either way.
+    // .query() rather than format!: the name is free text, and a value
+    // containing "&" or "," would otherwise smuggle in extra PostgREST
+    // parameters instead of being matched literally.
     let resp = client
         .get(format!("{SUPABASE_URL}/rest/v1/controlme_knowledge_shares"))
         .query(&[
             ("select", "name,description,content"),
-            ("share_code", &format!("eq.{}", share_code.trim())),
+            // ilike rather than eq so the name matches the way a person
+            // reads it, without being case-perfect.
+            ("name", &format!("ilike.{}", wanted)),
         ])
         .header("apikey", SUPABASE_ANON_KEY)
         .header("Authorization", format!("Bearer {SUPABASE_ANON_KEY}"))
@@ -337,17 +355,19 @@ pub async fn download_skill(app: AppHandle, share_code: String) -> Result<Skill,
         .await
         .map_err(|e| format!("Impossible de contacter Supabase : {e}"))?;
     if !resp.status().is_success() {
-        return Err(format!("Code introuvable ou Supabase injoignable ({})", resp.status()));
+        return Err(format!("Supabase injoignable ({})", resp.status()));
     }
     let rows: Vec<Value> = resp.json().await.map_err(|e| e.to_string())?;
-    let row = rows.first().ok_or_else(|| "Aucun skill ne correspond à ce code.".to_string())?;
+    let row = rows
+        .first()
+        .ok_or_else(|| format!("Aucun skill public ne s'appelle « {wanted} »."))?;
     let skill = Skill {
         id: random_id(ID_LEN),
         name: row["name"].as_str().unwrap_or("Skill importé").to_string(),
         description: row["description"].as_str().unwrap_or("").to_string(),
         content: row["content"].as_str().unwrap_or("").to_string(),
-        is_public: true,
-        share_code: Some(share_code),
+        is_public: false,
+        share_code: None,
         created_at: now_unix_secs(),
     };
     write_skill(&app, &skill)?;

@@ -158,6 +158,8 @@ export interface SkillMeta {
 export interface PublicSkillMeta {
   name: string;
   description: string;
-  share_code: string;
+  /** Kept only for skills published before names became the identifier;
+   * nothing reads it any more. */
+  share_code?: string | null;
 }
 
