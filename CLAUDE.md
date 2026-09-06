@@ -4260,6 +4260,52 @@ l'utilisateur confirme qu'elle est bien dans `.env` local.
   tester explicitement par l'utilisateur après déploiement Vercel et
   exécution de `supabase/marketplace_v2_migration.sql`.
 
+- **2026-09-06** — v0.9.1 : lot de retours après le premier vrai essai du
+  mode vocal. **Cause racine du bug micro trouvée côté Rust, pas côté JS** :
+  WebView2 conditionne l'accès au micro à sa propre invite de permission,
+  et une fois celle-ci refusée ou simplement ignorée la page ne peut plus
+  jamais la redemander — corrigé par un `PermissionRequestedEventHandler`
+  scopé au micro uniquement. Deux défauts JS corrigés au passage : le code
+  d'erreur de `SpeechRecognition` était jeté (micro bloqué indistinguable
+  de « tu n'as rien dit »), et `onerror`+`onend` relançaient l'écoute deux
+  fois par échec. Le mode vocal ne devient plus muet : après 3 échecs l'IA
+  **dit à voix haute** pourquoi elle n'entend plus et une saisie clavier de
+  secours apparaît. Boutons haut-parleur par message retirés. Skills
+  gérés depuis Control Me (créer depuis la conversation, enrichir,
+  renommer, supprimer). Cinq actions à durée (`hold_key`,
+  `press_key_repeat`, `hold_mouse`, `move_relative`, `scroll_at`) dans les
+  deux modes de perception. Voir "Micro, skills dans Control Me et actions
+  à durée (v0.9.1)" dans Architecture. Deux vrais défauts trouvés en
+  relisant **avant** de builder : le mode vocal sautait sa fonction de
+  nettoyage sur un chemin (la voix continuait après fermeture), et
+  `site/docs.html` documentait `lit_base_connaissances()`, correspondant à
+  l'outil `read_knowledge_base` **retiré en v0.6.0** — un auteur
+  d'extension qui suivait la doc écrivait une fonction sans le moindre
+  effet ; retirée, et les nouvelles actions documentées à la place.
+  **Piquet de mémoire notable** : deux `vite build` fantômes de builds
+  stoppés occupaient encore 3,3 Go, ne laissant que 0,4 Go libres sur 7,5
+  — exactement ce qui faisait planter esbuild sur Monaco ; les tuer a
+  suffi à faire passer le build du premier coup (5 min 1 s). **Vérification
+  du binaire, méthode à retenir** : chercher un nom d'outil brut dans
+  l'`.exe` donne de **faux zéros** — le compilateur inline les
+  comparaisons de chaînes de 8 octets ou moins directement dans les
+  instructions (`movabs rax, "hold_key"`) et coupe les plus longues, d'où
+  `scroll_a` trouvé mais pas `scroll_at`, et `remember_fact` à zéro alors
+  qu'il fonctionne depuis des versions ; chercher les **descriptions**
+  d'outils (qui vivent en rodata) est la vérification fiable, et elle a
+  confirmé les cinq nouvelles actions dans le binaire. `cargo check`/
+  `npx tsc --noEmit` à 0 erreur. Publiée et vérifiée via la clé **anon**
+  (fichier : 200 OK, 7 055 138 octets ; `latest_release_manifest` : renvoie
+  bien la v0.9.1, URL correcte, signature de 432 octets présente dans
+  l'objet `platforms["windows-x86_64"]`, là où l'updater la cherche).
+  **Control Me standalone non construit ni publié** — l'utilisateur a
+  demandé explicitement d'arrêter le produit séparé. **Le micro reste à
+  confirmer par l'utilisateur** : aucun accès GUI ici, et si le message
+  affiché est « n'a pas pu joindre son service » (code `network`), la
+  cause est le service de reconnaissance de Chromium et non la
+  permission — il faudra alors un enregistrement local transcrit par
+  Gemini, non construit.
+
 ## Prochaines étapes (dans l'ordre du fichier de passation d'origine)
 
 Voir aussi `NEXT_STEPS_FOR_CLAUDE.md` (note de passation d'une session
