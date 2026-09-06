@@ -66,7 +66,7 @@ const SETTLE_THUMB_WIDTH: u32 = 64;
 const SETTLE_DIFF_THRESHOLD: f64 = 3.0;
 // Tools that never touch the screen — no settle wait, no screenshot
 // attached to their result (see the main loop below).
-const NO_VISUAL_EFFECT_TOOLS: [&str; 2] = ["read_ui_elements", "remember_fact"];
+const NO_VISUAL_EFFECT_TOOLS: [&str; 3] = ["read_ui_elements", "remember_fact", "add_to_skill"];
 // Fixed settle delay used in "windows_ui" perception mode instead of the
 // adaptive pixel-diff wait above — there's no screen to diff against, just
 // a short buffer so a UI has time to actually update before the
@@ -232,7 +232,33 @@ fn now_unix_secs() -> f64 {
 // action except read_ui_elements: that one needs a short label for the
 // transcript ("Lecture de l'interface (N éléments)") but the full element
 // dump as the text actually sent back to Gemini.
-fn dispatch_action(app: &AppHandle, name: &str, args: &Value, width: u32, height: u32) -> (String, String, Option<String>) {
+fn dispatch_action(
+    app: &AppHandle,
+    name: &str,
+    args: &Value,
+    width: u32,
+    height: u32,
+    recording_skill_id: Option<&str>,
+) -> (String, String, Option<String>) {
+    if name == "add_to_skill" {
+        let note = args["note"].as_str().unwrap_or("").trim().to_string();
+        // Only ever writes to the skill the user armed from the UI — the
+        // model names no target, so it cannot reach a different skill.
+        let Some(id) = recording_skill_id else {
+            let msg = "Aucun skill en cours d'enregistrement.".to_string();
+            return (msg.clone(), msg.clone(), Some(msg));
+        };
+        return match super::skills::append_to_skill(app, id, &note) {
+            Ok(skill_name) => {
+                let label = format!("Ajouté à « {skill_name} » : {note}");
+                (label, format!("Note enregistrée dans le skill : {note}"), None)
+            }
+            Err(e) => {
+                let msg = format!("Erreur : {e}");
+                (msg.clone(), msg, Some(e))
+            }
+        };
+    }
     if name == "remember_fact" {
         let fact = args["fact"].as_str().unwrap_or("").trim().to_string();
         let category = args["category"].as_str().map(|s| s.to_string());
@@ -568,6 +594,29 @@ fn remember_fact_tool() -> Value {
     })
 }
 
+// Only declared while the user has armed a skill to record into (see
+// run_control_me_core). remember_fact writes durable facts about the person
+// to the global memory; this writes into one specific skill the user chose,
+// which is what makes "teach it a game" or "build up a procedure" work —
+// the notes land somewhere the user can then hand to a future session on
+// purpose, instead of into one undifferentiated memory pile.
+fn add_to_skill_tool(skill_name: &str) -> Value {
+    json!({
+        "type": "function",
+        "name": "add_to_skill",
+        "description": format!(
+            "Ajoute une note au skill \"{skill_name}\", que l'utilisateur enregistre en ce moment. Utilise-le dès que tu apprends quelque chose qui mériterait d'être su au début d'une future session : une information sur la personne, une règle ou une commande d'un jeu, l'emplacement d'un bouton, une préférence, une procédure qui a marché (ou qui a échoué, et pourquoi). Écris une note courte, autonome et compréhensible hors contexte. N'attends pas la fin de la conversation et ne demande pas la permission à chaque fois : note au fil de l'eau, une note par chose apprise."
+        ),
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "note": { "type": "string", "description": "Ce qu'il faut retenir, formulé clairement et de façon autonome" }
+            },
+            "required": ["note"]
+        }
+    })
+}
+
 fn read_ui_elements_tool(preferred: bool) -> Value {
     let description = if preferred {
         "Lit la structure d'accessibilité de la fenêtre actuellement au premier plan (titre + liste des contrôles visibles avec leur type, leur libellé exact, leur état activé/désactivé, et leur position déjà normalisée 0-999 — le même repère que les coordonnées des autres outils). En mode Windows UI, c'est déjà rafraîchi automatiquement après chaque action — appelle-le toi-même seulement si tu veux revérifier sans agir. Ne fonctionne pas pour une interface dessinée directement (jeu, canvas, éditeur graphique)."
@@ -660,7 +709,7 @@ fn timed_action_tools() -> Vec<Value> {
     ]
 }
 
-fn build_capture_tools() -> Value {
+fn build_capture_tools(recording_skill: Option<&str>) -> Value {
     let mut tools = vec![
         json!({
             "type": "computer_use",
@@ -671,6 +720,9 @@ fn build_capture_tools() -> Value {
         read_ui_elements_tool(false),
     ];
     tools.extend(timed_action_tools());
+    if let Some(name) = recording_skill {
+        tools.push(add_to_skill_tool(name));
+    }
     Value::Array(tools)
 }
 
@@ -686,7 +738,7 @@ fn build_capture_tools() -> Value {
 // Real trade-off, not hidden: Gemini's require_confirmation safety signal
 // is part of computer_use's own protocol specifically — a custom function
 // tool has no equivalent, so that safety net does not exist in this mode.
-fn build_windows_ui_tools() -> Value {
+fn build_windows_ui_tools(recording_skill: Option<&str>) -> Value {
     let xy_params = |extra: Value| {
         let mut props = json!({
             "x": { "type": "number", "description": "Position X normalisée 0-999" },
@@ -815,6 +867,9 @@ fn build_windows_ui_tools() -> Value {
         read_ui_elements_tool(true),
     ];
     tools.extend(timed_action_tools());
+    if let Some(name) = recording_skill {
+        tools.push(add_to_skill_tool(name));
+    }
     Value::Array(tools)
 }
 
@@ -827,6 +882,7 @@ pub async fn run_control_me(
     model: String,
     instruction: String,
     active_skill_ids: Vec<String>,
+    recording_skill_id: Option<String>,
 ) -> Result<(), String> {
     run_control_me_core(
         app,
@@ -836,6 +892,7 @@ pub async fn run_control_me(
         model,
         instruction,
         active_skill_ids,
+        recording_skill_id,
         false,
     )
     .await
@@ -858,6 +915,10 @@ pub async fn run_control_me_core(
     model: String,
     instruction: String,
     active_skill_ids: Vec<String>,
+    // Some(id) while the user has armed a skill to record into from the
+    // Control Me UI — gates the add_to_skill tool and is the only target it
+    // can ever write to.
+    recording_skill_id: Option<String>,
     // Remote-triggered instructions (remote.rs) force windows_ui regardless
     // of the local toggle: the site already gets its own live screenshot
     // feed independently (broadcast_frame_if_viewer, unrelated to what
@@ -897,7 +958,15 @@ pub async fn run_control_me_core(
         let (screenshot, w, h) = capture_screenshot_base64()?;
         (w, h, json!({ "type": "image", "data": screenshot, "mime_type": "image/jpeg" }))
     };
-    let tools = if use_ui_mode { build_windows_ui_tools() } else { build_capture_tools() };
+    let recording_skill_name = recording_skill_id
+        .as_deref()
+        .and_then(|id| super::skills::load_skill(app.clone(), id.to_string()).ok())
+        .map(|s| s.name);
+    let tools = if use_ui_mode {
+        build_windows_ui_tools(recording_skill_name.as_deref())
+    } else {
+        build_capture_tools(recording_skill_name.as_deref())
+    };
 
     // "live" (default) = one action per Gemini turn, screen re-observed
     // between each. "predefined" = Gemini may return several actions in
@@ -1089,10 +1158,10 @@ pub async fn run_control_me_core(
                     if let Some(obj) = args.as_object_mut() {
                         obj.insert("safety_acknowledgement".to_string(), json!(true));
                     }
-                    dispatch_action(&app, &action_name, &args, width, height)
+                    dispatch_action(&app, &action_name, &args, width, height, recording_skill_id.as_deref())
                 }
             } else {
-                dispatch_action(&app, &action_name, &args, width, height)
+                dispatch_action(&app, &action_name, &args, width, height, recording_skill_id.as_deref())
             };
 
             let _ = app.emit(

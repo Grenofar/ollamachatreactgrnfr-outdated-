@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import AudioSettings from "./AudioSettings";
 import { getVersion } from "@tauri-apps/api/app";
 import type { Update } from "@tauri-apps/plugin-updater";
 import { clearRemoteCode, deleteModel, generateRemoteCode } from "../api";
@@ -37,11 +38,12 @@ const GEMINI_MODELS = [
   { id: "gemini-3.5-flash", label: "Gemini 3.5 Flash" },
 ];
 
-const SECTIONS = ["general", "models", "extensions", "devices", "updates"] as const;
+const SECTIONS = ["general", "models", "audio", "extensions", "devices", "updates"] as const;
 type Section = (typeof SECTIONS)[number];
 
 const SECTION_LABELS: Record<Section, string> = {
   general: "Général",
+  audio: "Audio",
   models: "Modèles installés",
   extensions: "Extensions",
   devices: "Appareils connectés",
@@ -225,6 +227,8 @@ export default function SettingsView({
             )}
           </div>
         )}
+
+        {section === "audio" && <AudioSettings />}
 
         {section === "extensions" && (
           <div className="settings-section">

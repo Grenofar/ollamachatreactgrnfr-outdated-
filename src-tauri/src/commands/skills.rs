@@ -211,6 +211,37 @@ pub fn delete_skill(app: AppHandle, id: String) -> Result<(), String> {
     Ok(())
 }
 
+// Appends one note to a skill while a Control Me session is recording into
+// it. Distinct from extract_skill_from_transcript (which rewrites a whole
+// skill from a finished transcript in one Gemini call): here the model
+// decides, mid-conversation, that something is worth keeping and writes it
+// down immediately — so nothing is lost if the session is never extracted
+// from afterwards. id goes through skill_path, which is what rejects a
+// traversal attempt (see its comment above); the size cap keeps a long or
+// looping session from growing a skill without bound.
+const MAX_SKILL_CONTENT_BYTES: usize = 40_000;
+
+pub(crate) fn append_to_skill(app: &AppHandle, id: &str, note: &str) -> Result<String, String> {
+    let note = note.trim();
+    if note.is_empty() {
+        return Err("Note vide.".to_string());
+    }
+    let path = skill_path(app, id)?;
+    let mut skill = read_skill(&path).ok_or_else(|| "Skill introuvable.".to_string())?;
+    if skill.content.len() + note.len() > MAX_SKILL_CONTENT_BYTES {
+        return Err("Ce skill a atteint sa taille maximale.".to_string());
+    }
+    if !skill.content.is_empty() && !skill.content.ends_with('\n') {
+        skill.content.push('\n');
+    }
+    skill.content.push_str("- ");
+    skill.content.push_str(note);
+    skill.content.push('\n');
+    let name = skill.name.clone();
+    write_skill(app, &skill)?;
+    Ok(name)
+}
+
 // Concatenates the content of exactly the skills the user picked before
 // starting this Control Me session — see the call site in controlme.rs.
 // `ids` isn't always locally trusted input: a remote-triggered instruction

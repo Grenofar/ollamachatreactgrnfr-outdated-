@@ -147,8 +147,15 @@ export const onFreezeResolved = (cb: () => void) => listen("freeze-resolved", ()
 
 // ------------------------------------------------------------ Control Me
 
-export const runControlMe = (apiKey: string, model: string, instruction: string, activeSkillIds: string[]) =>
-  invoke<void>("run_control_me", { apiKey, model, instruction, activeSkillIds });
+export const runControlMe = (
+  apiKey: string,
+  model: string,
+  instruction: string,
+  activeSkillIds: string[],
+  // Set while the user is recording this conversation into a skill: it gates
+  // the add_to_skill tool and is the only skill the model can write to.
+  recordingSkillId: string | null,
+) => invoke<void>("run_control_me", { apiKey, model, instruction, activeSkillIds, recordingSkillId });
 
 export const cancelControlMe = () => invoke<void>("cancel_control_me");
 

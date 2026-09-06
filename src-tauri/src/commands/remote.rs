@@ -643,6 +643,10 @@ fn spawn_remote_instruction(
             settings.gemini_model,
             text,
             active_skill_ids,
+            // No skill recording for remote sessions: arming one is a
+            // deliberate local gesture, and nobody is at the machine to stop
+            // or cancel it.
+            None,
             true,
         )
         .await;

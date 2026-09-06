@@ -83,6 +83,12 @@ export default function ControlMeView({
   // One shared status line for the skill panel — a Gemini extraction takes
   // several seconds, and without it the buttons look inert.
   const [skillBusy, setSkillBusy] = useState<string | null>(null);
+  // Skill currently being recorded into. Armed from the Skills panel — valid
+  // before a single word has been said, which is the point: the model writes
+  // into it as it goes rather than only at the end.
+  const [recording, setRecording] = useState<{ id: string; name: string; wasNew: boolean; snapshot: string } | null>(
+    null,
+  );
   const scrollRef = useRef<HTMLDivElement>(null);
 
   const apiKey = settings.gemini_api_key?.trim() ?? "";
@@ -184,7 +190,7 @@ export default function ControlMeView({
     if (!text || !apiKey || running) return;
     setEntries((prev) => [...prev, { role: "user", content: text }]);
     setRunning(true);
-    runControlMe(apiKey, model, text, activeSkillIds).catch((e) => {
+    runControlMe(apiKey, model, text, activeSkillIds, recording?.id ?? null).catch((e) => {
       setEntries((prev) => [...prev, { role: "system", content: `Erreur : ${String(e)}` }]);
       setRunning(false);
     });
@@ -249,6 +255,76 @@ export default function ControlMeView({
   // makes it an update rather than a replacement).
   function transcriptText(): string {
     return entries.map((e) => `${e.role}: ${e.content}`).join("\n");
+  }
+
+  // Arming is deliberately allowed before the conversation starts: the model
+  // then writes into the skill as it learns, rather than the user having to
+  // remember to extract everything at the end.
+  async function handleStartRecording() {
+    const name = window.prompt("Nom du skill à enregistrer pendant cette conversation :", "")?.trim();
+    if (!name) return;
+    try {
+      const created = await saveNewSkill(
+        name,
+        `Enregistré pendant une conversation Control Me du ${new Date().toLocaleDateString("fr-FR")}`,
+        "",
+      );
+      setSkills((prev) => [
+        {
+          id: created.id,
+          name: created.name,
+          description: created.description,
+          is_public: created.is_public,
+          created_at: created.created_at,
+        },
+        ...(prev ?? []),
+      ]);
+      setRecording({ id: created.id, name: created.name, wasNew: true, snapshot: "" });
+      setSkillBusy(null);
+    } catch (e) {
+      setSkillBusy(`Échec : ${e}`);
+    }
+  }
+
+  async function handleRecordInto(meta: SkillMeta) {
+    try {
+      const skill = await loadSkill(meta.id);
+      // Snapshot so "Annuler" can put an existing skill back exactly as it
+      // was, instead of leaving half-written notes behind.
+      setRecording({ id: skill.id, name: skill.name, wasNew: false, snapshot: skill.content });
+      setSkillBusy(null);
+    } catch (e) {
+      setSkillBusy(`Échec : ${e}`);
+    }
+  }
+
+  function handleStopRecording() {
+    if (!recording) return;
+    setSkillBusy(`Enregistrement terminé — « ${recording.name} » conservé.`);
+    setRecording(null);
+  }
+
+  async function handleCancelRecording() {
+    if (!recording) return;
+    const label = recording.wasNew
+      ? `Annuler l'enregistrement et supprimer le skill « ${recording.name} » ?`
+      : `Annuler l'enregistrement et remettre « ${recording.name} » comme il était ?`;
+    if (!window.confirm(label)) return;
+    const target = recording;
+    setRecording(null);
+    try {
+      if (target.wasNew) {
+        await deleteSkill(target.id);
+        setSkills((prev) => (prev ?? []).filter((s) => s.id !== target.id));
+        setActiveSkillIds((prev) => prev.filter((s) => s !== target.id));
+      } else {
+        const skill = await loadSkill(target.id);
+        await updateSkill({ ...skill, content: target.snapshot });
+      }
+      setSkillBusy("Enregistrement annulé.");
+    } catch (e) {
+      setSkillBusy(`Échec de l'annulation : ${e}`);
+    }
   }
 
   async function handleCreateSkillFromSession() {
@@ -454,6 +530,19 @@ export default function ControlMeView({
         </div>
       )}
 
+      {recording && (
+        <div className="controlme-recording">
+          <span className="controlme-recording-dot" />
+          <span className="controlme-recording-text">
+            Enregistrement dans <strong>{recording.name}</strong> — l'IA y note ce qu'elle juge important.
+          </span>
+          <button onClick={handleStopRecording}>Arrêter</button>
+          <button className="controlme-recording-cancel" onClick={handleCancelRecording}>
+            Annuler
+          </button>
+        </div>
+      )}
+
       {showHistory && (
         <div className="controlme-memory-panel">
           <input
@@ -533,6 +622,9 @@ export default function ControlMeView({
             <span className="modal-hint">
               Coche autant de skills que tu veux : ils sont tous fournis à l'IA dans la même conversation.
             </span>
+            <button onClick={handleStartRecording} disabled={recording !== null}>
+              Enregistrer dans un nouveau skill
+            </button>
             <button onClick={handleCreateSkillFromSession}>Créer un skill depuis cette conversation</button>
           </div>
           {skillBusy && <div className="controlme-skill-status">{skillBusy}</div>}
@@ -574,6 +666,14 @@ export default function ControlMeView({
                       <span className="modal-hint">{s.description}</span>
                     </span>
                   )}
+                  <button
+                    className="controlme-skill-action"
+                    onClick={() => handleRecordInto(s)}
+                    disabled={recording !== null}
+                    title="L'IA écrira dans ce skill au fil de la conversation"
+                  >
+                    Enregistrer ici
+                  </button>
                   <button
                     className="controlme-skill-action"
                     onClick={() => handleEnrichSkill(s.id)}

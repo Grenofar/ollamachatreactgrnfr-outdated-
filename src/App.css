@@ -1824,6 +1824,93 @@ body::before {
   min-width: 0;
 }
 
+/* Panneau Audio des Reglages : liste d'appareils + niveau en direct. */
+.audio-status {
+  padding: 7px 11px;
+  background: #232323;
+  border-radius: 8px;
+  font-size: 13px;
+  color: #cfcfcf;
+  margin-bottom: 12px;
+}
+
+.audio-device-list {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin-bottom: 10px;
+}
+
+.audio-device {
+  padding: 7px 11px;
+  background: #232323;
+  border-left: 2px solid #3d6dd8;
+  border-radius: 4px;
+  font-size: 13px;
+  color: #cfcfcf;
+}
+
+.audio-meter {
+  height: 14px;
+  background: #232323;
+  border-radius: 7px;
+  overflow: hidden;
+  margin-bottom: 10px;
+}
+
+.audio-meter-fill {
+  height: 100%;
+  background: linear-gradient(90deg, #3d6dd8, #7fd0a0);
+  border-radius: 7px;
+  transition: width 0.06s linear;
+}
+
+.audio-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 14px;
+  flex-wrap: wrap;
+}
+
+/* Bandeau d'enregistrement dans un skill : reste visible pendant toute la
+   conversation, pas seulement quand le panneau Skills est ouvert. */
+.controlme-recording {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin: 0 16px 8px;
+  padding: 8px 12px;
+  background: #2a2320;
+  border: 1px solid #7a5a2a;
+  border-radius: 8px;
+  font-size: 13px;
+  color: #e0d3c0;
+}
+
+.controlme-recording-text { flex: 1; }
+
+.controlme-recording-dot {
+  width: 9px;
+  height: 9px;
+  border-radius: 50%;
+  background: #d64545;
+  flex: none;
+  animation: recording-pulse 1.6s ease-in-out infinite;
+}
+
+@keyframes recording-pulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.25; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .controlme-recording-dot { animation: none; }
+}
+
+.controlme-recording button { font-size: 12px; padding: 4px 10px; }
+.controlme-recording-cancel { color: #e08585; }
+
 .controlme-skill-action {
   font-size: 12px;
   padding: 4px 10px;
