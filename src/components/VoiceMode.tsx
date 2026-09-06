@@ -107,11 +107,14 @@ export default function VoiceMode({
 
   useEffect(() => {
     primeVoices();
+    // Note the cleanup below is returned in BOTH branches: an early return
+    // here would skip it entirely, leaving the assistant still speaking
+    // after the user closed voice mode.
     if (!isSpeechRecognitionSupported()) {
       markDeaf("La reconnaissance vocale n'est pas disponible sur cette machine. Écris-moi et je continue à te répondre à voix haute.");
-      return;
+    } else {
+      beginListening();
     }
-    beginListening();
     return () => {
       closedRef.current = true;
       recognizerRef.current?.stop();
