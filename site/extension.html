@@ -162,6 +162,69 @@
       load(extensionId);
     }
 
+    // Avis : lecture publique, ecriture reservee a son propre avis (voir
+    // supabase/reviews_migration.sql). Tout ce qui vient d'un autre
+    // compte passe par escapeHtml — meme regle que pour les extensions,
+    // apres le XSS stocke trouve en v0.7.1.
+    async function loadReviews(id) {
+      const box = document.getElementById("reviews");
+      if (!box) return;
+      const { data, error } = await supabase
+        .from("extension_reviews")
+        .select("id, rating, comment, created_at, author_id, profiles(username)")
+        .eq("extension_id", id)
+        .order("created_at", { ascending: false });
+      if (error) {
+        box.innerHTML = '<p class="muted">Les avis ne sont pas encore disponibles.</p>';
+        return;
+      }
+      const list = data ?? [];
+      const avg = list.length ? (list.reduce((a, r) => a + r.rating, 0) / list.length).toFixed(1) : null;
+      const profile = getProfile();
+      const mine = profile ? list.find((r) => r.author_id === profile.id) : null;
+      box.innerHTML = `
+        <p class="muted">${avg ? `${avg} sur 5 — ${list.length} avis` : "Aucun avis pour l'instant."}</p>
+        ${list
+          .map(
+            (r) => `<div class="review"><div class="review-head"><span class="stars">${"★".repeat(r.rating)}</span>
+              <span class="muted">@${escapeHtml(r.profiles?.username ?? "?")}</span></div>
+              ${r.comment ? `<p>${escapeHtml(r.comment)}</p>` : ""}</div>`,
+          )
+          .join("")}
+        ${
+          profile
+            ? `<div class="review-form">
+                 <select id="review-rating">${[5, 4, 3, 2, 1]
+                   .map((n) => `<option value="${n}" ${mine && mine.rating === n ? "selected" : ""}>${"★".repeat(n)}</option>`)
+                   .join("")}</select>
+                 <input id="review-comment" maxlength="2000" placeholder="Ce que tu en penses (facultatif)" value="${escapeHtml(mine?.comment ?? "")}" />
+                 <button class="btn" id="review-submit">${mine ? "Modifier mon avis" : "Publier mon avis"}</button>
+               </div>`
+            : '<p class="muted">Connecte-toi pour laisser un avis.</p>'
+        }
+      `;
+      const submit = document.getElementById("review-submit");
+      if (!submit) return;
+      submit.addEventListener("click", async () => {
+        submit.disabled = true;
+        const { error: err } = await supabase.from("extension_reviews").upsert(
+          {
+            extension_id: id,
+            author_id: profile.id,
+            rating: Number(document.getElementById("review-rating").value),
+            comment: document.getElementById("review-comment").value.trim(),
+          },
+          { onConflict: "extension_id,author_id" },
+        );
+        if (err) {
+          alert("Avis refuse : " + err.message);
+          submit.disabled = false;
+          return;
+        }
+        loadReviews(id);
+      });
+    }
+
     async function load(id) {
       const [{ data: ext, error }, { data: media }, { data: installs }] = await Promise.all([
         supabase
@@ -241,8 +304,13 @@
             : ""
         }
 
+        <h2>Avis</h2>
+        <div id="reviews"><p class="muted">Chargement des avis…</p></div>
+
         <div id="owner-dashboard-link"></div>
       `;
+
+      loadReviews(id);
 
       loadedOwnerId = ext.owner_id;
       if (getProfile()?.id === ext.owner_id) {

@@ -15,6 +15,8 @@ import {
   unpublishSkill,
   updateSkill,
 } from "../api";
+import { isExpired, loadSession } from "../account";
+import { BUILTIN_SKILLS } from "../builtinSkills";
 import type { ControlMeSessionMeta, PublicSkillMeta, Settings, Skill, SkillMeta } from "../types";
 
 // Own dedicated Sidebar space, alongside Codex/Control Me/Extensions/
@@ -64,6 +66,27 @@ export default function SkillsView({ settings }: { settings: Settings }) {
       .then(setSessions)
       .catch(() => setSessions([]));
   }, []);
+
+  // Ships with the app rather than being fetched: it is the baseline
+  // every Control Me session ends up needing (open something, find a
+  // field, click a result), and re-teaching it each time wastes turns.
+  async function installBuiltin() {
+    const builtin = BUILTIN_SKILLS[0];
+    if ((skills ?? []).some((s) => s.name === builtin.name)) {
+      setSkillsError(`« ${builtin.name} » est déjà installé.`);
+      return;
+    }
+    setSaving(true);
+    setSkillsError(null);
+    try {
+      await saveNewSkill(builtin.name, builtin.description, builtin.content);
+      refreshSkills();
+    } catch (e) {
+      setSkillsError(String(e));
+    } finally {
+      setSaving(false);
+    }
+  }
 
   function openNewSkillForm() {
     setEditingId(NEW_SKILL);
@@ -132,6 +155,15 @@ export default function SkillsView({ settings }: { settings: Settings }) {
   }
 
   async function handlePublishSkill(id: string) {
+    // No account, no publishing: a published skill is attributed to its
+    // author, and there is no author without a signed-in account.
+    const session = loadSession();
+    if (!session || isExpired(session)) {
+      setSkillsError(
+        "Connecte-toi pour publier (Réglages > Compte). Un skill publié porte le nom de son auteur.",
+      );
+      return;
+    }
     if (
       !window.confirm(
         "Ce skill sera visible publiquement par n'importe qui, sans limite de durée, et ne peut pas être retiré depuis cette version de l'app — ne publie rien de sensible. Continuer ?",
@@ -283,6 +315,9 @@ export default function SkillsView({ settings }: { settings: Settings }) {
         <div className="extension-card-actions">
           <button className="primary-btn" onClick={openNewSkillForm}>
             Nouveau skill
+          </button>
+          <button onClick={() => void installBuiltin()} disabled={saving}>
+            Ajouter « Navigation Basique »
           </button>
           <button onClick={() => openSkillsFolder().catch((e) => setSkillsError(String(e)))}>Ouvrir le dossier</button>
           <button onClick={toggleBrowsePublic}>{showPublicBrowse ? "Fermer" : "Parcourir les skills publics"}</button>

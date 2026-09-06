@@ -2,6 +2,7 @@ import { lazy, Suspense, useEffect, useRef, useState, type CSSProperties, type K
 import { check, type Update } from "@tauri-apps/plugin-updater";
 import { relaunch } from "@tauri-apps/plugin-process";
 import "./App.css";
+import { completeSignIn } from "./account";
 import Sidebar from "./components/Sidebar";
 import MessageBubble from "./components/MessageBubble";
 import HuggingFaceBrowser from "./components/codex/HuggingFaceBrowser";
@@ -176,7 +177,21 @@ export default function App() {
         } catch {
           continue;
         }
-        if (parsed.protocol !== "ollamachat:" || parsed.hostname !== "install-extension") continue;
+        if (parsed.protocol !== "ollamachat:") continue;
+        // Same scheme carries the OAuth callback: Supabase redirects to
+        // ollamachat://auth with the tokens in the URL fragment.
+        if (parsed.hostname === "auth") {
+          const session = completeSignIn(raw);
+          if (!cancelled) {
+            window.alert(
+              session
+                ? "Connexion réussie. Tu peux publier des skills et laisser des avis."
+                : "La connexion n'a pas abouti. Réessaie depuis Réglages > Compte.",
+            );
+          }
+          continue;
+        }
+        if (parsed.hostname !== "install-extension") continue;
         const extensionId = parsed.pathname.replace(/^\//, "");
         if (!extensionId) continue;
         if (

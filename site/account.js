@@ -248,6 +248,22 @@ function ensureStyles() {
   // only covers what's new for v0.7 (dev toggle row, "Notre compte" modal,
   // red sign-out) so nothing here can conflict with a page's own CSS.
   style.textContent = `
+/* Avis sur une extension (v1.0.1). */
+.review { background: var(--bg-raised); border: 1px solid var(--border); border-radius: 10px; padding: 10px 12px; margin-bottom: 8px; }
+.review-head { display: flex; gap: 8px; align-items: center; margin-bottom: 4px; }
+.stars { color: #d2a96a; letter-spacing: 1px; }
+.review-form { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 12px; }
+.review-form input { flex: 1; min-width: 200px; }
+
+/* Passe de lisibilite v1.0.1 : plus de respiration entre les sections et
+   des cibles cliquables plus franches, sans rien retirer. */
+section { margin-bottom: 40px; }
+h2 { margin-top: 28px; }
+.btn { min-height: 38px; }
+.ext-card { transition: transform 0.15s ease, border-color 0.15s ease; }
+.ext-card:hover { transform: translateY(-3px); border-color: var(--accent); }
+.muted { color: var(--text-dim); }
+
     .account-menu-dev-row {
       display: flex; align-items: center; justify-content: space-between; gap: 10px;
       padding: 8px; border-radius: 6px; font-size: 0.85rem;

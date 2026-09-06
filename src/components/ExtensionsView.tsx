@@ -1,4 +1,5 @@
 import { useState } from "react";
+import Marketplace from "./Marketplace";
 import type { Settings } from "../types";
 
 // Dedicated space for extensions, next to Codex/Control Me/Skills/
@@ -29,6 +30,7 @@ export default function ExtensionsView({
   onToggleExtension: (id: string) => void;
 }) {
   const [search, setSearch] = useState("");
+  const [tab, setTab] = useState<"installed" | "market">("installed");
 
   const query = search.trim().toLowerCase();
   const matches = (name: string, description: string) =>
@@ -49,16 +51,28 @@ export default function ExtensionsView({
     <div className="extensions-view">
       <div className="extensions-header">
         <span className="extensions-header-title">Extensions</span>
+        <div className="mode-toggle">
+          <button className={tab === "installed" ? "mode-toggle-active" : ""} onClick={() => setTab("installed")}>
+            Installées
+          </button>
+          <button className={tab === "market" ? "mode-toggle-active" : ""} onClick={() => setTab("market")}>
+            Marketplace
+          </button>
+        </div>
         <div className="extensions-header-spacer" />
-        <input
-          className="extensions-search"
-          value={search}
-          onChange={(e) => setSearch(e.target.value)}
-          placeholder="Rechercher une extension…"
-        />
+        {tab === "installed" && (
+          <input
+            className="extensions-search"
+            value={search}
+            onChange={(e) => setSearch(e.target.value)}
+            placeholder="Rechercher une extension…"
+          />
+        )}
       </div>
 
-      <div className="extensions-content">
+      {tab === "market" && <Marketplace />}
+
+      <div className="extensions-content" hidden={tab !== "installed"}>
         {showCodexCard && (
           <div className="extension-card">
             <div className="extension-card-header">

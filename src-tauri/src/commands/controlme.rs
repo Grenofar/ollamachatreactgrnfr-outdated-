@@ -348,28 +348,49 @@ fn denormalize(coord: f64, dimension: u32) -> i32 {
     ((coord / 999.0) * dimension as f64).round() as i32
 }
 
+// Accepts the French key names too, because that is what the docs tell
+// extension authors to write (touche("Entrée")). They used to fall through
+// to the single-character catch-all below, so "Entrée" typed the letter
+// "e" instead of pressing Enter — silently, which is exactly the reported
+// "the AI cannot press Enter". Accents are also stripped so "entree" and
+// "echap" work, since a model writing without accents is common.
 fn key_from_name(name: &str) -> Key {
-    match name.to_lowercase().as_str() {
-        "enter" | "return" => Key::Return,
-        "tab" => Key::Tab,
-        "escape" | "esc" => Key::Escape,
-        "backspace" => Key::Backspace,
-        "delete" => Key::Delete,
-        "space" => Key::Space,
-        "up" => Key::UpArrow,
-        "down" => Key::DownArrow,
-        "left" => Key::LeftArrow,
-        "right" => Key::RightArrow,
-        "home" => Key::Home,
-        "end" => Key::End,
-        "pageup" => Key::PageUp,
-        "pagedown" => Key::PageDown,
-        "control" | "ctrl" => Key::Control,
+    let lowered = name.trim().to_lowercase();
+    let folded: String = lowered
+        .chars()
+        .map(|c| match c {
+            'é' | 'è' | 'ê' | 'ë' => 'e',
+            'à' | 'â' | 'ä' => 'a',
+            'î' | 'ï' => 'i',
+            'ô' | 'ö' => 'o',
+            'ù' | 'û' | 'ü' => 'u',
+            'ç' => 'c',
+            ' ' | '-' | '_' => ' ',
+            other => other,
+        })
+        .filter(|c| *c != ' ')
+        .collect();
+    match folded.as_str() {
+        "enter" | "return" | "entree" | "entrer" | "retour" => Key::Return,
+        "tab" | "tabulation" => Key::Tab,
+        "escape" | "esc" | "echap" | "echappement" => Key::Escape,
+        "backspace" | "retourarriere" | "effacer" => Key::Backspace,
+        "delete" | "suppr" | "supprimer" | "suppression" => Key::Delete,
+        "space" | "espace" | "barredespace" => Key::Space,
+        "up" | "haut" | "flechehaut" => Key::UpArrow,
+        "down" | "bas" | "flechebas" => Key::DownArrow,
+        "left" | "gauche" | "flechegauche" => Key::LeftArrow,
+        "right" | "droite" | "flechedroite" => Key::RightArrow,
+        "home" | "debut" | "origine" => Key::Home,
+        "end" | "fin" => Key::End,
+        "pageup" | "pagehaut" | "pageprecedente" => Key::PageUp,
+        "pagedown" | "pagebas" | "pagesuivante" => Key::PageDown,
+        "control" | "ctrl" | "controle" => Key::Control,
         "alt" => Key::Alt,
-        "shift" => Key::Shift,
+        "shift" | "maj" | "majuscule" => Key::Shift,
         "meta" | "win" | "windows" | "cmd" | "super" => Key::Meta,
-        "capslock" | "caps" => Key::CapsLock,
-        "insert" => Key::Insert,
+        "capslock" | "caps" | "verrmaj" | "verrouillagemajuscule" => Key::CapsLock,
+        "insert" | "inser" | "inserer" => Key::Insert,
         "f1" => Key::F1,
         "f2" => Key::F2,
         "f3" => Key::F3,

@@ -285,6 +285,7 @@ pas devenir obsolète.
   "Enregistrement dans un skill (v0.9.2)" et "Troisieme passe sur Codex,
   mesuree (v0.9.2)" dans Architecture.
 - **[FAIT] v1.0.0 : mode apprentissage, skills par conversation, Codex connaît son dossier, choix du micro** — (1) **« Apprendre un nouveau skill »** : une séance où la personne *explique* une procédure (aller sur un site, s'en servir, enchaîner des étapes) et où l'IA écoute, pose des questions et consigne chaque étape au lieu d'exécuter — distinct de l'enregistrement de la v0.9.2, qui notait ce qu'elle faisait pendant qu'elle agissait ; (2) Réglages > Extensions > Control Me liste les **skills utilisés par conversation**, avec un bouton pour enrichir un skill à partir de la conversation qui l'a exercé ; (3) Codex reçoit enfin le dossier ouvert ; (4) choix du micro dans Réglages > Audio ; (5) cinq correctifs d'audit. Voir "Mode apprentissage (v1.0.0)" dans Architecture.
+- **[FAIT] v1.0.1 : compte dans l'app, marketplace intégrée avec avis, skill « Navigation Basique », touches françaises** — voir "Compte, marketplace et avis (v1.0.1)" dans Architecture.
 
 ## Architecture
 
@@ -3396,6 +3397,54 @@ Passe demandée explicitement. Cinq défauts réels, pas du style :
    atteignable aujourd'hui (JSON ne porte pas NaN), mais une panique dans
    une commande Tauri coûte cher ici — la v0.5.8 avait tué l'app entière
    pour cette raison.
+
+### Compte, marketplace et avis (v1.0.1)
+
+**Vrai bug d'abord : l'IA ne pouvait pas appuyer sur Entrée.**
+`site/docs.html` dit aux auteurs d'extensions d'écrire `touche("Entrée")`
+en français, mais `key_from_name` n'acceptait que l'anglais : « Entrée »
+tombait dans le cas par défaut, qui prend la **première lettre** — l'IA
+tapait donc la lettre « e », silencieusement. Valable pour tous les noms
+annoncés par la doc (Échap, Suppr, Maj, Espace, Haut/Bas, Début, Fin,
+Verr Maj, Inser). Corrigé avec les alias français, et un repliage des
+accents/espaces/tirets pour que « entree » ou « verr maj » marchent aussi.
+
+**Compte dans l'app** (`src/account.ts`, Réglages > Compte) : connexion
+Google via Supabase, **sans `@supabase/supabase-js`** — ce projet parle à
+Supabase en REST direct, et l'ajouter demanderait un `npm install`, exclu.
+Le flux OAuth est donc fait à la main : le navigateur système s'ouvre sur
+l'URL d'autorisation avec `redirect_to=ollamachat://auth`, Supabase renvoie
+les jetons dans le fragment, et le **handler de deep link déjà en place**
+(celui du bouton « Ajouter » du site) les récupère. **À faire une fois
+côté dashboard Supabase** : ajouter `ollamachat://auth` aux Redirect URLs
+(Authentication > URL Configuration), sinon la redirection est refusée.
+
+**Publier exige un compte** : un skill publié porte le nom de son auteur,
+et un skill sans auteur est un skill dont personne ne répond. Le bouton
+Publier vérifie la session avant tout appel réseau.
+
+**Marketplace intégrée** (`Marketplace.tsx`, onglet dans Extensions) : mêmes
+données que le site, en lecture publique `anon` — impressions, clics
+d'ajout, avis, et installation en un clic via `importMarketplaceExtension`
+déjà existant.
+
+**Avis** (`supabase/reviews_migration.sql`, **à exécuter par
+l'utilisateur**) : lecture publique, écriture limitée à son propre avis,
+un seul avis par personne et par extension (contrainte unique, sinon la
+moyenne se truque en notant en boucle). Contrairement à `app_releases` et
+aux versions d'extension, volontairement immuables, un avis **doit** être
+modifiable et supprimable par son auteur : c'est son opinion, pas un
+artefact publié. Contraintes de taille et de plage posées sur les colonnes
+en plus des policies — RLS contrôle qui écrit, jamais ce qui est écrit.
+
+**Skill « Navigation Basique »** (`src/builtinSkills.ts`, installé en un
+clic depuis Skills) : se déplacer dans Windows et dans un navigateur.
+Écrit une fois pour Chromium en disant explicitement que Chrome, Opera,
+Brave, Edge et Vivaldi partagent les mêmes raccourcis — pour que le modèle
+n'apprenne pas une procédure par navigateur. Chaque étape dit aussi
+**comment savoir que ça a marché**, sans quoi une note n'est pas
+réutilisable. Livré avec l'app plutôt que téléchargé : c'est la base dont
+chaque session a besoin, la re-enseigner à chaque fois gaspille des tours.
 
 ### Les 6 outils de l'agent
 1. `read_file` — lecture texte (limite 5 Mo), chemin absolu
