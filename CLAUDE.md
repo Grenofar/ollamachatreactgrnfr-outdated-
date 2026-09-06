@@ -3234,6 +3234,53 @@ n'est pas accordée, d'oû le rafraîchissement après le premier
 getUserMedia), un test de reconnaissance qui affiche le **code d'erreur
 exact**, et un test de voix de sortie.
 
+### Transcription de secours par Gemini et liens vers Windows (v0.9.2)
+
+Deux ajouts d'abord annoncés comme volontairement absents, puis demandés
+explicitement.
+
+**Pas de menu de sélection du micro, et c'est délibéré.** La
+reconnaissance vocale du moteur utilise toujours le périphérique par
+défaut de Windows et n'expose aucun moyen d'en choisir un autre. Un menu
+dans l'app n'aurait piloté que le compteur de niveau — donc il aurait
+menti. À la place, deux boutons ouvrent directement les pages Windows qui
+comptent (`ms-settings:privacy-microphone`, `ms-settings:sound`), via
+`open_windows_settings` — commande Rust avec **liste blanche** des URI :
+cet argument finit résolu par le shell, rien d'autre que ces deux pages
+n'a de raison d'être ouvert de là. `explorer.exe` résout l'URI ; passer
+par `cmd` ferait clignoter une console.
+
+**Chemin de transcription indépendant** (`src/audioRecorder.ts` +
+`skills::transcribe_audio`) : l'audio est enregistré localement par
+`MediaRecorder`, puis transcrit par Gemini. Il ne remplace pas la
+reconnaissance du moteur, il existe précisément pour le cas où celle-ci
+échoue en `network` — un échec que l'app ne peut pas corriger, puisqu'il
+vient d'un service Google dont la clé n'accompagne que les navigateurs de
+marque.
+
+- **Format vérifié, pas deviné** : l'API Interactions documente l'audio en
+  `{"type":"audio","data":<base64>,"mime_type":...}` et accepte
+  `audio/webm`, ce que `MediaRecorder` produit ici. C'était le vrai
+  risque : la doc de l'ancien endpoint `generateContent` liste un jeu de
+  formats plus restreint où **WebM est absent**, donc partir de cette
+  page-là aurait mené à un échec silencieux.
+- Le type est choisi via `MediaRecorder.isTypeSupported` plutôt qu'écrit
+  en dur : un type non supporté fait lever le constructeur.
+- L'encodage base64 parcourt le tampon par tranches — `btoa` avec un
+  spread sur un gros tableau dépasse la limite de pile, et l'échec aurait
+  été silencieux sur un enregistrement long.
+- Plafond côté Rust avant l'envoi (la requête inline est limitée à 20 Mo,
+  et le base64 gonfle d'environ un tiers) : refus clair plutôt qu'une
+  erreur opaque de l'API.
+- Branché à deux endroits : un test dans Réglages > Audio, et surtout un
+  **"appuyer pour parler" dans `VoiceMode`** dès que la reconnaissance est
+  tombée — le mode vocal reste une conversation au lieu de dégrader vers
+  la saisie clavier seule. Nécessite la clé Gemini de l'utilisateur : sans
+  elle le bouton ne s'affiche pas, plutôt que d'échouer au clic.
+- **Nouvelle exception réseau** à rattacher à la section Confidentialité :
+  l'audio enregistré part vers Google, uniquement sur action explicite
+  (bouton parler / bouton de test), jamais en continu.
+
 ### Troisieme passe sur Codex, mesuree (v0.9.2)
 
 Retour utilisateur : "ameliore aussi les commandes codex car j'ai
