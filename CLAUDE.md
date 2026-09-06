@@ -4614,6 +4614,23 @@ l'utilisateur confirme qu'elle est bien dans `.env` local.
   description dans le binaire — c'est ce contrôle qui avait évité de
   publier un binaire périmé en v0.9.2.
 
+- **2026-09-06** — **v1.0.1** publiée et vérifiée via la clé **anon**
+  (fichier : 200 OK, 7 108 351 octets ; `latest_release_manifest` : 1.0.1,
+  signature de 432 octets présente). Migration des avis exécutée par
+  l'utilisateur et **vérifiée en ligne** (table lisible en anon,
+  `extension_rating` renvoie `{average: 0, count: 0}`).
+  **Reste à faire côté dashboard Supabase** : ajouter `ollamachat://auth`
+  aux Redirect URLs. Vérifié que l'étape d'autorisation accepte bien le
+  paramètre, **mais ça ne prouve rien** : Supabase valide la liste blanche
+  au *retour*, après Google. Symptôme si ce n'est pas fait : la connexion
+  se déroule puis le navigateur atterrit sur le site au lieu de revenir
+  dans l'app.
+  **Rappel de méthode confirmé une fois de plus** : chercher un nom court
+  dans l'`.exe` donne de faux zéros. Ici `entree`/`echap`/`suppr` étaient
+  trouvables mais pas `entrer`/`echappement`/`supprimer` — le compilateur
+  compare les alternatives d'un même bras via des immédiats répartis sur
+  plusieurs registres. Ne jamais conclure à l'absence sur cette base.
+
 ## Prochaines étapes (dans l'ordre du fichier de passation d'origine)
 
 Voir aussi `NEXT_STEPS_FOR_CLAUDE.md` (note de passation d'une session
