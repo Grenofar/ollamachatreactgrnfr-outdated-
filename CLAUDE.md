@@ -4842,6 +4842,14 @@ l'utilisateur confirme qu'elle est bien dans `.env` local.
   dans l'`.exe` (v0.9.1) : **ne jamais conclure à l'absence sans avoir
   compris la forme réelle**.
 
+- **2026-09-09** — **v1.0.4** publiée et vérifiée via la clé **anon**
+  (fichier : 200 OK, 7 128 563 octets ; `latest_release_manifest` : 1.0.4,
+  signature de 432 octets). Modèle Live sélectionnable, avec « Gemini 3
+  Flash Live » par défaut — celui qui est illimité en requêtes sur le
+  compte de l'utilisateur, contrairement au modèle preview codé en dur en
+  v1.0.3, qui était facturé. Voir "Correction : les modèles Live ont bien
+  un quota illimité (v1.0.4)" dans Architecture.
+
 ## Prochaines étapes (dans l'ordre du fichier de passation d'origine)
 
 Voir aussi `NEXT_STEPS_FOR_CLAUDE.md` (note de passation d'une session
