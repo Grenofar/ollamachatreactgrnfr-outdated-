@@ -49,6 +49,8 @@ export interface Settings {
   control_me_live?: boolean;
   /** Images par seconde envoyees au modele en mode Live. */
   control_me_live_fps?: number;
+  /** Mode rapide : Windows UI + actions groupees + attente reduite. */
+  control_me_fast?: boolean;
   disabled_extensions: string[];
   update_popup_enabled: boolean;
 }

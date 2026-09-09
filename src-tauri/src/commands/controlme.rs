@@ -970,6 +970,7 @@ pub async fn run_control_me_core(
     // execute_action's existing action set.
     let loaded_settings = load_settings(app.clone()).ok();
     let use_ui_mode = force_windows_ui
+        || loaded_settings.as_ref().map(|s| s.control_me_fast).unwrap_or(false)
         || loaded_settings
             .as_ref()
             .map(|s| s.control_me_perception_mode == "windows_ui")
@@ -1004,7 +1005,11 @@ pub async fn run_control_me_core(
     // missing its target if the screen didn't react as Gemini assumed.
     // A toggle, not the only behavior, precisely because of that trade-off
     // — mirrors the existing capture/windows_ui perception toggle.
-    let use_predefined_mode = loaded_settings.as_ref().map(|s| s.control_me_action_mode == "predefined").unwrap_or(false);
+    // Mode rapide : force les trois leviers a la fois, sans avoir a les
+    // regler un par un.
+    let fast = loaded_settings.as_ref().map(|s| s.control_me_fast).unwrap_or(false);
+    let use_predefined_mode =
+        fast || loaded_settings.as_ref().map(|s| s.control_me_action_mode == "predefined").unwrap_or(false);
 
     // thinking_level "low" trades some reasoning depth for much faster
     // per-step responses — appropriate for a tight screenshot/act loop

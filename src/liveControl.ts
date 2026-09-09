@@ -12,7 +12,7 @@
 // réaliste, et le vrai gain vient du nombre d'actions par tour, pas du
 // nombre d'images.
 
-import { controlMeAct, controlMeReadUi, controlMeScreen, controlMeTools } from "./api";
+import { controlMeAct, controlMeReadUi, controlMeScreen, controlMeTools, listLiveModels } from "./api";
 import { LIVE_MODEL } from "./liveVoice";
 
 const LIVE_URL =
@@ -52,6 +52,11 @@ export interface LiveControlSession {
 
 export async function startLiveControl(options: LiveControlOptions): Promise<LiveControlSession> {
   const tools = toLiveTools(await controlMeTools());
+  // Le modèle est **détecté**, pas deviné : la console Google affiche des
+  // libellés et non des identifiants d'API, et deviner a échoué deux fois.
+  // On demande donc à l'API lesquels supportent réellement le temps réel,
+  // et on prend le premier. Aucune étape manuelle à faire.
+  const model = await resolveModel(options);
   const ws = new WebSocket(`${LIVE_URL}?key=${encodeURIComponent(options.apiKey)}`);
 
   let closed = false;
@@ -72,7 +77,7 @@ export async function startLiveControl(options: LiveControlOptions): Promise<Liv
     ws.send(
       JSON.stringify({
         setup: {
-          model: `models/${options.model?.trim() || LIVE_MODEL}`,
+          model: `models/${model}`,
           // TEXT et non AUDIO : ici le modèle agit, il n'a pas à parler.
           // Demander de l'audio doublerait le coût pour rien.
           generationConfig: { responseModalities: ["TEXT"] },
@@ -208,6 +213,27 @@ export async function startLiveControl(options: LiveControlOptions): Promise<Liv
 // La conversion est faite ici plutôt que d'ajouter un second jeu de
 // déclarations côté Rust : une seule source de vérité, deux formats de
 // sortie.
+// Choisit un modèle réellement disponible sur la clé. Le modèle configuré
+// n'est retenu que si l'API le confirme : un identifiant périmé ou mal
+// deviné ferait échouer toute la session au setup.
+async function resolveModel(options: LiveControlOptions): Promise<string> {
+  try {
+    const available = await listLiveModels(options.apiKey);
+    const wanted = options.model?.trim();
+    if (wanted && available.some((m) => m.id === wanted)) return wanted;
+    // Préférence pour un modèle de dialogue plutôt que de traduction ou de
+    // transcription, qui apparaissent aussi comme compatibles temps réel
+    // mais ne savent pas appeler d'outils.
+    const preferred =
+      available.find((m) => /live|dialog/i.test(m.id) && !/translate|transcribe/i.test(m.id)) ?? available[0];
+    return preferred.id;
+  } catch {
+    // La détection a échoué : on tente quand même avec ce qui est configuré,
+    // l'appelant a de toute façon un repli vers le mode classique.
+    return options.model?.trim() || LIVE_MODEL;
+  }
+}
+
 function toLiveTools(raw: unknown): unknown[] {
   const list = Array.isArray(raw) ? raw : [];
   const declarations = list

@@ -52,6 +52,14 @@ pub struct Settings {
     // fumee sans que le modele ait le temps de regarder les images.
     #[serde(default = "default_control_me_fps")]
     pub control_me_live_fps: f64,
+    // Un seul interrupteur pour la vitesse, au lieu de trois reglages a
+    // combiner correctement : perception Windows UI (aucune image envoyee),
+    // actions groupees par tour, et attente reduite apres chaque action.
+    // Ces trois leviers sont ceux que la mesure de la v0.9.0 a identifies ;
+    // les laisser separes revenait a demander de deviner la bonne
+    // combinaison.
+    #[serde(default)]
+    pub control_me_fast: bool,
     // Extension ids ("codex" | "controlme") the user toggled off from the
     // Extensions view. Purely a show/hide switch — nothing is actually
     // uninstalled (everything ships in the same binary), see
@@ -131,6 +139,7 @@ fn default_settings() -> Settings {
         live_model: None,
         control_me_live: false,
         control_me_live_fps: default_control_me_fps(),
+        control_me_fast: false,
         disabled_extensions: Vec::new(),
         update_popup_enabled: true,
     }

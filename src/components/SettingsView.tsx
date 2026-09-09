@@ -371,6 +371,28 @@ export default function SettingsView({
                       {" "}Enregistre pour appliquer.
                     </div>
 
+                    <label>Mode rapide</label>
+                    <div className="mode-toggle">
+                      <button
+                        className={!form.control_me_fast ? "mode-toggle-active" : ""}
+                        onClick={() => setForm({ ...form, control_me_fast: false })}
+                      >
+                        Normal
+                      </button>
+                      <button
+                        className={form.control_me_fast ? "mode-toggle-active" : ""}
+                        onClick={() => setForm({ ...form, control_me_fast: true })}
+                      >
+                        Rapide
+                      </button>
+                    </div>
+                    <div className="modal-hint">
+                      {form.control_me_fast
+                        ? "Active d'un coup les trois leviers qui font la vitesse : lecture de l'interface au lieu de captures d'écran (aucune image envoyée), plusieurs actions groupées par tour, et attente réduite entre les actions. Fonctionne avec ton modèle habituel, sans rien d'autre à régler."
+                        : "Réglages séparés ci-dessous. Le mode rapide les combine correctement à ta place."}
+                      {" "}Enregistre pour appliquer.
+                    </div>
+
                     <label>Vitesse : session temps réel</label>
                     <div className="mode-toggle">
                       <button

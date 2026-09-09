@@ -3732,6 +3732,35 @@ toujours faux au mauvais moment. `onError` reçoit maintenant un
 `beforeReady` explicite, calculé sur `setupComplete` reçu ou non. C'est ce
 qui fait que « ça marche quand même » au lieu de « ça affiche une erreur ».
 
+### Mode rapide : arrêter de faire dépendre la vitesse d'un pari (v1.0.8)
+
+Après trois versions où la vitesse dépendait du Live API et où chaque
+tentative échouait sur un identifiant de modèle deviné, l'utilisateur a
+recadré : « que Control Me soit rapide, c'est la seule chose que je veux ».
+
+**Deux réponses, l'une garantie et l'autre optionnelle.**
+
+**1. Mode rapide (garanti, sans Live).** Un seul interrupteur qui active
+d'un coup les trois leviers que la mesure de la v0.9.0 avait identifiés :
+perception Windows UI (aucune image envoyée), actions groupées par tour,
+attente réduite. **Ils existaient déjà tous les trois** mais étaient
+dispersés dans trois réglages distincts, ce qui revenait à demander de
+deviner la bonne combinaison. Fonctionne avec le modèle déjà configuré,
+donc **sans dépendre d'aucun identifiant à trouver**.
+
+**2. Détection automatique du modèle Live.** `startLiveControl` interroge
+l'API au démarrage et retient un modèle que Google confirme supporter
+`bidiGenerateContent`, en préférant un modèle de dialogue à un modèle de
+traduction ou de transcription — ces derniers apparaissent aussi comme
+compatibles temps réel mais ne savent pas appeler d'outils. Plus aucune
+étape manuelle, et plus aucun identifiant écrit en dur.
+
+**Leçon de fond de cette série** : j'ai fait dépendre trois versions
+successives d'une valeur que je ne pouvais pas vérifier, alors qu'un gain
+réel était disponible immédiatement avec ce qui marchait déjà. **Quand une
+fonctionnalité repose sur une inconnue, livrer d'abord ce qui n'en dépend
+pas.**
+
 ### Les 6 outils de l'agent
 1. `read_file` — lecture texte (limite 5 Mo), chemin absolu
 2. `list_dir` — listing un niveau, chemin absolu
