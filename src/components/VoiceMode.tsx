@@ -3,6 +3,7 @@ import { isSpeechRecognitionSupported, primeVoices, speak, startListening, stopS
 import { isRecordingSupported, startRecording, startVoiceTurn, type AudioRecorder, type VoiceTurn } from "../audioRecorder";
 import { transcribeAudio } from "../api";
 import { speakWithGemini, stopGeminiSpeech } from "../speech";
+import { isLiveSupported, startLiveSession, type LiveSession } from "../liveVoice";
 
 type VoiceState = "listening" | "thinking" | "speaking";
 
@@ -23,6 +24,8 @@ export default function VoiceMode({
   geminiModel,
   geminiVoice,
   micDeviceId,
+  liveMode,
+  liveInstruction,
 }: {
   title: string;
   subtitle?: string;
@@ -39,6 +42,11 @@ export default function VoiceMode({
   /** Voix Gemini à utiliser ; vide = voix du système. */
   geminiVoice?: string;
   micDeviceId?: string;
+  /** Conversation temps réel : une seule connexion, l'IA entend
+   * pendant qu'on parle au lieu d'attendre la fin. */
+  liveMode?: boolean;
+  /** Consigne donnée au modèle temps réel. */
+  liveInstruction?: string;
 }) {
   const [state, setState] = useState<VoiceState>("listening");
   const [caption, setCaption] = useState("");
@@ -63,6 +71,8 @@ export default function VoiceMode({
   const pushRecRef = useRef<AudioRecorder | null>(null);
   const turnRef = useRef<VoiceTurn | null>(null);
   const usingGeminiEars = useRef(false);
+  const liveRef = useRef<LiveSession | null>(null);
+  const [liveOn, setLiveOn] = useState(false);
   const canPushToTalk = !!geminiApiKey?.trim() && isRecordingSupported();
 
   // Kept in a ref so the recognizer's onEnd closure (created once per
@@ -182,6 +192,43 @@ export default function VoiceMode({
 
   useEffect(() => {
     primeVoices();
+    // Mode temps réel : une seule connexion tient toute la conversation,
+    // donc ni reconnaissance du navigateur, ni tour de parole à orchestrer
+    // ici — le modèle entend pendant qu'on parle et répond en continu.
+    if (liveMode && geminiApiKey?.trim() && isLiveSupported()) {
+      setLiveOn(true);
+      setState("listening");
+      startLiveSession({
+        apiKey: geminiApiKey,
+        voice: geminiVoice || undefined,
+        systemInstruction: liveInstruction,
+        deviceId: micDeviceId || undefined,
+        onSpeakingChange: (speaking) => {
+          if (!closedRef.current) setState(speaking ? "speaking" : "listening");
+        },
+        onTranscript: (text) => {
+          if (!closedRef.current) setCaption(text);
+        },
+        onError: (message) => {
+          if (!closedRef.current) setPushError(message);
+        },
+      })
+        .then((session) => {
+          if (closedRef.current) session.close();
+          else liveRef.current = session;
+        })
+        .catch((e) => {
+          if (closedRef.current) return;
+          setLiveOn(false);
+          // Retour au mode par tours plutôt que d'abandonner la conversation.
+          markDeaf("Le mode temps réel n'a pas pu démarrer : " + e);
+        });
+      return () => {
+        closedRef.current = true;
+        liveRef.current?.close();
+        liveRef.current = null;
+      };
+    }
     // Note the cleanup below is returned in BOTH branches: an early return
     // here would skip it entirely, leaving the assistant still speaking
     // after the user closed voice mode.
@@ -280,7 +327,11 @@ export default function VoiceMode({
     }
   }
 
-  const stateLabel =
+  const stateLabel = liveOn
+    ? state === "speaking"
+      ? `${assistantName} répond…`
+      : "Parle quand tu veux, elle écoute en continu"
+    :
     state === "listening" ? "À toi de parler…" : state === "thinking" ? "Réflexion…" : `${assistantName} parle…`;
 
   return (

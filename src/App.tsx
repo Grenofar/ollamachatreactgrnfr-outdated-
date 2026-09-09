@@ -696,6 +696,8 @@ export default function App() {
             geminiModel={settings?.gemini_model ?? ""}
             geminiVoice={settings?.gemini_voice ?? ""}
             micDeviceId={settings?.preferred_microphone ?? ""}
+            liveMode={settings?.voice_live_mode ?? false}
+            liveInstruction={settings?.system_prompt}
           />
         ) : (
         <>

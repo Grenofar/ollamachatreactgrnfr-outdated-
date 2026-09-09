@@ -239,6 +239,12 @@ export default function SettingsView({
             geminiModel={form.gemini_model ?? ""}
             preferredMicrophone={form.preferred_microphone ?? ""}
             geminiVoice={form.gemini_voice ?? ""}
+            liveMode={form.voice_live_mode ?? false}
+            onLiveModeChange={(on) => {
+              const next = { ...form, voice_live_mode: on };
+              setForm(next);
+              onSave(next);
+            }}
             onGeminiVoiceChange={(v) => {
               const next = { ...form, gemini_voice: v || null };
               setForm(next);

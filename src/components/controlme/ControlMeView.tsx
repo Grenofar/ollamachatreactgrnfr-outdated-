@@ -724,6 +724,8 @@ export default function ControlMeView({
           geminiModel={model}
           geminiVoice={settings.gemini_voice ?? ""}
           micDeviceId={settings.preferred_microphone ?? ""}
+          liveMode={settings.voice_live_mode ?? false}
+          liveInstruction="Tu discutes avec la personne de ce qu'elle veut faire sur son PC. Réponds brièvement, comme à l'oral."
         />
       ) : (
       <>

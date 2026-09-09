@@ -41,6 +41,8 @@ export interface Settings {
   preferred_microphone?: string | null;
   /** Voix Gemini pour la sortie vocale ; vide = voix du systeme. */
   gemini_voice?: string | null;
+  /** Conversation vocale en temps reel via le Live API de Gemini. */
+  voice_live_mode?: boolean;
   disabled_extensions: string[];
   update_popup_enabled: boolean;
 }

@@ -21,6 +21,8 @@ export default function AudioSettings({
   onPreferredMicrophoneChange,
   geminiVoice,
   onGeminiVoiceChange,
+  liveMode,
+  onLiveModeChange,
 }: {
   geminiApiKey: string;
   geminiModel: string;
@@ -30,6 +32,8 @@ export default function AudioSettings({
   /** Vide = voix du système Windows. */
   geminiVoice: string;
   onGeminiVoiceChange: (voice: string) => void;
+  liveMode: boolean;
+  onLiveModeChange: (on: boolean) => void;
 }) {
   const [devices, setDevices] = useState<MediaDeviceInfo[] | null>(null);
   const [permission, setPermission] = useState<string>("inconnu");
@@ -266,6 +270,28 @@ export default function AudioSettings({
         )}
         <span className="modal-hint">{testing ? "Parle : la barre doit bouger." : "Lance le test puis parle."}</span>
       </div>
+
+      <label>Conversation temps réel</label>
+      <div className="mode-toggle">
+        <button className={!liveMode ? "mode-toggle-active" : ""} onClick={() => onLiveModeChange(false)}>
+          Par tours
+        </button>
+        <button className={liveMode ? "mode-toggle-active" : ""} onClick={() => onLiveModeChange(true)}>
+          Temps réel
+        </button>
+      </div>
+      <p className="modal-hint">
+        {liveMode ? (
+          <>
+            Une seule connexion reste ouverte : l'IA t'entend pendant que tu parles et répond en continu,
+            au lieu d'attendre que tu aies fini pour transcrire puis synthétiser. C'est nettement plus
+            rapide, mais l'audio est facturé à la seconde dans les deux sens sur ton compte Gemini, et le
+            micro reste ouvert pendant toute la conversation.
+          </>
+        ) : (
+          "Chacun parle à son tour : l'IA attend que tu aies fini avant de répondre. Plus économe, mais un temps d'attente entre chaque échange."
+        )}
+      </p>
 
       <label>Voix de l'IA</label>
       <select value={geminiVoice} onChange={(e) => onGeminiVoiceChange(e.target.value)}>

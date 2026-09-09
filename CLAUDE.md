@@ -3560,6 +3560,47 @@ part chez Google dès qu'une voix Gemini est choisie — s'ajoute à l'audio
 enregistré pour la transcription (v0.9.2). Le réglage est explicite et
 vide par défaut : sans choix, tout reste sur les voix Windows, locales.
 
+### Conversation vocale temps réel (Live API, v1.0.3)
+
+Demandé explicitement, avec une prémisse à corriger : l'utilisateur pensait
+que ces modèles ont des quotas illimités. **La recherche dit le
+contraire** — le Live API est facturé à l'audio (~3 $/M jetons d'entrée,
+~12 $/M en sortie). Ce qui est vrai en revanche, c'est que c'est bien le
+chemin le plus rapide : dit tel quel plutôt que de laisser croire que
+c'est gratuit.
+
+`src/liveVoice.ts` : une seule connexion WebSocket tient toute la
+conversation. Le mode par tours enchaînait enregistrer → attendre le
+silence → transcrire → générer → synthétiser, soit quatre allers-retours
+avant le premier son ; ici le modèle entend pendant qu'on parle.
+
+Points vérifiés dans la doc avant d'écrire, chacun étant un piège :
+- **Les deux fréquences ne sont pas les mêmes** : 16 kHz en entrée,
+  24 kHz en sortie. Les croire identiques donnerait une voix accélérée ou
+  ralentie.
+- **Les réponses arrivent en Blob binaire**, pas en texte : les traiter
+  comme des chaînes ne donnerait rien du tout.
+- **La CSP du webview autorisait déjà `wss:`** (vérifié avant de coder,
+  pas supposé) — sans quoi la connexion aurait échoué en silence.
+- L'audio reçu est mis bout à bout sur l'horloge audio (`nextPlayAt`)
+  plutôt que joué dès réception, sinon les morceaux se chevauchent et la
+  voix hache. Sur `interrupted`, il ne suffit pas d'arrêter d'ajouter : ce
+  qui est déjà programmé doit être stoppé, sinon il joue par-dessus la
+  nouvelle réponse.
+- `echoCancellation`/`noiseSuppression` activés : sans eux le modèle
+  s'entend dans les haut-parleurs et se coupe la parole en boucle.
+- `ScriptProcessorNode` plutôt qu'`AudioWorklet` : déprécié, mais le
+  worklet exige un module chargé depuis une URL séparée — une vraie
+  complication de bundling pour un traitement qui se résume à recopier et
+  convertir un tampon.
+- Rééchantillonnage par moyenne et non par décimation : jeter des
+  échantillons crée du repliement audible.
+
+Bascule dans Réglages > Audio, **à « par tours » par défaut** : le temps
+réel garde le micro ouvert toute la conversation et facture l'audio dans
+les deux sens, ce n'est pas un défaut à imposer. En cas d'échec de
+démarrage, retour au mode par tours plutôt qu'abandon.
+
 ### Les 6 outils de l'agent
 1. `read_file` — lecture texte (limite 5 Mo), chemin absolu
 2. `list_dir` — listing un niveau, chemin absolu

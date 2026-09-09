@@ -32,6 +32,12 @@ pub struct Settings {
     // nettement plus robotique.
     #[serde(default)]
     pub gemini_voice: Option<String>,
+    // Conversation vocale en temps reel (Live API) : une seule connexion
+    // ouverte, le modele entend pendant qu on parle. Nettement plus rapide
+    // que la chaine enregistrer/transcrire/generer/synthetiser, mais
+    // factures a la seconde d audio dans les deux sens.
+    #[serde(default)]
+    pub voice_live_mode: bool,
     // Extension ids ("codex" | "controlme") the user toggled off from the
     // Extensions view. Purely a show/hide switch — nothing is actually
     // uninstalled (everything ships in the same binary), see
@@ -103,6 +109,7 @@ fn default_settings() -> Settings {
         control_me_action_mode: default_control_me_action_mode(),
         preferred_microphone: None,
         gemini_voice: None,
+        voice_live_mode: false,
         disabled_extensions: Vec::new(),
         update_popup_enabled: true,
     }
