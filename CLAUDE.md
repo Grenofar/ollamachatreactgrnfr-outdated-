@@ -4933,6 +4933,14 @@ l'utilisateur confirme qu'elle est bien dans `.env` local.
   troisième forme : **une absence dans un binaire ou un bundle n'est
   jamais une preuve sans avoir compris comment la valeur y est stockée**.
 
+- **2026-09-09** — **v1.0.6** publiée et vérifiée via la clé **anon**
+  (fichier : 200 OK, 7 143 015 octets ; `latest_release_manifest` : 1.0.6,
+  signature de 432 octets). Corrige le setup de la session Live (deux
+  formats d'outils distincts entre REST et Live) et ajoute le repli
+  automatique vers la boucle classique. Build nettement plus court
+  (8 min contre ~15) : seul le TypeScript avait changé, donc le crate
+  Rust est resté en cache — utile pour estimer les prochains.
+
 ## Prochaines étapes (dans l'ordre du fichier de passation d'origine)
 
 Voir aussi `NEXT_STEPS_FOR_CLAUDE.md` (note de passation d'une session
