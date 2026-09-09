@@ -26,6 +26,7 @@ export default function VoiceMode({
   micDeviceId,
   liveMode,
   liveInstruction,
+  liveModel,
 }: {
   title: string;
   subtitle?: string;
@@ -47,6 +48,8 @@ export default function VoiceMode({
   liveMode?: boolean;
   /** Consigne donnée au modèle temps réel. */
   liveInstruction?: string;
+  /** Identifiant du modèle Live ; vide = celui par défaut. */
+  liveModel?: string;
 }) {
   const [state, setState] = useState<VoiceState>("listening");
   const [caption, setCaption] = useState("");
@@ -200,6 +203,7 @@ export default function VoiceMode({
       setState("listening");
       startLiveSession({
         apiKey: geminiApiKey,
+        model: liveModel || undefined,
         voice: geminiVoice || undefined,
         systemInstruction: liveInstruction,
         deviceId: micDeviceId || undefined,

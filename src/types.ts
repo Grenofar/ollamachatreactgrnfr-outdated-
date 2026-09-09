@@ -43,6 +43,8 @@ export interface Settings {
   gemini_voice?: string | null;
   /** Conversation vocale en temps reel via le Live API de Gemini. */
   voice_live_mode?: boolean;
+  /** Identifiant du modele Live ; vide = celui par defaut. */
+  live_model?: string | null;
   disabled_extensions: string[];
   update_popup_enabled: boolean;
 }

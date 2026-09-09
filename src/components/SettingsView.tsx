@@ -240,6 +240,12 @@ export default function SettingsView({
             preferredMicrophone={form.preferred_microphone ?? ""}
             geminiVoice={form.gemini_voice ?? ""}
             liveMode={form.voice_live_mode ?? false}
+            liveModel={form.live_model ?? "gemini-3-flash-live"}
+            onLiveModelChange={(m) => {
+              const next = { ...form, live_model: m || null };
+              setForm(next);
+              onSave(next);
+            }}
             onLiveModeChange={(on) => {
               const next = { ...form, voice_live_mode: on };
               setForm(next);

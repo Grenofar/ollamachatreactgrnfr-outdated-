@@ -3601,6 +3601,40 @@ réel garde le micro ouvert toute la conversation et facture l'audio dans
 les deux sens, ce n'est pas un défaut à imposer. En cas d'échec de
 démarrage, retour au mode par tours plutôt qu'abandon.
 
+### Correction : les modèles Live ont bien un quota illimité (v1.0.4)
+
+**Erreur de ma part, affirmée deux fois avant d'être corrigée.** J'avais
+soutenu, recherche web à l'appui, qu'aucun modèle Gemini n'a de quota
+illimité. L'utilisateur a envoyé une capture de **sa propre console de
+quotas Google**, qui affiche noir sur blanc « Illimité » en requêtes pour
+quatre modèles de la file « API Live » :
+
+| Modèle | Requêtes | Jetons |
+|---|---|---|
+| Gemini 2.5 Flash Native Audio Dialog | Illimité | 1M |
+| Gemini 3 Flash Live | Illimité | 65K |
+| Gemini 3.5 Live Translate | Illimité | 20K |
+| Gemini 3.5 Transcribe Live | Illimité | 20K |
+
+**Leçon à retenir** : les pages généralistes sur « le palier gratuit » ne
+couvrent pas les files de quota spécifiques comme celle du Live API. La
+console du compte fait autorité, pas une recherche web — et quand
+quelqu'un affirme quelque chose sur **son propre compte**, lui demander
+sa console vaut mieux que de le contredire deux fois.
+
+**Conséquence concrète, et c'est là que ça comptait vraiment** : le modèle
+que j'avais codé en dur (`gemini-3.1-flash-live-preview`) **n'apparaît pas
+dans cette liste** — il est facturé, là où « Gemini 3 Flash Live » ne
+l'est pas. Le modèle devient donc sélectionnable, avec pour défaut celui
+de la console.
+
+**Les identifiants sont déduits, pas connus** : la console affiche des
+libellés (« Gemini 3 Flash Live »), pas des ids d'API, et aucune clé
+n'est configurée sur cette machine pour interroger l'endpoint des
+modèles. D'où le **champ libre** à côté du sélecteur : corriger un
+identifiant ne doit pas exiger une nouvelle version. C'est la réponse
+directe à l'erreur précédente — coder en dur une valeur devinée.
+
 ### Les 6 outils de l'agent
 1. `read_file` — lecture texte (limite 5 Mo), chemin absolu
 2. `list_dir` — listing un niveau, chemin absolu

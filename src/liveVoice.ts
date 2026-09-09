@@ -16,7 +16,22 @@
 const LIVE_URL =
   "wss://generativelanguage.googleapis.com/ws/google.ai.generativelanguage.v1beta.GenerativeService.BidiGenerateContent";
 
-export const LIVE_MODEL = "gemini-3.1-flash-live-preview";
+// Modèles Live vus dans la console de quotas de l'utilisateur, où ils
+// affichent "Illimité" en requêtes (avec un plafond de jetons, indiqué
+// ici). Les identifiants sont déduits des noms affichés : la console
+// montre des libellés, pas des ids. D'où le champ libre côté Réglages,
+// pour corriger sans attendre une nouvelle version si l'un d'eux ne
+// correspond pas.
+export const LIVE_MODELS = [
+  { id: "gemini-3-flash-live", label: "Gemini 3 Flash Live — illimité en requêtes (65K jetons)" },
+  {
+    id: "gemini-2.5-flash-native-audio-dialog",
+    label: "Gemini 2.5 Flash Native Audio Dialog — illimité en requêtes (1M jetons)",
+  },
+  { id: "gemini-3.1-flash-live-preview", label: "Gemini 3.1 Flash Live (preview) — facturé à l'audio" },
+];
+
+export const LIVE_MODEL = LIVE_MODELS[0].id;
 
 const INPUT_RATE = 16000;
 const OUTPUT_RATE = 24000;
@@ -26,6 +41,8 @@ const CAPTURE_CHUNK = 4096;
 
 export interface LiveSessionOptions {
   apiKey: string;
+  /** Identifiant du modèle Live. Vide = LIVE_MODEL. */
+  model?: string;
   /** Voix Gemini (Kore, Puck…). Vide = voix par défaut du modèle. */
   voice?: string;
   systemInstruction?: string;
@@ -101,7 +118,7 @@ export async function startLiveSession(options: LiveSessionOptions): Promise<Liv
     ws.send(
       JSON.stringify({
         setup: {
-          model: `models/${LIVE_MODEL}`,
+          model: `models/${options.model?.trim() || LIVE_MODEL}`,
           generationConfig: {
             responseModalities: ["AUDIO"],
             ...(speechConfig ? { speechConfig } : {}),

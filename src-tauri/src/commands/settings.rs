@@ -38,6 +38,11 @@ pub struct Settings {
     // factures a la seconde d audio dans les deux sens.
     #[serde(default)]
     pub voice_live_mode: bool,
+    // Identifiant du modele Live. Modifiable a la main : la console de
+    // quotas affiche des libelles, pas des ids, donc celui qui est propose
+    // par defaut peut ne pas correspondre.
+    #[serde(default)]
+    pub live_model: Option<String>,
     // Extension ids ("codex" | "controlme") the user toggled off from the
     // Extensions view. Purely a show/hide switch — nothing is actually
     // uninstalled (everything ships in the same binary), see
@@ -110,6 +115,7 @@ fn default_settings() -> Settings {
         preferred_microphone: None,
         gemini_voice: None,
         voice_live_mode: false,
+        live_model: None,
         disabled_extensions: Vec::new(),
         update_popup_enabled: true,
     }

@@ -3,6 +3,7 @@ import { isSpeechRecognitionSupported, isSpeechSynthesisSupported, speak, startL
 import { isRecordingSupported, startRecording, type AudioRecorder } from "../audioRecorder";
 import { openWindowsSettings, transcribeAudio } from "../api";
 import { GEMINI_VOICES, speakWithGemini } from "../speech";
+import { LIVE_MODELS } from "../liveVoice";
 
 // Audio panel — as much a diagnostic as a settings page. "The mic doesn't
 // hear me" has three completely different causes that look identical from
@@ -23,6 +24,8 @@ export default function AudioSettings({
   onGeminiVoiceChange,
   liveMode,
   onLiveModeChange,
+  liveModel,
+  onLiveModelChange,
 }: {
   geminiApiKey: string;
   geminiModel: string;
@@ -34,6 +37,8 @@ export default function AudioSettings({
   onGeminiVoiceChange: (voice: string) => void;
   liveMode: boolean;
   onLiveModeChange: (on: boolean) => void;
+  liveModel: string;
+  onLiveModelChange: (model: string) => void;
 }) {
   const [devices, setDevices] = useState<MediaDeviceInfo[] | null>(null);
   const [permission, setPermission] = useState<string>("inconnu");
@@ -292,6 +297,33 @@ export default function AudioSettings({
           "Chacun parle à son tour : l'IA attend que tu aies fini avant de répondre. Plus économe, mais un temps d'attente entre chaque échange."
         )}
       </p>
+
+      {liveMode && (
+        <>
+          <label>Modèle temps réel</label>
+          <select
+            value={LIVE_MODELS.some((m) => m.id === liveModel) ? liveModel : "__custom__"}
+            onChange={(e) => onLiveModelChange(e.target.value === "__custom__" ? liveModel : e.target.value)}
+          >
+            {LIVE_MODELS.map((m) => (
+              <option key={m.id} value={m.id}>
+                {m.label}
+              </option>
+            ))}
+            <option value="__custom__">Autre (saisir l'identifiant)</option>
+          </select>
+          <input
+            value={liveModel}
+            onChange={(e) => onLiveModelChange(e.target.value)}
+            placeholder="Identifiant exact du modèle"
+          />
+          <p className="modal-hint">
+            La console Google affiche des noms, pas des identifiants d'API : ceux proposés ici en sont
+            déduits. Si la connexion échoue en disant que le modèle est introuvable, corrige l&apos;identifiant
+            ici — le message d&apos;erreur exact s&apos;affiche dans le mode vocal.
+          </p>
+        </>
+      )}
 
       <label>Voix de l'IA</label>
       <select value={geminiVoice} onChange={(e) => onGeminiVoiceChange(e.target.value)}>
