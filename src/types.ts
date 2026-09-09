@@ -45,6 +45,10 @@ export interface Settings {
   voice_live_mode?: boolean;
   /** Identifiant du modele Live ; vide = celui par defaut. */
   live_model?: string | null;
+  /** Control Me en session Live temps reel. */
+  control_me_live?: boolean;
+  /** Images par seconde envoyees au modele en mode Live. */
+  control_me_live_fps?: number;
   disabled_extensions: string[];
   update_popup_enabled: boolean;
 }

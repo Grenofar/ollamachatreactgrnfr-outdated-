@@ -43,6 +43,15 @@ pub struct Settings {
     // par defaut peut ne pas correspondre.
     #[serde(default)]
     pub live_model: Option<String>,
+    // Control Me en session Live : une connexion ouverte, le modele
+    // enchaine les actions sans repayer un aller-retour REST a chaque fois.
+    #[serde(default)]
+    pub control_me_live: bool,
+    // Images (ou lectures d interface) par seconde envoyees au modele en
+    // mode Live. Borne cote frontend : au-dela le quota de jetons part en
+    // fumee sans que le modele ait le temps de regarder les images.
+    #[serde(default = "default_control_me_fps")]
+    pub control_me_live_fps: f64,
     // Extension ids ("codex" | "controlme") the user toggled off from the
     // Extensions view. Purely a show/hide switch — nothing is actually
     // uninstalled (everything ships in the same binary), see
@@ -92,6 +101,10 @@ fn default_control_me_perception_mode() -> String {
 // to "live": the speed/reliability trade-off is real enough that it
 // should be an explicit opt-in, not something a fresh install is silently
 // exposed to.
+fn default_control_me_fps() -> f64 {
+    1.0
+}
+
 fn default_control_me_action_mode() -> String {
     "live".to_string()
 }
@@ -116,6 +129,8 @@ fn default_settings() -> Settings {
         gemini_voice: None,
         voice_live_mode: false,
         live_model: None,
+        control_me_live: false,
+        control_me_live_fps: default_control_me_fps(),
         disabled_extensions: Vec::new(),
         update_popup_enabled: true,
     }

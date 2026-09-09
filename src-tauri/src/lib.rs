@@ -3,7 +3,8 @@ mod commands;
 use commands::agent::{agent_chat, cancel_agent_chat, AgentCancelFlag};
 use commands::chat::{cancel_chat, delete_model, install_model, list_models, send_chat, CancelFlag};
 use commands::controlme::{
-    cancel_control_me, clear_control_me_memory, list_control_me_memory, resolve_control_me_confirmation,
+    cancel_control_me, clear_control_me_memory, control_me_act, control_me_read_ui, control_me_screen,
+    control_me_tools, list_control_me_memory, resolve_control_me_confirmation,
     run_control_me, ControlMeCancelFlag, ControlMeConfirmation,
 };
 use commands::controlme_sessions::{
@@ -277,6 +278,10 @@ pub fn run() {
             close_app,
             run_control_me,
             cancel_control_me,
+            control_me_screen,
+            control_me_read_ui,
+            control_me_act,
+            control_me_tools,
             resolve_control_me_confirmation,
             list_control_me_memory,
             clear_control_me_memory,

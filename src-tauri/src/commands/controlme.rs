@@ -1294,3 +1294,65 @@ pub fn list_control_me_memory(app: AppHandle) -> Result<Vec<MemoryEntry>, String
 pub fn clear_control_me_memory(app: AppHandle) -> Result<(), String> {
     save_memory(&app, &[])
 }
+
+// ---------------------------------------------------------------- mode Live
+// Le Live API tient une session ouverte et appelle les outils lui-meme, au
+// lieu d'un aller-retour REST complet par action. La boucle vit donc cote
+// frontend (le webview a deja un WebSocket qui marche, voir liveVoice.ts) et
+// n'a besoin que de trois choses du cote Rust : voir l'ecran, lire
+// l'interface, et executer une action. Aucune logique dupliquee — ces
+// commandes appellent exactement les memes fonctions que la boucle REST.
+
+/// Une observation de l'ecran pour le mode Live : capture JPEG reduite plus
+/// les dimensions reelles, dont le frontend a besoin pour denormaliser.
+#[derive(Serialize)]
+pub struct ScreenObservation {
+    pub image_base64: String,
+    pub width: u32,
+    pub height: u32,
+}
+
+#[tauri::command]
+pub async fn control_me_screen() -> Result<ScreenObservation, String> {
+    let (image_base64, width, height) =
+        tokio::task::spawn_blocking(|| capture_screenshot_base64_scaled(SCREENSHOT_MAX_WIDTH, SCREENSHOT_JPEG_QUALITY))
+            .await
+            .map_err(|e| e.to_string())??;
+    Ok(ScreenObservation { image_base64, width, height })
+}
+
+#[tauri::command]
+pub async fn control_me_read_ui() -> Result<String, String> {
+    let (w, h) = primary_screen_size()?;
+    Ok(read_ui_off_runtime(w, h).await)
+}
+
+/// Execute une action et renvoie le texte de resultat destine au modele.
+/// Passe par dispatch_action, donc read_ui_elements / remember_fact /
+/// add_to_skill y sont traites comme dans la boucle REST.
+#[tauri::command]
+pub async fn control_me_act(
+    app: AppHandle,
+    name: String,
+    args: Value,
+    recording_skill_id: Option<String>,
+) -> Result<String, String> {
+    let (width, height) = primary_screen_size()?;
+    let (_label, result, error) =
+        dispatch_action(&app, &name, &args, width, height, recording_skill_id.as_deref()).await;
+    match error {
+        Some(e) => Err(e),
+        None => Ok(result),
+    }
+}
+
+/// Les declarations d'outils, telles quelles, pour que le frontend les
+/// envoie dans le setup de la session Live. Genererer un second jeu cote TS
+/// les ferait diverger a la premiere action ajoutee.
+// Toujours le jeu d'outils "function" : computer_use est un protocole propre
+// a l'API REST de Google, pas une declaration qu'on puisse envoyer dans le
+// setup d'une session Live.
+#[tauri::command]
+pub fn control_me_tools() -> Value {
+    build_windows_ui_tools(None)
+}

@@ -160,6 +160,19 @@ export const runControlMe = (
   teaching = false,
 ) => invoke<void>("run_control_me", { apiKey, model, instruction, activeSkillIds, recordingSkillId, teaching });
 
+// Mode Live de Control Me : la boucle vit cote frontend (WebSocket), ces
+// commandes lui donnent de quoi voir l ecran, lire l interface et agir.
+export interface ScreenObservation {
+  image_base64: string;
+  width: number;
+  height: number;
+}
+export const controlMeScreen = () => invoke<ScreenObservation>("control_me_screen");
+export const controlMeReadUi = () => invoke<string>("control_me_read_ui");
+export const controlMeAct = (name: string, args: Record<string, unknown>, recordingSkillId: string | null) =>
+  invoke<string>("control_me_act", { name, args, recordingSkillId });
+export const controlMeTools = () => invoke<unknown>("control_me_tools");
+
 export const cancelControlMe = () => invoke<void>("cancel_control_me");
 
 export const onControlMeStep = (cb: (step: ControlMeStep) => void) =>

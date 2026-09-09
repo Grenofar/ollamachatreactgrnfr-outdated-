@@ -371,6 +371,59 @@ export default function SettingsView({
                       {" "}Enregistre pour appliquer.
                     </div>
 
+                    <label>Vitesse : session temps réel</label>
+                    <div className="mode-toggle">
+                      <button
+                        className={!form.control_me_live ? "mode-toggle-active" : ""}
+                        onClick={() => setForm({ ...form, control_me_live: false })}
+                      >
+                        Requête par action
+                      </button>
+                      <button
+                        className={form.control_me_live ? "mode-toggle-active" : ""}
+                        onClick={() => setForm({ ...form, control_me_live: true })}
+                      >
+                        Session ouverte
+                      </button>
+                    </div>
+                    <div className="modal-hint">
+                      {form.control_me_live ? (
+                        <>
+                          Une seule connexion reste ouverte : le modèle enchaîne plusieurs actions par seconde
+                          sans repayer un aller-retour complet à chaque fois. C&apos;est le vrai gain de vitesse.
+                          Utilise le modèle Live choisi dans Réglages &gt; Audio.
+                        </>
+                      ) : (
+                        "Comportement actuel : une requête complète par action, avec le délai que ça implique."
+                      )}{" "}
+                      Enregistre pour appliquer.
+                    </div>
+
+                    {form.control_me_live && (
+                      <>
+                        <label>Images par seconde envoyées au modèle</label>
+                        <div className="audio-row">
+                          <input
+                            type="range"
+                            min={0.2}
+                            max={5}
+                            step={0.2}
+                            value={form.control_me_live_fps ?? 1}
+                            onChange={(e) =>
+                              setForm({ ...form, control_me_live_fps: Number(e.target.value) })
+                            }
+                          />
+                          <span>{(form.control_me_live_fps ?? 1).toFixed(1)} /s</span>
+                        </div>
+                        <div className="modal-hint">
+                          Plafonné à 5 volontairement. Une image coûte plusieurs centaines de jetons : à un
+                          débit plus élevé le quota partirait en quelques secondes sans que le modèle ait le
+                          temps de regarder les images. Le mode Windows UI n&apos;envoie aucune image et n&apos;a
+                          donc pas ce coût.
+                        </div>
+                      </>
+                    )}
+
                     <label>Comment l'IA planifie ses actions</label>
                     <div className="mode-toggle">
                       <button

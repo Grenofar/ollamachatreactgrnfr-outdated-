@@ -288,6 +288,7 @@ pas devenir obsolète.
 - **[FAIT] v1.0.1 : compte dans l'app, marketplace intégrée avec avis, skill « Navigation Basique », touches françaises** — voir "Compte, marketplace et avis (v1.0.1)" dans Architecture.
 - **[FAIT] v1.0.2 : skills publics identifiés par leur nom, plus par un code** — voir "Skills publics par nom (v1.0.2)" dans Architecture.
 - **[FAIT] v1.0.3 : l'IA entend enfin, et parle avec une voix Gemini** — voir "Oreilles et voix par Gemini (v1.0.3)" dans Architecture.
+- **[FAIT] v1.0.5 : Control Me en session Live** — une connexion ouverte remplace un aller-retour REST par action ; le modèle enchaîne plusieurs actions par seconde. Voir "Control Me en session Live (v1.0.5)".
 
 ## Architecture
 
@@ -3634,6 +3635,50 @@ n'est configurée sur cette machine pour interroger l'endpoint des
 modèles. D'où le **champ libre** à côté du sélecteur : corriger un
 identifiant ne doit pas exiger une nouvelle version. C'est la réponse
 directe à l'erreur précédente — coder en dur une valeur devinée.
+
+### Control Me en session Live (v1.0.5)
+
+Demandé explicitement : piloter le PC « ultra rapidement » avec le Live,
+en voyant l'écran « à 300 Hz » et en analysant chaque image « en 1 ms ».
+
+**Ce qui est impossible, dit avant de construire** : 300 img/s analysées
+en 1 ms ne bute pas sur le code. L'aller-retour réseau seul coûte 20-100
+ms, l'inférence plusieurs centaines, et surtout une image vaut plusieurs
+centaines de jetons : à ce débit le plafond de 65K du modèle Live serait
+épuisé en quelques secondes. Le débit est donc **réglable de 0,2 à 5
+img/s**, plafond assumé et expliqué dans l'interface plutôt que subi.
+
+**Ce qui est vrai en revanche, et c'est là qu'est le gain** : la session
+reste ouverte, donc le modèle enchaîne **plusieurs actions par seconde**
+sans repayer un aller-retour REST complet par action — exactement ce que
+la mesure de la v0.9.0 avait identifié comme le vrai goulot.
+
+**Architecture** : la boucle vit côté frontend (`liveControl.ts`), le
+webview ayant déjà un WebSocket qui fonctionne. Le côté Rust n'expose que
+trois choses — `control_me_screen`, `control_me_read_ui`, `control_me_act`
+— et **aucune logique n'est dupliquée** : `control_me_act` appelle le
+même `dispatch_action` que la boucle REST, donc `read_ui_elements`,
+`remember_fact` et `add_to_skill` s'y comportent à l'identique.
+`control_me_tools` renvoie les déclarations d'outils telles quelles : en
+générer un second jeu côté TS les ferait diverger dès la première action
+ajoutée.
+
+Détails qui comptent :
+- `responseModalities: ["TEXT"]` et non AUDIO : ici le modèle agit, il
+  n'a pas à parler — demander de l'audio doublerait le coût pour rien.
+- Seuls les outils `function` sont déclarés : `computer_use` est un
+  protocole propre à l'API REST, pas une déclaration envoyable dans un
+  setup Live.
+- Boucle d'observation en `setTimeout` enchaîné et non `setInterval` : si
+  une capture dépasse l'intervalle, les appels s'empileraient et
+  satureraient la connexion au lieu de ralentir.
+- Une observation fraîche est envoyée juste après chaque lot d'actions :
+  c'est ce qui permet au modèle de voir le résultat de ce qu'il vient de
+  faire, sans attendre le tick suivant.
+- L'échec d'une action est renvoyé au modèle (`response.error`) plutôt
+  qu'avalé : il doit pouvoir s'adapter, comme dans la boucle REST.
+- Le mode Windows UI n'envoie **aucune image**, donc pas de coût d'image
+  du tout — c'est le réglage le plus rapide et le moins cher.
 
 ### Les 6 outils de l'agent
 1. `read_file` — lecture texte (limite 5 Mo), chemin absolu

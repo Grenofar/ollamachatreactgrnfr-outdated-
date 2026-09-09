@@ -3,6 +3,7 @@ import MessageBubble, { renderMarkdown } from "../MessageBubble";
 import SendButton from "../SendButton";
 import MicButton from "../MicButton";
 import VoiceMode from "../VoiceMode";
+import { startLiveControl, type LiveControlSession } from "../../liveControl";
 import {
   cancelControlMe,
   clearControlMeMemory,
@@ -89,6 +90,7 @@ export default function ControlMeView({
   const [recording, setRecording] = useState<{ id: string; name: string; wasNew: boolean; snapshot: string; teaching: boolean } | null>(
     null,
   );
+  const liveRef = useRef<LiveControlSession | null>(null);
   const scrollRef = useRef<HTMLDivElement>(null);
 
   const apiKey = settings.gemini_api_key?.trim() ?? "";
@@ -198,6 +200,37 @@ export default function ControlMeView({
     if (!text || !apiKey || running) return;
     setEntries((prev) => [...prev, { role: "user", content: text }]);
     setRunning(true);
+    // Mode Live : une session ouverte remplace la boucle REST. Si elle
+    // tourne déjà, on lui parle au lieu d'en relancer une.
+    if (settings.control_me_live && apiKey) {
+      if (liveRef.current) {
+        liveRef.current.say(text);
+        return;
+      }
+      startLiveControl({
+        apiKey,
+        model: settings.live_model ?? undefined,
+        instruction: text,
+        perception: settings.control_me_perception_mode === "windows_ui" ? "windows_ui" : "capture",
+        fps: settings.control_me_live_fps ?? 1,
+        recordingSkillId: recording?.id ?? null,
+        onStep: (label) => setEntries((prev) => [...prev, { role: "system", content: label }]),
+        onMessage: (msg) => setEntries((prev) => [...prev, { role: "assistant", content: msg }]),
+        onError: (msg) => setEntries((prev) => [...prev, { role: "system", content: `Erreur : ${msg}` }]),
+        onClose: () => {
+          liveRef.current = null;
+          setRunning(false);
+        },
+      })
+        .then((session) => {
+          liveRef.current = session;
+        })
+        .catch((e) => {
+          setEntries((prev) => [...prev, { role: "system", content: `Erreur : ${e}` }]);
+          setRunning(false);
+        });
+      return;
+    }
     runControlMe(apiKey, model, text, activeSkillIds, recording?.id ?? null, recording?.teaching ?? false).catch((e) => {
       setEntries((prev) => [...prev, { role: "system", content: `Erreur : ${String(e)}` }]);
       setRunning(false);
@@ -205,6 +238,8 @@ export default function ControlMeView({
   }
 
   function handleStop() {
+    liveRef.current?.stop();
+    liveRef.current = null;
     cancelControlMe().catch(() => {});
   }
 
