@@ -4796,6 +4796,18 @@ l'utilisateur confirme qu'elle est bien dans `.env` local.
   montrant que la présence de la colonne. Table vide au moment de la
   migration, donc aucun skill ancien n'a été verrouillé au passage.
 
+- **2026-09-09** — **v1.0.3** publiée et vérifiée via la clé **anon**
+  (fichier : 200 OK, 7 121 688 octets ; `latest_release_manifest` : 1.0.3,
+  signature de 432 octets). Conversation vocale temps réel (Live API),
+  voix Gemini, écoute qui n'utilise plus la reconnaissance du navigateur,
+  choix du micro.
+  **Piège de vérification à connaître** : chercher `16000`/`24000` dans le
+  bundle donne zéro — le minificateur écrit `16e3`/`24e3`. Une première
+  lecture a fait croire à une fréquence perdue ; c'était la regex qui
+  s'arrêtait au `e`. Même famille que les faux zéros sur les noms courts
+  dans l'`.exe` (v0.9.1) : **ne jamais conclure à l'absence sans avoir
+  compris la forme réelle**.
+
 ## Prochaines étapes (dans l'ordre du fichier de passation d'origine)
 
 Voir aussi `NEXT_STEPS_FOR_CLAUDE.md` (note de passation d'une session
