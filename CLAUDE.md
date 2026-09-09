@@ -4895,6 +4895,20 @@ l'utilisateur confirme qu'elle est bien dans `.env` local.
   v1.0.3, qui était facturé. Voir "Correction : les modèles Live ont bien
   un quota illimité (v1.0.4)" dans Architecture.
 
+- **2026-09-09** — **v1.0.5** publiée et vérifiée via la clé **anon**
+  (fichier : 200 OK, 7 141 866 octets ; `latest_release_manifest` : 1.0.5,
+  signature de 432 octets). Control Me en session Live.
+  **Troisième variante du faux zéro sur le binaire, à connaître** :
+  `control_me_screen` ressortait à 0 alors que `control_me_read_ui` était
+  trouvé. Les noms de commandes Tauri sont stockés découpés en tranches de
+  **16 octets** (`search_conversat`+`mand`, `cancel_shell_com`+`code`) —
+  un nom de 17 caractères n'apparaît donc jamais entier. Vérifié en
+  cherchant `control_me_scree` (trouvé) et en relisant la liste
+  d'enregistrement, pas en supposant. Après les immédiats inlinés (v0.9.1)
+  et la notation exponentielle du minificateur (v1.0.3), c'est la
+  troisième forme : **une absence dans un binaire ou un bundle n'est
+  jamais une preuve sans avoir compris comment la valeur y est stockée**.
+
 ## Prochaines étapes (dans l'ordre du fichier de passation d'origine)
 
 Voir aussi `NEXT_STEPS_FOR_CLAUDE.md` (note de passation d'une session
