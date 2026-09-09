@@ -36,7 +36,12 @@ export interface LiveControlOptions {
   recordingSkillId?: string | null;
   onStep: (label: string) => void;
   onMessage: (text: string) => void;
-  onError: (message: string) => void;
+  /** `beforeReady` vaut true quand la session n'a jamais atteint
+   * setupComplete : elle ne servira à rien, l'appelant doit basculer sur
+   * la boucle classique. Sans cette distinction le repli ne se déclenchait
+   * pas, l'erreur de setup arrivant APRÈS que la promesse a résolu.
+   */
+  onError: (message: string, beforeReady: boolean) => void;
   onClose: () => void;
 }
 
@@ -78,7 +83,7 @@ export async function startLiveControl(options: LiveControlOptions): Promise<Liv
     );
   };
 
-  ws.onerror = () => options.onError("La connexion temps réel a échoué.");
+  ws.onerror = () => options.onError("La connexion temps réel a échoué.", !ready);
 
   ws.onclose = (event) => {
     if (!closed && event.code !== 1000) {
@@ -86,6 +91,7 @@ export async function startLiveControl(options: LiveControlOptions): Promise<Liv
         event.reason?.trim()
           ? `Session temps réel fermée : ${event.reason}`
           : `Session temps réel fermée (code ${event.code}).`,
+        !ready,
       );
     }
     stop();
@@ -162,7 +168,9 @@ export async function startLiveControl(options: LiveControlOptions): Promise<Liv
         );
       }
     } catch (e) {
-      options.onError(String(e));
+      // La session tourne déjà : une observation ratée ne la condamne pas,
+      // la suivante repartira au tick d'après.
+      options.onError(String(e), false);
     } finally {
       observing = false;
     }

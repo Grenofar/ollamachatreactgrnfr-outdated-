@@ -3704,6 +3704,34 @@ laisser l'utilisateur devant une erreur. Une session temps réel qui ne
 démarre pas doit coûter de la vitesse, pas la fonctionnalité — c'est ce
 qui manquait pour que « ça marche » sans configuration supplémentaire.
 
+### Arrêter de deviner les identifiants de modèle (v1.0.7)
+
+La v1.0.6 échouait avec `models/gemini-3-flash-live is not found for API
+version v1beta, or is not supported for bidiGenerateContent`.
+
+**Cause : j'avais deviné l'identifiant à partir du libellé affiché dans la
+console de quotas** (« Gemini 3 Flash Live » → `gemini-3-flash-live`). Je
+l'avais même écrit comme une réserve dans la v1.0.4 — et j'ai quand même
+livré la valeur devinée comme défaut. Une réserve documentée ne remplace
+pas un correctif.
+
+**Correctif définitif** : `list_live_models` interroge
+`GET /v1beta/models` avec la clé de l'utilisateur et ne garde que les
+modèles dont `supportedGenerationMethods` contient `bidiGenerateContent`.
+Bouton « Détecter les modèles disponibles » dans Réglages > Audio ; si le
+modèle courant n'est pas dans la liste, il bascule sur le premier
+réellement disponible. Vaut aussi pour tous les renommages futurs.
+L'id est stocké sans le préfixe `models/`, que le setup Live rajoute
+lui-même — sinon on obtiendrait `models/models/xxx`.
+
+**Deuxième bug, plus sérieux : le repli automatique de la v1.0.6 ne se
+déclenchait jamais.** Il testait `liveRef.current` pour savoir si la
+session avait démarré, mais l'erreur de setup arrive **après** que la
+promesse a résolu et que la session a été assignée — le test était donc
+toujours faux au mauvais moment. `onError` reçoit maintenant un
+`beforeReady` explicite, calculé sur `setupComplete` reçu ou non. C'est ce
+qui fait que « ça marche quand même » au lieu de « ça affiche une erreur ».
+
 ### Les 6 outils de l'agent
 1. `read_file` — lecture texte (limite 5 Mo), chemin absolu
 2. `list_dir` — listing un niveau, chemin absolu

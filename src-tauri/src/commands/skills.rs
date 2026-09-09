@@ -724,3 +724,61 @@ pub async fn synthesize_speech(
         .ok_or_else(|| "Gemini n'a renvoyé aucun audio.".to_string())?;
     Ok(audio.to_string())
 }
+
+/// Un modele utilisable en session Live, tel que Google le declare.
+#[derive(Serialize)]
+pub struct LiveModelInfo {
+    pub id: String,
+    pub display_name: String,
+}
+
+/// Demande a Google la liste des modeles et ne garde que ceux qui
+/// supportent reellement bidiGenerateContent (la methode du Live API).
+///
+/// Existe parce que la console de quotas affiche des NOMS ("Gemini 3 Flash
+/// Live") et non des identifiants d'API : deviner l'id a partir du nom a
+/// echoue ("models/gemini-3-flash-live is not found"). Demander la liste est
+/// la seule facon fiable, et elle vaut pour tous les renommages futurs.
+#[tauri::command]
+pub async fn list_live_models(api_key: String) -> Result<Vec<LiveModelInfo>, String> {
+    if api_key.trim().is_empty() {
+        return Err("Aucune clé API Gemini configurée.".to_string());
+    }
+    let client = reqwest::Client::new();
+    let resp = client
+        .get("https://generativelanguage.googleapis.com/v1beta/models")
+        .query(&[("pageSize", "200")])
+        .header("x-goog-api-key", api_key.trim())
+        .send()
+        .await
+        .map_err(|e| format!("Impossible de contacter l'API Gemini : {e}"))?;
+    if !resp.status().is_success() {
+        let status = resp.status();
+        let body = resp.text().await.unwrap_or_default();
+        return Err(format!("Gemini a répondu {status} : {body}"));
+    }
+    let data: Value = resp.json().await.map_err(|e| format!("Réponse Gemini invalide : {e}"))?;
+    let mut out = Vec::new();
+    for m in data["models"].as_array().unwrap_or(&Vec::new()) {
+        let supports = m["supportedGenerationMethods"]
+            .as_array()
+            .map(|a| a.iter().any(|v| v.as_str() == Some("bidiGenerateContent")))
+            .unwrap_or(false);
+        if !supports {
+            continue;
+        }
+        // L'API renvoie "models/xxx" ; le setup Live reprefixe lui-meme, donc
+        // on stocke l'id nu pour ne pas obtenir "models/models/xxx".
+        let full = m["name"].as_str().unwrap_or("");
+        let id = full.strip_prefix("models/").unwrap_or(full).to_string();
+        if id.is_empty() {
+            continue;
+        }
+        let display_name = m["displayName"].as_str().unwrap_or(&id).to_string();
+        out.push(LiveModelInfo { id, display_name });
+    }
+    if out.is_empty() {
+        return Err("Aucun modèle compatible avec le temps réel n'est disponible sur cette clé.".to_string());
+    }
+    Ok(out)
+}

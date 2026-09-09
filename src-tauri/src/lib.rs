@@ -23,7 +23,7 @@ use commands::shell::{cancel_shell_command, run_powershell_command, ShellCancelF
 use commands::skills::{
     delete_skill, download_skill, extract_skill_from_transcript, import_marketplace_extension, list_public_skills,
     list_skills, load_skill, open_skills_folder, open_windows_settings, publish_skill, save_new_skill,
-    synthesize_speech, transcribe_audio, unpublish_skill, update_skill,
+    list_live_models, synthesize_speech, transcribe_audio, unpublish_skill, update_skill,
 };
 use commands::watchdog::{close_app, spawn_watchdog_thread, Watchdog};
 use commands::SUPABASE_ANON_KEY;
@@ -295,6 +295,7 @@ pub fn run() {
             open_skills_folder,
             transcribe_audio,
             synthesize_speech,
+            list_live_models,
             open_windows_settings,
             list_skills,
             load_skill,

@@ -250,6 +250,14 @@ export const transcribeAudio = (apiKey: string, model: string, audioBase64: stri
 export const synthesizeSpeech = (apiKey: string, model: string, text: string, voice: string) =>
   invoke<string>("synthesize_speech", { apiKey, model, text, voice });
 
+export interface LiveModelInfo {
+  id: string;
+  display_name: string;
+}
+// Demande a Google les modeles reellement utilisables en session Live :
+// la console affiche des noms, pas des identifiants d API.
+export const listLiveModels = (apiKey: string) => invoke<LiveModelInfo[]>("list_live_models", { apiKey });
+
 export const openWindowsSettings = (page: "sound" | "microphone-privacy") =>
   invoke<void>("open_windows_settings", { page });
 

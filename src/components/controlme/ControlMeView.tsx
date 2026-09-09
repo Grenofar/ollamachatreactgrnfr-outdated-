@@ -216,11 +216,14 @@ export default function ControlMeView({
         recordingSkillId: recording?.id ?? null,
         onStep: (label) => setEntries((prev) => [...prev, { role: "system", content: label }]),
         onMessage: (msg) => setEntries((prev) => [...prev, { role: "assistant", content: msg }]),
-        onError: (msg) => {
+        onError: (msg, beforeReady) => {
           setEntries((prev) => [...prev, { role: "system", content: `Erreur : ${msg}` }]);
-          // Une erreur de setup arrive avant toute action : dans ce cas la
-          // session ne servira à rien, autant relancer en classique.
-          if (!liveRef.current) {
+          // beforeReady : la session n'a jamais démarré, donc elle ne fera
+          // rien. On relance en classique plutôt que de laisser l'instruction
+          // sans suite. Tester liveRef ne suffisait pas : l'erreur de setup
+          // arrive après que la session a été assignée.
+          if (beforeReady) {
+            liveRef.current = null;
             setEntries((prev) => [...prev, { role: "system", content: "Bascule sur le mode classique." }]);
             runClassic(text);
           }

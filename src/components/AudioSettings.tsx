@@ -1,9 +1,8 @@
 import { useEffect, useRef, useState } from "react";
 import { isSpeechRecognitionSupported, isSpeechSynthesisSupported, speak, startListening } from "../voice";
 import { isRecordingSupported, startRecording, type AudioRecorder } from "../audioRecorder";
-import { openWindowsSettings, transcribeAudio } from "../api";
+import { listLiveModels, openWindowsSettings, transcribeAudio, type LiveModelInfo } from "../api";
 import { GEMINI_VOICES, speakWithGemini } from "../speech";
-import { LIVE_MODELS } from "../liveVoice";
 
 // Audio panel — as much a diagnostic as a settings page. "The mic doesn't
 // hear me" has three completely different causes that look identical from
@@ -56,6 +55,8 @@ export default function AudioSettings({
   const [geminiHeard, setGeminiHeard] = useState<string | null>(null);
   const [geminiError, setGeminiError] = useState<string | null>(null);
   const geminiRecRef = useRef<AudioRecorder | null>(null);
+  const [detected, setDetected] = useState<LiveModelInfo[] | null>(null);
+  const [detecting, setDetecting] = useState(false);
 
   useEffect(() => {
     void refreshDevices();
@@ -211,6 +212,29 @@ export default function AudioSettings({
     }
   }
 
+  // La console Google affiche des libellés, pas des identifiants : les
+  // deviner a déjà échoué. On demande donc la liste à l'API, qui indique
+  // pour chaque modèle s'il supporte réellement le temps réel.
+  async function detectLiveModels() {
+    if (!geminiApiKey.trim()) {
+      setError("Ajoute ta clé Gemini pour détecter les modèles.");
+      return;
+    }
+    setDetecting(true);
+    setError(null);
+    try {
+      const list = await listLiveModels(geminiApiKey);
+      setDetected(list);
+      // Si le modèle actuel n'est pas dans la liste, il ne marchera pas :
+      // on bascule sur le premier réellement disponible.
+      if (!list.some((m) => m.id === liveModel)) onLiveModelChange(list[0].id);
+    } catch (e) {
+      setError(String(e));
+    } finally {
+      setDetecting(false);
+    }
+  }
+
   return (
     <div className="settings-section">
       <h2>Audio</h2>
@@ -301,17 +325,23 @@ export default function AudioSettings({
       {liveMode && (
         <>
           <label>Modèle temps réel</label>
-          <select
-            value={LIVE_MODELS.some((m) => m.id === liveModel) ? liveModel : "__custom__"}
-            onChange={(e) => onLiveModelChange(e.target.value === "__custom__" ? liveModel : e.target.value)}
-          >
-            {LIVE_MODELS.map((m) => (
-              <option key={m.id} value={m.id}>
-                {m.label}
-              </option>
-            ))}
-            <option value="__custom__">Autre (saisir l'identifiant)</option>
-          </select>
+          <div className="audio-row">
+            <button onClick={() => void detectLiveModels()} disabled={detecting}>
+              {detecting ? "Détection…" : "Détecter les modèles disponibles"}
+            </button>
+            <span className="modal-hint">
+              Interroge Google avec ta clé et ne garde que ceux qui gèrent vraiment le temps réel.
+            </span>
+          </div>
+          {detected && (
+            <select value={liveModel} onChange={(e) => onLiveModelChange(e.target.value)}>
+              {detected.map((m) => (
+                <option key={m.id} value={m.id}>
+                  {m.display_name} ({m.id})
+                </option>
+              ))}
+            </select>
+          )}
           <input
             value={liveModel}
             onChange={(e) => onLiveModelChange(e.target.value)}
