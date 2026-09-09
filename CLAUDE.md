@@ -3680,6 +3680,30 @@ Détails qui comptent :
 - Le mode Windows UI n'envoie **aucune image**, donc pas de coût d'image
   du tout — c'est le réglage le plus rapide et le moins cher.
 
+### Correctif du setup Live : deux formats d'outils (v1.0.6)
+
+La v1.0.5 échouait immédiatement avec :
+`Invalid JSON payload received. Unknown name "description" at 'setup.tools'`.
+
+**Cause** : les déclarations d'outils côté Rust sont au format de l'API
+REST Interactions — un tableau de `{type, name, description, parameters}`.
+Le Live API attend la forme classique de Gemini : **un seul objet Tool
+contenant un tableau `functionDeclarations`**, et sans champ `type`.
+J'avais supposé que les deux APIs partageaient le même format d'outils
+parce qu'elles partagent le même modèle — elles ne le partagent pas.
+
+Conversion faite côté TS (`toLiveTools`) plutôt qu'en ajoutant un second
+jeu de déclarations côté Rust : **une seule source de vérité, deux formats
+de sortie**. Un outil sans paramètre reçoit un objet vide explicite, sinon
+sa déclaration est refusée. Vérifié en appliquant la conversion à un
+échantillon réel des déclarations, pas seulement par relecture.
+
+**Repli automatique ajouté dans la foulée** : si la session Live échoue à
+démarrer, l'instruction repart sur la boucle REST classique au lieu de
+laisser l'utilisateur devant une erreur. Une session temps réel qui ne
+démarre pas doit coûter de la vitesse, pas la fonctionnalité — c'est ce
+qui manquait pour que « ça marche » sans configuration supplémentaire.
+
 ### Les 6 outils de l'agent
 1. `read_file` — lecture texte (limite 5 Mo), chemin absolu
 2. `list_dir` — listing un niveau, chemin absolu

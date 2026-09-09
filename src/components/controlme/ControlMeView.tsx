@@ -216,7 +216,15 @@ export default function ControlMeView({
         recordingSkillId: recording?.id ?? null,
         onStep: (label) => setEntries((prev) => [...prev, { role: "system", content: label }]),
         onMessage: (msg) => setEntries((prev) => [...prev, { role: "assistant", content: msg }]),
-        onError: (msg) => setEntries((prev) => [...prev, { role: "system", content: `Erreur : ${msg}` }]),
+        onError: (msg) => {
+          setEntries((prev) => [...prev, { role: "system", content: `Erreur : ${msg}` }]);
+          // Une erreur de setup arrive avant toute action : dans ce cas la
+          // session ne servira à rien, autant relancer en classique.
+          if (!liveRef.current) {
+            setEntries((prev) => [...prev, { role: "system", content: "Bascule sur le mode classique." }]);
+            runClassic(text);
+          }
+        },
         onClose: () => {
           liveRef.current = null;
           setRunning(false);
@@ -226,11 +234,21 @@ export default function ControlMeView({
           liveRef.current = session;
         })
         .catch((e) => {
-          setEntries((prev) => [...prev, { role: "system", content: `Erreur : ${e}` }]);
-          setRunning(false);
+          // La session temps réel a échoué : on exécute quand même
+          // l'instruction avec la boucle classique. Rester bloqué sur une
+          // erreur serait pire que d'être simplement plus lent.
+          setEntries((prev) => [
+            ...prev,
+            { role: "system", content: `Temps réel indisponible (${e}) — bascule sur le mode classique.` },
+          ]);
+          runClassic(text);
         });
       return;
     }
+    runClassic(text);
+  }
+
+  function runClassic(text: string) {
     runControlMe(apiKey, model, text, activeSkillIds, recording?.id ?? null, recording?.teaching ?? false).catch((e) => {
       setEntries((prev) => [...prev, { role: "system", content: `Erreur : ${String(e)}` }]);
       setRunning(false);

@@ -46,7 +46,7 @@ export interface LiveControlSession {
 }
 
 export async function startLiveControl(options: LiveControlOptions): Promise<LiveControlSession> {
-  const tools = await controlMeTools();
+  const tools = toLiveTools(await controlMeTools());
   const ws = new WebSocket(`${LIVE_URL}?key=${encodeURIComponent(options.apiKey)}`);
 
   let closed = false;
@@ -189,6 +189,30 @@ export async function startLiveControl(options: LiveControlOptions): Promise<Liv
       );
     },
   };
+}
+
+// Les déclarations côté Rust sont au format de l'API REST
+// ({type, name, description, parameters}, une entrée par outil). Le Live
+// attend la forme classique de Gemini : un seul objet Tool contenant un
+// tableau functionDeclarations, et **sans** le champ `type` — c'est lui qui
+// faisait rejeter tout le setup avec
+// « Unknown name "description" at 'setup.tools' ».
+// La conversion est faite ici plutôt que d'ajouter un second jeu de
+// déclarations côté Rust : une seule source de vérité, deux formats de
+// sortie.
+function toLiveTools(raw: unknown): unknown[] {
+  const list = Array.isArray(raw) ? raw : [];
+  const declarations = list
+    .filter((t): t is Record<string, unknown> => !!t && typeof t === "object")
+    .map((t) => ({
+      name: t.name,
+      description: t.description,
+      // Un outil sans paramètre doit quand même annoncer un objet vide,
+      // sinon la déclaration est refusée.
+      parameters: t.parameters ?? { type: "object", properties: {} },
+    }))
+    .filter((t) => typeof t.name === "string" && t.name.length > 0);
+  return declarations.length ? [{ functionDeclarations: declarations }] : [];
 }
 
 function buildBrief(options: LiveControlOptions): string {
