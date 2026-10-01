@@ -60,6 +60,12 @@ pub struct Settings {
     // combinaison.
     #[serde(default)]
     pub control_me_fast: bool,
+    // Reglages affiches : "simple" ne montre que ce dont on a besoin pour
+    // utiliser l app, "advanced" montre tout. Par defaut simple : la page a
+    // accumule des reglages a chaque version, au point qu il faut deviner
+    // lesquels comptent.
+    #[serde(default = "default_settings_mode")]
+    pub settings_mode: String,
     // Extension ids ("codex" | "controlme") the user toggled off from the
     // Extensions view. Purely a show/hide switch — nothing is actually
     // uninstalled (everything ships in the same binary), see
@@ -109,6 +115,10 @@ fn default_control_me_perception_mode() -> String {
 // to "live": the speed/reliability trade-off is real enough that it
 // should be an explicit opt-in, not something a fresh install is silently
 // exposed to.
+fn default_settings_mode() -> String {
+    "simple".to_string()
+}
+
 fn default_control_me_fps() -> f64 {
     1.0
 }
@@ -140,6 +150,7 @@ fn default_settings() -> Settings {
         control_me_live: false,
         control_me_live_fps: default_control_me_fps(),
         control_me_fast: false,
+        settings_mode: default_settings_mode(),
         disabled_extensions: Vec::new(),
         update_popup_enabled: true,
     }

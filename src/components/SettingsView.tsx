@@ -103,6 +103,9 @@ export default function SettingsView({
   const [generatingCode, setGeneratingCode] = useState(false);
   const [remoteError, setRemoteError] = useState<string | null>(null);
   const [openGear, setOpenGear] = useState<string | null>(null);
+  // Mode simple par défaut : la page a accumulé des réglages à chaque
+  // version, au point qu'il faut deviner lesquels comptent vraiment.
+  const advanced = form.settings_mode === "advanced";
 
   useEffect(() => {
     getVersion()
@@ -170,6 +173,23 @@ export default function SettingsView({
           </button>
         ))}
         <div className="settings-nav-spacer" />
+        <div className="settings-mode-toggle">
+          <button
+            className={!advanced ? "mode-toggle-active" : ""}
+            onClick={() => setForm({ ...form, settings_mode: "simple" })}
+          >
+            Normal
+          </button>
+          <button
+            className={advanced ? "mode-toggle-active" : ""}
+            onClick={() => setForm({ ...form, settings_mode: "advanced" })}
+          >
+            Avancé
+          </button>
+        </div>
+        <div className="modal-hint settings-mode-hint">
+          {advanced ? "Tous les réglages." : "Seulement l'essentiel."}
+        </div>
         <button className="primary-btn settings-nav-save" onClick={handleSave}>
           Enregistrer
         </button>
@@ -180,6 +200,8 @@ export default function SettingsView({
           <div className="settings-section">
             <h2>Général</h2>
 
+            {advanced ? (
+              <>
             <label>Adresse du serveur Ollama</label>
             <input
               value={form.ollama_host}
@@ -200,6 +222,13 @@ export default function SettingsView({
               value={form.system_prompt}
               onChange={(e) => setForm({ ...form, system_prompt: e.target.value })}
             />
+              </>
+            ) : (
+              <p className="modal-hint">
+                L'adresse du serveur, la taille du contexte et les instructions système sont des réglages
+                avancés. Passe en mode Avancé pour les voir.
+              </p>
+            )}
           </div>
         )}
 
@@ -342,6 +371,8 @@ export default function SettingsView({
                       Ta propre clé, jamais fournie par l'app — nécessaire pour utiliser Control Me.
                     </div>
 
+                    {advanced && (
+                      <>
                     <label>Comment l'IA perçoit ton écran</label>
                     <div className="mode-toggle">
                       <button
@@ -371,6 +402,9 @@ export default function SettingsView({
                       {" "}Enregistre pour appliquer.
                     </div>
 
+                      </>
+                    )}
+
                     <label>Mode rapide</label>
                     <div className="mode-toggle">
                       <button
@@ -393,6 +427,8 @@ export default function SettingsView({
                       {" "}Enregistre pour appliquer.
                     </div>
 
+                    {advanced && (
+                      <>
                     <label>Vitesse : session temps réel</label>
                     <div className="mode-toggle">
                       <button
@@ -479,6 +515,8 @@ export default function SettingsView({
                       geminiApiKey={form.gemini_api_key ?? ""}
                       geminiModel={form.gemini_model ?? ""}
                     />
+                      </>
+                    )}
                   </div>
                 )}
               </div>

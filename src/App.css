@@ -2918,3 +2918,24 @@ body::before {
 }
 .primary-btn:hover:not(:disabled) { background: #4c7ae0; }
 .empty-state { color: #8a8a8a; line-height: 1.55; }
+
+/* Bascule Normal / Avance des Reglages (v1.0.9). Le mode simple ne
+   cache pas des fonctionnalites : il cache des reglages qui ont une
+   valeur par defaut correcte et qu'on n'a aucune raison de toucher. */
+.settings-mode-toggle {
+  display: flex;
+  gap: 4px;
+  margin: 0 8px 6px;
+  background: #1b1b1b;
+  border-radius: 8px;
+  padding: 3px;
+}
+.settings-mode-toggle button {
+  flex: 1;
+  padding: 5px 8px;
+  font-size: 12px;
+  background: transparent;
+  border-radius: 6px;
+}
+.settings-mode-toggle .mode-toggle-active { background: #3d6dd8; color: #ffffff; }
+.settings-mode-hint { margin: 0 10px 10px; font-size: 11px; }

@@ -66,8 +66,9 @@ export default function SkillsView({ settings }: { settings: Settings }) {
   // Ships with the app rather than being fetched: it is the baseline
   // every Control Me session ends up needing (open something, find a
   // field, click a result), and re-teaching it each time wastes turns.
-  async function installBuiltin() {
-    const builtin = BUILTIN_SKILLS[0];
+  async function installBuiltin(index: number) {
+    const builtin = BUILTIN_SKILLS[index];
+    if (!builtin) return;
     if ((skills ?? []).some((s) => s.name === builtin.name)) {
       setSkillsError(`« ${builtin.name} » est déjà installé.`);
       return;
@@ -275,9 +276,19 @@ export default function SkillsView({ settings }: { settings: Settings }) {
           <button className="primary-btn" onClick={openNewSkillForm}>
             Nouveau skill
           </button>
-          <button onClick={() => void installBuiltin()} disabled={saving}>
-            Ajouter « Navigation Basique »
-          </button>
+          {BUILTIN_SKILLS.map((b, i) => {
+            const already = (skills ?? []).some((own) => own.name === b.name);
+            return (
+              <button
+                key={b.name}
+                onClick={() => void installBuiltin(i)}
+                disabled={saving || already}
+                title={b.description}
+              >
+                {already ? `${b.name} ✓` : `Ajouter « ${b.name} »`}
+              </button>
+            );
+          })}
           <button onClick={() => openSkillsFolder().catch((e) => setSkillsError(String(e)))}>Ouvrir le dossier</button>
           <button onClick={toggleBrowsePublic}>{showPublicBrowse ? "Fermer" : "Parcourir les skills publics"}</button>
         </div>

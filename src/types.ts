@@ -51,6 +51,8 @@ export interface Settings {
   control_me_live_fps?: number;
   /** Mode rapide : Windows UI + actions groupees + attente reduite. */
   control_me_fast?: boolean;
+  /** "simple" = l essentiel seulement, "advanced" = tous les reglages. */
+  settings_mode?: "simple" | "advanced";
   disabled_extensions: string[];
   update_popup_enabled: boolean;
 }
