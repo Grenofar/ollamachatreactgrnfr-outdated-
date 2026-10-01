@@ -3761,6 +3761,60 @@ réel était disponible immédiatement avec ce qui marchait déjà. **Quand une
 fonctionnalité repose sur une inconnue, livrer d'abord ce qui n'en dépend
 pas.**
 
+### [SPEC, PAS ENCORE CONSTRUIT] Control Me version jeu
+
+Demandé le 2026-10-01. **Écrit ici avant de coder, à la demande
+explicite de l'utilisateur** — ce qui suit est la specification, pas un
+état des lieux. Rien de cette section n'existe encore dans le code.
+
+**Parcours demandé, dans cet ordre :**
+
+1. Un **espace dédié** (pas un réglage de Control Me : son propre espace).
+2. Une **liste de jeux compatibles**. Pour l'instant un seul : Kayak and
+   Surf (Roblox).
+3. Un bouton **Ignorer** pour jouer à un jeu non listé — autorisé, mais
+   l'IA n'aura alors **aucun réflexe propre au jeu**, seulement les
+   actions génériques. À dire clairement dans l'interface, pas à masquer.
+4. Un bouton **Commencer à jouer**.
+5. L'IA joue.
+6. Un **chat** reste disponible pendant qu'elle joue, pour lui donner des
+   renseignements en cours de partie (« le bateau est à gauche », « prends
+   ce chemin »). Ce n'est pas un chat de commande : c'est du contexte
+   qu'on lui passe pendant qu'elle agit.
+
+**Exigences sur le modèle :**
+
+- Doit être **assez intelligent** pour jouer, et **l'app doit le piloter
+  correctement** — c'est-à-dire que la boucle doit lui donner ce qu'il
+  faut (images à la bonne cadence, actions à durée, résultat de chaque
+  action) plutôt que d'attendre qu'il se débrouille.
+- Modèle local visé : **qwen3-vl** (4b, ~3,3 Go) via Ollama, sur la
+  machine cible — **pas** la machine de développement, qui ne peut pas le
+  faire tourner utilement (voir la note matériel en mémoire).
+
+**Actions demandées (état réel vérifié dans le code) :**
+
+| Demande | État |
+|---|---|
+| Touche Ctrl | **existe déjà** (`ctrl`/`control`/`controle`) |
+| Touches qui restent appuyées | **existe déjà** (`hold_key`, durée précise) |
+| Flèches gauche/droite (caméra Roblox) | **existent déjà** |
+| Souris d'un point à un autre **sur une durée** | **à construire** |
+| Clic gauche **ou droit maintenu pendant** ce déplacement | **à construire** |
+
+Précision donnée par l'utilisateur et à retenir : **dans Roblox, les
+flèches gauche et droite font tourner la caméra.** C'est plus fiable que
+la souris, et ça doit être la méthode préférée pour ce jeu. Le
+déplacement de souris sur une durée est le **repli** pour les jeux qui
+n'ont pas cette commande — un saut instantané d'un point à un autre ne
+fait pas tourner une caméra, seul un mouvement continu est lu comme tel.
+
+**Limite à ne pas cacher à l'utilisateur** : à la cadence d'images
+atteignable (0,2 à 5 img/s), l'IA peut **grinder** une boucle répétitive,
+pas **réagir**. Et Roblox a un anti-triche dont l'effet sur les entrées
+synthétiques n'a pas été vérifié — risque réel pour le compte, à dire
+avant de lancer une session.
+
 ### Les 6 outils de l'agent
 1. `read_file` — lecture texte (limite 5 Mo), chemin absolu
 2. `list_dir` — listing un niveau, chemin absolu
