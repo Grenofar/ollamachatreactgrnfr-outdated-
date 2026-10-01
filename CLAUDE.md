@@ -3761,11 +3761,12 @@ réel était disponible immédiatement avec ce qui marchait déjà. **Quand une
 fonctionnalité repose sur une inconnue, livrer d'abord ce qui n'en dépend
 pas.**
 
-### [SPEC, PAS ENCORE CONSTRUIT] Control Me version jeu
+### Espace Jeu (v1.0.9) — spec d'origine ci-dessous, désormais construite
 
-Demandé le 2026-10-01. **Écrit ici avant de coder, à la demande
-explicite de l'utilisateur** — ce qui suit est la specification, pas un
-état des lieux. Rien de cette section n'existe encore dans le code.
+Demandé le 2026-10-01, **écrit ici avant de coder** à la demande
+explicite de l'utilisateur. Implémenté ensuite dans `GameView.tsx`
+(bouton **Jeu** dans la Sidebar). Ce qui suit était la spécification ;
+les notes d'implémentation sont à la fin de la section.
 
 **Parcours demandé, dans cet ordre :**
 
@@ -3814,6 +3815,31 @@ atteignable (0,2 à 5 img/s), l'IA peut **grinder** une boucle répétitive,
 pas **réagir**. Et Roblox a un anti-triche dont l'effet sur les entrées
 synthétiques n'a pas été vérifié — risque réel pour le compte, à dire
 avant de lancer une session.
+
+**Notes d'implémentation (v1.0.9)**
+
+- **Espace séparé, pas un réglage de Control Me** : le parcours diffère
+  trop (choisir → lancer → parler pendant) pour tenir dans une vue qui part
+  d'une instruction écrite.
+- **Les skills sont installés automatiquement au lancement** : « Farm de
+  jeu » toujours, plus le skill du jeu choisi. L'utilisateur n'a rien à
+  cocher — c'était la friction qui aurait rendu l'écran de choix inutile.
+- **Le chat pendant la partie est mis en file**, pas envoyé tout de suite :
+  la boucle REST ne peut pas recevoir un message en cours de route, et
+  lancer un second `run_control_me` en parallèle ferait tourner deux
+  boucles sur la même souris. Ce qui est tapé pendant une action repart
+  automatiquement au tour suivant plutôt que d'être perdu.
+- **Deux nouvelles actions**, celles qui manquaient réellement :
+  `drag_over_time` (souris d'un point à un autre sur une durée, avec un
+  bouton optionnellement maintenu pendant le trajet) et une durée
+  optionnelle sur `move_relative`. Les deux interpolent à ~60 pas/seconde :
+  **un saut instantané d'un point à un autre ne fait pas tourner une
+  caméra**, un jeu lit la vitesse du geste. `move_relative` envoie le delta
+  restant à chaque pas plutôt qu'un pas fixe — accumuler des arrondis
+  ferait dériver la rotation totale.
+- **Ce qui existait déjà et n'a pas été redoublé** : Ctrl, les flèches, et
+  les touches/clics maintenus (`hold_key`, `hold_mouse`). Vérifié dans le
+  code avant d'ajouter quoi que ce soit.
 
 ### Les 6 outils de l'agent
 1. `read_file` — lecture texte (limite 5 Mo), chemin absolu

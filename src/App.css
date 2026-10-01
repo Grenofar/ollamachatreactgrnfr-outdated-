@@ -2939,3 +2939,62 @@ body::before {
 }
 .settings-mode-toggle .mode-toggle-active { background: #3d6dd8; color: #ffffff; }
 .settings-mode-hint { margin: 0 10px 10px; font-size: 11px; }
+
+/* ------------------------------------------------- espace Jeu (v1.0.9)
+   Parcours different de Control Me : on choisit un jeu, on lance, puis on
+   parle a l'IA pendant qu'elle joue. D'ou un ecran de choix plein cadre
+   plutot qu'une barre de saisie des l'ouverture. */
+.gameview {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  animation: view-in 0.25s var(--ease-out) both;
+}
+.gameview-header {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 12px 16px;
+  border-bottom: 1px solid #2a2a2a;
+}
+.gameview-title { font-weight: 600; font-size: 15px; }
+.gameview-pick {
+  flex: 1;
+  overflow-y: auto;
+  padding: 24px;
+  max-width: 760px;
+  width: 100%;
+  margin: 0 auto;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+.game-list {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
+  gap: 12px;
+}
+.game-card {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 4px;
+  text-align: left;
+  padding: 14px;
+  background: #1f1f1f;
+  border: 1px solid #2e2e2e;
+  border-radius: 12px;
+  transition: border-color 0.15s ease, transform 0.15s var(--ease-out);
+}
+.game-card:hover { border-color: #3d6dd8; transform: translateY(-2px); }
+.game-card-active { border-color: #3d6dd8; box-shadow: inset 0 0 0 1px #3d6dd8; }
+.game-card-name { font-weight: 600; font-size: 14px; }
+.game-card-platform { font-size: 11px; color: #7fd0a0; }
+.game-ignore { align-self: flex-start; }
+.gameview-warning {
+  border-left: 2px solid #d2a96a;
+  padding-left: 10px;
+  color: #d2a96a;
+}
+.gameview-start { align-self: flex-start; padding: 10px 20px; }

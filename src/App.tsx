@@ -16,6 +16,7 @@ const ControlMeView = lazy(() => import("./components/controlme/ControlMeView"))
 const SettingsView = lazy(() => import("./components/SettingsView"));
 const ExtensionsView = lazy(() => import("./components/ExtensionsView"));
 const SkillsView = lazy(() => import("./components/SkillsView"));
+const GameView = lazy(() => import("./components/game/GameView"));
 import {
   listModels,
   listConversations,
@@ -57,7 +58,7 @@ export default function App() {
   const [streamingText, setStreamingText] = useState("");
   const [connError, setConnError] = useState<string | null>(null);
   const [showInstall, setShowInstall] = useState(false);
-  const [view, setView] = useState<"chat" | "codex" | "controlme" | "settings" | "extensions" | "skills">("chat");
+  const [view, setView] = useState<"chat" | "codex" | "controlme" | "game" | "settings" | "extensions" | "skills">("chat");
   const [remoteConnected, setRemoteConnected] = useState(false);
   const [editingIndex, setEditingIndex] = useState<number | null>(null);
   const [editText, setEditText] = useState("");
@@ -627,6 +628,7 @@ export default function App() {
         onOpenCodex={() => setView("codex")}
         onOpenControlMe={() => setView("controlme")}
         onOpenExtensions={() => setView("extensions")}
+        onOpenGame={() => setView("game")}
         onOpenSkills={() => setView("skills")}
       />
 
@@ -674,6 +676,10 @@ export default function App() {
             onOpenControlMe={() => setView("controlme")}
             onToggleExtension={handleToggleExtension}
           />
+        </Suspense>
+      ) : view === "game" && settings ? (
+        <Suspense fallback={<div className="codex-editor-empty">Chargement…</div>}>
+          <GameView settings={settings} />
         </Suspense>
       ) : view === "skills" && settings ? (
         <Suspense fallback={<div className="codex-editor-empty">Chargement…</div>}>

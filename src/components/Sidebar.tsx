@@ -15,11 +15,12 @@ export default function Sidebar({
   onOpenCodex,
   onOpenControlMe,
   onOpenExtensions,
+  onOpenGame,
   onOpenSkills,
 }: {
   conversations: ConversationMeta[];
   currentId: string | null;
-  view: "chat" | "codex" | "controlme" | "settings" | "extensions" | "skills";
+  view: "chat" | "codex" | "controlme" | "game" | "settings" | "extensions" | "skills";
   disabledExtensions: string[];
   onNew: () => void;
   onSelect: (id: string) => void;
@@ -29,6 +30,7 @@ export default function Sidebar({
   onOpenCodex: () => void;
   onOpenControlMe: () => void;
   onOpenExtensions: () => void;
+  onOpenGame: () => void;
   onOpenSkills: () => void;
 }) {
   const [search, setSearch] = useState("");
@@ -151,6 +153,12 @@ export default function Sidebar({
           Control Me
         </button>
       )}
+      <button
+        className={`sidebar-install-btn ${view === "game" ? "sidebar-nav-active" : ""}`}
+        onClick={onOpenGame}
+      >
+        Jeu
+      </button>
       <button
         className={`sidebar-install-btn ${view === "skills" ? "sidebar-nav-active" : ""}`}
         onClick={onOpenSkills}

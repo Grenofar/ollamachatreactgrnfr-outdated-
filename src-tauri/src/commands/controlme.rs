@@ -549,11 +549,72 @@ fn execute_action(name: &str, args: &Value, width: u32, height: u32) -> Result<S
         }
         // Absolute positioning is meaningless in a game that captures the
         // cursor and reads raw movement deltas instead.
+        // Deplacement progressif d un point a un autre sur une duree, avec
+        // un bouton optionnellement maintenu pendant tout le trajet. C est
+        // l action qui permet de tourner une camera : un saut instantane de A
+        // a B ne fait pas tourner la vue dans un jeu, seul un mouvement
+        // continu est interprete comme tel.
+        "drag_over_time" => {
+            let sx = denormalize(args["start_x"].as_f64().unwrap_or(0.0), width);
+            let sy = denormalize(args["start_y"].as_f64().unwrap_or(0.0), height);
+            let ex = denormalize(args["end_x"].as_f64().unwrap_or(0.0), width);
+            let ey = denormalize(args["end_y"].as_f64().unwrap_or(0.0), height);
+            let secs = args["seconds"].as_f64().unwrap_or(1.0).clamp(0.05, 10.0);
+            let button = match args["button"].as_str().unwrap_or("") {
+                "left" | "gauche" => Some(Button::Left),
+                "right" | "droite" => Some(Button::Right),
+                "middle" | "milieu" => Some(Button::Middle),
+                _ => None,
+            };
+            // ~60 pas par seconde : assez fin pour que le jeu lise un vrai
+            // mouvement, assez grossier pour ne pas saturer la file d entree.
+            let steps = ((secs * 60.0).round() as i32).clamp(2, 600);
+            let step_ms = (secs * 1000.0 / steps as f64).max(1.0) as u64;
+            enigo.move_mouse(sx, sy, Coordinate::Abs).map_err(|e| e.to_string())?;
+            if let Some(b) = button {
+                enigo.button(b, Direction::Press).map_err(|e| e.to_string())?;
+            }
+            for i in 1..=steps {
+                let t = i as f64 / steps as f64;
+                let x = sx + (((ex - sx) as f64) * t).round() as i32;
+                let y = sy + (((ey - sy) as f64) * t).round() as i32;
+                enigo.move_mouse(x, y, Coordinate::Abs).map_err(|e| e.to_string())?;
+                std::thread::sleep(Duration::from_millis(step_ms));
+            }
+            if let Some(b) = button {
+                enigo.button(b, Direction::Release).map_err(|e| e.to_string())?;
+            }
+            Ok(format!("Souris de ({sx}, {sy}) a ({ex}, {ey}) en {secs:.1}s"))
+        }
         "move_relative" => {
             let dx = args["dx"].as_i64().unwrap_or(0) as i32;
             let dy = args["dy"].as_i64().unwrap_or(0) as i32;
-            enigo.move_mouse(dx, dy, Coordinate::Rel).map_err(|e| e.to_string())?;
-            Ok(format!("Souris déplacée de ({dx}, {dy})"))
+            // Duree optionnelle : un jeu qui capture le curseur lit la VITESSE
+            // du mouvement, pas seulement son amplitude. Tout envoyer d un coup
+            // donne un a-coup, pas une rotation de camera lisible.
+            let secs = args["seconds"].as_f64().unwrap_or(0.0).clamp(0.0, 10.0);
+            if secs <= 0.0 {
+                enigo.move_mouse(dx, dy, Coordinate::Rel).map_err(|e| e.to_string())?;
+                return Ok(format!("Souris déplacée de ({dx}, {dy})"));
+            }
+            let steps = ((secs * 60.0).round() as i32).clamp(2, 600);
+            let step_ms = (secs * 1000.0 / steps as f64).max(1.0) as u64;
+            let mut done_x = 0;
+            let mut done_y = 0;
+            for i in 1..=steps {
+                let t = i as f64 / steps as f64;
+                let target_x = (dx as f64 * t).round() as i32;
+                let target_y = (dy as f64 * t).round() as i32;
+                // On envoie le DELTA restant a chaque pas : accumuler des
+                // arrondis ferait deriver la rotation totale.
+                enigo
+                    .move_mouse(target_x - done_x, target_y - done_y, Coordinate::Rel)
+                    .map_err(|e| e.to_string())?;
+                done_x = target_x;
+                done_y = target_y;
+                std::thread::sleep(Duration::from_millis(step_ms));
+            }
+            Ok(format!("Souris déplacée de ({dx}, {dy}) en {secs:.1}s"))
         }
         "scroll_at" => {
             let magnitude = args["magnitude_in_pixels"].as_i64().unwrap_or(200) as i32;
@@ -706,9 +767,27 @@ fn timed_action_tools() -> Vec<Value> {
                 "type": "object",
                 "properties": {
                     "dx": { "type": "number", "description": "Décalage horizontal en pixels (négatif = vers la gauche)" },
-                    "dy": { "type": "number", "description": "Décalage vertical en pixels (négatif = vers le haut)" }
+                    "dy": { "type": "number", "description": "Décalage vertical en pixels (négatif = vers le haut)" },
+                    "seconds": { "type": "number", "description": "Durée du mouvement en secondes (facultatif, max 10). À renseigner pour faire tourner une caméra : un jeu lit la vitesse du geste, un déplacement instantané donne un à-coup au lieu d'une rotation." }
                 },
                 "required": ["dx", "dy"]
+            }
+        }),
+        json!({
+            "type": "function",
+            "name": "drag_over_time",
+            "description": "Déplace la souris d'une position à une autre de façon progressive, sur une durée que tu choisis, en maintenant éventuellement un bouton pendant tout le trajet. C'est l'action pour faire tourner une caméra à la souris, tracer une sélection, ou glisser un objet : un déplacement instantané d'un point à un autre ne fait pas tourner une vue, seul un mouvement continu est interprété comme tel. Dans un jeu qui capture le curseur, préfère move_relative avec une durée.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "start_x": { "type": "number", "description": "Position X de départ, normalisée 0-999" },
+                    "start_y": { "type": "number", "description": "Position Y de départ, normalisée 0-999" },
+                    "end_x": { "type": "number", "description": "Position X d'arrivée" },
+                    "end_y": { "type": "number", "description": "Position Y d'arrivée" },
+                    "seconds": { "type": "number", "description": "Durée du trajet en secondes (max 10). Un trajet lent tourne peu, un trajet rapide tourne beaucoup." },
+                    "button": { "type": "string", "enum": ["left", "right", "middle"], "description": "Bouton maintenu enfoncé pendant tout le déplacement. Omets-le pour un simple survol." }
+                },
+                "required": ["start_x", "start_y", "end_x", "end_y", "seconds"]
             }
         }),
         json!({
